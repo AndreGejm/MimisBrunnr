@@ -34,6 +34,35 @@ If the goal is to make Multi Agent Brain the default MCP tool across all workspa
 
 The pilot and all-workspace go-live gates for this sequence are documented in [`go-live-gates.md`](./go-live-gates.md).
 
+## Architectural Review Carry-Forward
+
+These findings still stand after the latest auth, temporal-validity, and paid-escalation work, and they should drive the next implementation order:
+
+- `F1` cross-store atomicity is still the biggest structural risk
+- `F3` budget enforcement is still weaker than the contract suggests
+- `F4` `tagFilters` contract drift still needs to be fixed
+- `F7` SQLite connection and concurrency strategy still needs hardening
+- `F8` transport ingress still needs real runtime schema validation
+- `F6` vector degraded-mode observability still needs to become explicit
+
+Recommended implementation order:
+
+1. atomic promotion saga/outbox
+2. hard token-budget enforcement
+3. `tagFilters` end-to-end
+4. ingress schema validation
+5. SQLite access strategy and degraded-mode telemetry
+
+## Review-Driven Ready Work
+
+| ID | Work Item | Maps To | Status |
+| --- | --- | --- | --- |
+| RV-001 | Introduce an atomic promotion saga or outbox for filesystem, SQLite, FTS, and vector index writes | `F1` | ready |
+| RV-002 | Hard-enforce token budgets and summary-sentence limits during packet assembly | `F3` | ready |
+| RV-003 | Implement `tagFilters` end-to-end through lexical retrieval, vector retrieval, and fusion | `F4` | ready |
+| RV-004 | Add runtime schema validation at CLI, HTTP, and MCP ingress | `F8` | ready |
+| RV-005 | Harden SQLite access strategy and make vector degraded mode explicit in telemetry and health reporting | `F6`, `F7` | ready |
+
 ## Ready Now
 
 | ID | Work Item | Source Requirement | Complexity | Status | Repo Targets |
