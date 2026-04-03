@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "strict": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "baseUrl": ".",
+    "paths": {
+      "@multi-agent-brain/contracts": ["packages/contracts/src/index.ts"],
+      "@multi-agent-brain/contracts/*": ["packages/contracts/src/*"],
+      "@multi-agent-brain/domain": ["packages/domain/src/index.ts"],
+      "@multi-agent-brain/domain/*": ["packages/domain/src/*"],
+      "@multi-agent-brain/application": ["packages/application/src/index.ts"],
+      "@multi-agent-brain/application/*": ["packages/application/src/*"],
+      "@multi-agent-brain/infrastructure": ["packages/infrastructure/src/index.ts"],
+      "@multi-agent-brain/infrastructure/*": ["packages/infrastructure/src/*"]
+    }
+  }
+}

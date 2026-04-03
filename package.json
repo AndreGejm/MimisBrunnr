@@ -1,0 +1,19 @@
+{
+  "name": "@multi-agent-brain/workspace",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.7.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.json",
+    "typecheck": "tsc -b tsconfig.json --pretty false",
+    "test:e2e": "pnpm build && node --test tests/e2e/service-boundaries-and-regression.test.mjs",
+    "test": "pnpm test:e2e"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "typescript": "^5.8.3"
+  }
+}
