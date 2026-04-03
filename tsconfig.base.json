@@ -22,6 +22,8 @@
       "@multi-agent-brain/domain/*": ["packages/domain/src/*"],
       "@multi-agent-brain/application": ["packages/application/src/index.ts"],
       "@multi-agent-brain/application/*": ["packages/application/src/*"],
+      "@multi-agent-brain/orchestration": ["packages/orchestration/src/index.ts"],
+      "@multi-agent-brain/orchestration/*": ["packages/orchestration/src/*"],
       "@multi-agent-brain/infrastructure": ["packages/infrastructure/src/index.ts"],
       "@multi-agent-brain/infrastructure/*": ["packages/infrastructure/src/*"]
     }

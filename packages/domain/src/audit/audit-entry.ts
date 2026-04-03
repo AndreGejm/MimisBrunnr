@@ -10,7 +10,8 @@ export type AuditActionType =
   | "promote_note"
   | "query_history"
   | "fetch_decision_summary"
-  | "inspect_gap";
+  | "inspect_gap"
+  | "execute_coding_task";
 
 export interface AuditEntry {
   auditEntryId: string;

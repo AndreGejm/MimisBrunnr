@@ -4,7 +4,9 @@ import { randomUUID } from "node:crypto";
 import process from "node:process";
 import type {
   ActorContext,
+  GetContextPacketToolRequest,
   DraftNoteRequest,
+  ExecuteCodingTaskRequest,
   GetDecisionSummaryRequest,
   PromoteNoteRequest,
   QueryHistoryRequest,
@@ -219,28 +221,36 @@ async function callTool(name: string, args: JsonRecord): Promise<unknown> {
 
 async function runTool(name: string, request: JsonRecord): Promise<unknown> {
   switch (name) {
+    case "execute_coding_task":
+      return container.orchestrator.executeCodingTask(
+        request as unknown as ExecuteCodingTaskRequest
+      );
     case "search_context":
-      return container.services.retrieveContextService.retrieveContext(
+      return container.orchestrator.searchContext(
         request as unknown as RetrieveContextRequest
       );
+    case "get_context_packet":
+      return container.orchestrator.getContextPacket(
+        request as unknown as GetContextPacketToolRequest
+      );
     case "draft_note":
-      return container.services.stagingDraftService.createDraft(
+      return container.orchestrator.draftNote(
         request as unknown as DraftNoteRequest
       );
     case "fetch_decision_summary":
-      return container.services.decisionSummaryService.getDecisionSummary(
+      return container.orchestrator.fetchDecisionSummary(
         request as unknown as GetDecisionSummaryRequest
       );
     case "validate_note":
-      return container.services.noteValidationService.validate(
+      return container.orchestrator.validateNote(
         request as unknown as ValidateNoteRequest
       );
     case "promote_note":
-      return container.services.promotionOrchestratorService.promoteDraft(
+      return container.orchestrator.promoteNote(
         request as unknown as PromoteNoteRequest
       );
     case "query_history":
-      return container.services.auditHistoryService.queryHistory(
+      return container.orchestrator.queryHistory(
         request as unknown as QueryHistoryRequest
       );
     default:

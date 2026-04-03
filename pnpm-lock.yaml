@@ -70,6 +70,21 @@ importers:
       '@multi-agent-brain/domain':
         specifier: workspace:*
         version: link:../domain
+      '@multi-agent-brain/orchestration':
+        specifier: workspace:*
+        version: link:../orchestration
+
+  packages/orchestration:
+    dependencies:
+      '@multi-agent-brain/application':
+        specifier: workspace:*
+        version: link:../application
+      '@multi-agent-brain/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@multi-agent-brain/domain':
+        specifier: workspace:*
+        version: link:../domain
 
 packages:
 

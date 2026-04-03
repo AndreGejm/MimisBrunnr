@@ -6,6 +6,10 @@ import { OllamaClient } from "./ollama-client.js";
 interface OllamaDraftingProviderOptions {
   baseUrl: string;
   model: string;
+  temperature?: number;
+  seed?: number;
+  maxOutputTokens?: number;
+  timeoutMs?: number;
   fetchImplementation?: typeof fetch;
 }
 
@@ -22,7 +26,8 @@ export class OllamaDraftingProvider implements DraftingProvider {
     this.providerId = `ollama-drafting:${options.model}`;
     this.client = new OllamaClient({
       baseUrl: options.baseUrl,
-      fetchImplementation: options.fetchImplementation
+      fetchImplementation: options.fetchImplementation,
+      timeoutMs: options.timeoutMs
     });
   }
 
@@ -54,7 +59,12 @@ export class OllamaDraftingProvider implements DraftingProvider {
       ].join(" "),
       prompt,
       format: "json",
-      raw: false
+      raw: false,
+      options: {
+        temperature: this.options.temperature ?? 0,
+        seed: this.options.seed ?? 42,
+        num_predict: this.options.maxOutputTokens ?? 800
+      }
     });
 
     return {

@@ -2,15 +2,18 @@ import type { EmbeddingProvider } from "../ports/embedding-provider.js";
 import type { LexicalIndex } from "../ports/lexical-index.js";
 import type { LocalReasoningProvider } from "../ports/local-reasoning-provider.js";
 import type { MetadataControlStore } from "../ports/metadata-control-store.js";
+import type { RerankerProvider } from "../ports/reranker-provider.js";
 import type { VectorIndex } from "../ports/vector-index.js";
 import { AuditHistoryService } from "./audit-history-service.js";
 import {
   DEFAULT_CONTEXT_BUDGET,
+  type ContextCandidate,
   type AssembleContextPacketRequest,
   type RetrieveContextRequest,
   type RetrieveContextResponse,
   type ServiceResult
 } from "@multi-agent-brain/contracts";
+import type { QueryIntent } from "@multi-agent-brain/domain";
 import { ContextPacketService } from "./context-packet-service.js";
 import { LexicalRetrievalService } from "./lexical-retrieval-service.js";
 import { QueryIntentService } from "./query-intent-service.js";
@@ -32,6 +35,7 @@ export class RetrieveContextService {
     vectorIndex: VectorIndex;
     embeddingProvider?: EmbeddingProvider;
     localReasoningProvider?: LocalReasoningProvider;
+    rerankerProvider?: RerankerProvider;
     auditHistoryService?: AuditHistoryService;
   }) {
     this.queryIntentService = new QueryIntentService(input.localReasoningProvider);
@@ -47,9 +51,11 @@ export class RetrieveContextService {
     this.rankingFusionService = new RankingFusionService();
     this.contextPacketService = new ContextPacketService(input.metadataControlStore);
     this.auditHistoryService = input.auditHistoryService;
+    this.rerankerProvider = input.rerankerProvider;
   }
 
   private readonly auditHistoryService?: AuditHistoryService;
+  private readonly rerankerProvider?: RerankerProvider;
 
   async retrieveContext(
     request: RetrieveContextRequest
@@ -69,13 +75,19 @@ export class RetrieveContextService {
         this.vectorRetrievalService.search(request, noteTypePriority, stageOneLimit)
       ]);
 
-      const rankedCandidates = this.rankingFusionService.rankCandidates({
+      const fusedCandidates = this.rankingFusionService.rankCandidates({
         intent,
         lexicalCandidates,
         vectorCandidates,
         noteTypePriority,
-        finalLimit: Math.max(6, budget.maxSources * 2)
+        finalLimit: Math.max(8, budget.maxSources * 3)
       });
+      const rankedCandidates = await this.rerankCandidates(
+        request.query,
+        intent,
+        fusedCandidates,
+        Math.max(6, budget.maxSources * 2)
+      );
 
       const answerability = await this.queryIntentService.assessAnswerability(
         request.query,
@@ -158,6 +170,28 @@ export class RetrieveContextService {
           }
         }
       };
+    }
+  }
+
+  private async rerankCandidates(
+    query: string,
+    intent: QueryIntent,
+    candidates: ContextCandidate[],
+    limit: number
+  ): Promise<ContextCandidate[]> {
+    if (!this.rerankerProvider || candidates.length <= limit) {
+      return candidates.slice(0, limit);
+    }
+
+    try {
+      return await this.rerankerProvider.rerankCandidates({
+        query,
+        intent,
+        candidates,
+        limit
+      });
+    } catch {
+      return candidates.slice(0, limit);
     }
   }
 }

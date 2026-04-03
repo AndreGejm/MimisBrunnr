@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir as fsMkdir, mkdtemp, rm, writeFile as fsWriteFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -241,6 +241,58 @@ test("retrieval packets stay within explicit source and raw-excerpt budgets", as
   assert.ok(result.data.packet.budgetUsage.sourceCount <= 2);
 });
 
+test("root orchestrator exposes direct context-packet assembly for ranked candidates", async (t) => {
+  const { container } = await createHarness(t);
+
+  const result = await container.orchestrator.getContextPacket({
+    actor: actor("retrieval"),
+    intent: "architecture_recall",
+    budget: {
+      maxTokens: 320,
+      maxSources: 2,
+      maxRawExcerpts: 1,
+      maxSummarySentences: 2
+    },
+    includeRawExcerpts: true,
+    candidates: [
+      {
+        noteType: "architecture",
+        score: 0.81,
+        summary: "Canonical architecture notes define bounded retrieval packets.",
+        rawText: "Canonical architecture notes define bounded retrieval packets and keep provenance attached.",
+        scope: "architecture",
+        qualifiers: ["bounded retrieval", "provenance required"],
+        tags: ["project/multi-agent-brain", "domain/retrieval"],
+        stalenessClass: "current",
+        provenance: {
+          noteId: "note-architecture-1",
+          notePath: "context_brain/architecture/retrieval-packets.md",
+          headingPath: ["Summary"]
+        }
+      },
+      {
+        noteType: "decision",
+        score: 0.67,
+        summary: "Decision packets should stay smaller than raw retrieval search outputs.",
+        scope: "architecture",
+        qualifiers: ["bounded packets"],
+        tags: ["project/multi-agent-brain", "domain/retrieval"],
+        stalenessClass: "current",
+        provenance: {
+          noteId: "note-decision-1",
+          notePath: "context_brain/decision/packet-size.md",
+          headingPath: ["Decision"]
+        }
+      }
+    ]
+  });
+
+  assert.equal(result.packet.packetType, "implementation");
+  assert.equal(result.packet.answerability, "local_answer");
+  assert.ok(result.packet.evidence.length <= 2);
+  assert.ok((result.packet.rawExcerpts?.length ?? 0) <= 1);
+});
+
 test("decision summary retrieval returns a decision packet and records audit history", async (t) => {
   const { container } = await createHarness(t);
 
@@ -309,9 +361,52 @@ test("schema validation blocks missing required sections", async (t) => {
   assert.ok(validation.violations.some((issue) => issue.field === "body.sections"));
 });
 
-async function createHarness(t) {
+test("root orchestrator routes coding tasks through the vendored runtime bridge", async (t) => {
+  const { container } = await createHarness(t);
+
+  const result = await container.orchestrator.executeCodingTask({
+    actor: actor("operator"),
+    taskType: "propose_fix",
+    task: "Fix the writer promotion bug.",
+    context: "The bug affects writer promotion.",
+    filePath: "src/example.py"
+  });
+
+  assert.equal(result.status, "escalate");
+  assert.match(result.reason, /allowed_patch_root|LOCAL_EXPERT_REPO_ROOT/i);
+});
+
+test("root orchestrator passes repoRoot into the vendored runtime for bounded coding tasks", async (t) => {
+  const { container, root } = await createHarness(t, {
+    providerEndpoints: {
+      dockerOllamaBaseUrl: "http://127.0.0.1:1"
+    }
+  });
+  const repoRoot = path.join(root, "coding-repo");
+  await fsMkdir(path.join(repoRoot, ".git"), { recursive: true });
+  await fsMkdir(path.join(repoRoot, "src"), { recursive: true });
+  await fsWriteFile(
+    path.join(repoRoot, "src", "foo.py"),
+    'def greet(name: str) -> str:\n    return f"Hello, {name}"\n',
+    "utf8"
+  );
+
+  const result = await container.orchestrator.executeCodingTask({
+    actor: actor("operator"),
+    taskType: "propose_fix",
+    task: "Fix the greet function.",
+    context: "The greeting function should be corrected safely.",
+    repoRoot,
+    filePath: "src/foo.py"
+  });
+
+  assert.equal(result.status, "fail");
+  assert.doesNotMatch(result.reason, /allowed_patch_root|LOCAL_EXPERT_REPO_ROOT/i);
+});
+
+async function createHarness(t, overrides = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "mab-e2e-"));
-  const env = testEnvironment(root);
+  const env = testEnvironment(root, overrides);
   const container = buildServiceContainer(env);
 
   t.after(async () => {
@@ -374,7 +469,7 @@ function actor(role) {
   };
 }
 
-function testEnvironment(root = path.join(os.tmpdir(), `mab-standalone-${randomUUID()}`)) {
+function testEnvironment(root = path.join(os.tmpdir(), `mab-standalone-${randomUUID()}`), overrides = {}) {
   return {
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
@@ -388,7 +483,8 @@ function testEnvironment(root = path.join(os.tmpdir(), `mab-standalone-${randomU
     rerankerProvider: "local",
     apiHost: "127.0.0.1",
     apiPort: 8080,
-    logLevel: "error"
+    logLevel: "error",
+    ...overrides
   };
 }
 

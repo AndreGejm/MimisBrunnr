@@ -54,6 +54,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - Qdrant vector retrieval
 - ranking fusion with staleness-aware behavior
 - bounded context packet assembly
+- direct context-packet transport exposure
 - decision-summary generation
 
 ### Governance
@@ -85,6 +86,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - `qwen3-coder`
 - `qwen3-reranker`
 - `docker.io/ai/qwen3-embedding:0.6B-F16`
+- Windows host default canonical brain root at `F:\Dev\AI Context Brain` when `MAB_VAULT_ROOT` is unset
 
 ## Transport Surfaces
 
@@ -92,6 +94,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 
 - `execute-coding-task`
 - `search-context`
+- `get-context-packet`
 - `fetch-decision-summary`
 - `draft-note`
 - `validate-note`
@@ -104,6 +107,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - `GET /health/ready`
 - `POST /v1/coding/execute`
 - `POST /v1/context/search`
+- `POST /v1/context/packet`
 - `POST /v1/context/decision-summary`
 - `POST /v1/notes/drafts`
 - `POST /v1/notes/validate`
@@ -114,6 +118,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 
 - `execute_coding_task`
 - `search_context`
+- `get_context_packet`
 - `fetch_decision_summary`
 - `draft_note`
 - `validate_note`
@@ -126,9 +131,6 @@ These areas have enabling structure but are not fully complete:
 
 - agent-scoped authentication
 - paid escalation provider wiring
-- direct transport exposure for context-packet assembly
-- Docker Compose alignment with the live Docker Model Runner stack
-- documentation freshness across all repo docs
 - formal Git-centric versioning contract
 - richer temporal-validity support beyond current-state and staleness handling
 

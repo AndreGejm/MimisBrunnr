@@ -7,3 +7,6 @@ coverage/
 *.db
 *.sqlite
 *.sqlite-journal
+__pycache__/
+*.pyc
+.pytest_cache/

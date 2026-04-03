@@ -3,7 +3,9 @@ import { randomUUID } from "node:crypto";
 import type {
   ActorContext,
   ActorRole,
+  AssembleContextPacketRequest,
   DraftNoteRequest,
+  ExecuteCodingTaskRequest,
   GetDecisionSummaryRequest,
   PromoteNoteRequest,
   QueryHistoryRequest,
@@ -19,7 +21,9 @@ import {
 } from "@multi-agent-brain/infrastructure";
 
 type RouteName =
+  | "execute-coding-task"
   | "search-context"
+  | "get-context-packet"
   | "fetch-decision-summary"
   | "draft-note"
   | "validate-note"
@@ -29,7 +33,9 @@ type RouteName =
 type JsonRecord = Record<string, unknown>;
 
 const DEFAULT_ACTOR_ROLE: Record<RouteName, ActorRole> = {
+  "execute-coding-task": "operator",
   "search-context": "retrieval",
+  "get-context-packet": "retrieval",
   "fetch-decision-summary": "retrieval",
   "draft-note": "writer",
   "validate-note": "orchestrator",
@@ -40,7 +46,9 @@ const DEFAULT_ACTOR_ROLE: Record<RouteName, ActorRole> = {
 const ROUTES: Record<string, { method: "GET" | "POST"; name?: RouteName; healthMode?: "live" | "ready" }> = {
   "/health/live": { method: "GET", healthMode: "live" },
   "/health/ready": { method: "GET", healthMode: "ready" },
+  "/v1/coding/execute": { method: "POST", name: "execute-coding-task" },
   "/v1/context/search": { method: "POST", name: "search-context" },
+  "/v1/context/packet": { method: "POST", name: "get-context-packet" },
   "/v1/context/decision-summary": { method: "POST", name: "fetch-decision-summary" },
   "/v1/notes/drafts": { method: "POST", name: "draft-note" },
   "/v1/notes/validate": { method: "POST", name: "validate-note" },
@@ -55,8 +63,11 @@ export interface BrainApiServer {
   close(): Promise<void>;
 }
 
-export function createBrainApiServer(env: AppEnvironment = loadEnvironment()): BrainApiServer {
-  const container = buildServiceContainer(env);
+export function createBrainApiServer(
+  envInput: Partial<AppEnvironment> = loadEnvironment()
+): BrainApiServer {
+  const container = buildServiceContainer(envInput);
+  const env = container.env;
 
   const server = createServer(async (request, response) => {
     try {
@@ -155,43 +166,57 @@ async function handleRequest(
   const normalizedRequest = { ...body, actor };
 
   switch (route.name) {
+    case "execute-coding-task": {
+      const result = await container.orchestrator.executeCodingTask(
+        normalizedRequest as unknown as ExecuteCodingTaskRequest
+      );
+      sendJson(response, mapCodingStatusToStatusCode(result.status), result);
+      return;
+    }
     case "search-context": {
-      const result = await container.services.retrieveContextService.retrieveContext(
+      const result = await container.orchestrator.searchContext(
         normalizedRequest as unknown as RetrieveContextRequest
       );
       sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
       return;
     }
+    case "get-context-packet": {
+      const result = await container.orchestrator.getContextPacket(
+        normalizedRequest as unknown as AssembleContextPacketRequest
+      );
+      sendJson(response, 200, result);
+      return;
+    }
     case "fetch-decision-summary": {
-      const result = await container.services.decisionSummaryService.getDecisionSummary(
+      const result = await container.orchestrator.fetchDecisionSummary(
         normalizedRequest as unknown as GetDecisionSummaryRequest
       );
       sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
       return;
     }
     case "draft-note": {
-      const result = await container.services.stagingDraftService.createDraft(
+      const result = await container.orchestrator.draftNote(
         normalizedRequest as unknown as DraftNoteRequest
       );
       sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
       return;
     }
     case "validate-note": {
-      const result = container.services.noteValidationService.validate(
+      const result = container.orchestrator.validateNote(
         normalizedRequest as unknown as ValidateNoteRequest
       );
       sendJson(response, result.valid ? 200 : 422, result);
       return;
     }
     case "promote-note": {
-      const result = await container.services.promotionOrchestratorService.promoteDraft(
+      const result = await container.orchestrator.promoteNote(
         normalizedRequest as unknown as PromoteNoteRequest
       );
       sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
       return;
     }
     case "query-history": {
-      const result = await container.services.auditHistoryService.queryHistory(
+      const result = await container.orchestrator.queryHistory(
         normalizedRequest as unknown as QueryHistoryRequest
       );
       sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
@@ -265,6 +290,19 @@ function mapServiceErrorToStatus(error: ServiceError): number {
       return 422;
     default:
       return 500;
+  }
+}
+
+function mapCodingStatusToStatusCode(
+  status: "success" | "fail" | "escalate"
+): number {
+  switch (status) {
+    case "success":
+      return 200;
+    case "fail":
+      return 422;
+    case "escalate":
+      return 409;
   }
 }
 

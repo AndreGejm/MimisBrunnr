@@ -6,6 +6,7 @@ Thin local CLI adapter over the existing application services.
 
 - `execute-coding-task`
 - `search-context`
+- `get-context-packet`
 - `fetch-decision-summary`
 - `draft-note`
 - `validate-note`
@@ -17,6 +18,7 @@ Thin local CLI adapter over the existing application services.
 ```bash
 pnpm cli -- execute-coding-task --json "{\"taskType\":\"triage\",\"task\":\"Find the regression\",\"repoRoot\":\".\"}"
 pnpm cli -- search-context --input ./request.json
+pnpm cli -- get-context-packet --stdin < ./request.json
 pnpm cli -- fetch-decision-summary --stdin < ./request.json
 pnpm cli -- validate-note --stdin < ./request.json
 pnpm cli -- draft-note --json "{\"targetCorpus\":\"context_brain\", ... }"

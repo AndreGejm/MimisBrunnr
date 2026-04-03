@@ -8,6 +8,7 @@ Thin local HTTP adapter over the existing application services.
 - `GET /health/ready`
 - `POST /v1/coding/execute`
 - `POST /v1/context/search`
+- `POST /v1/context/packet`
 - `POST /v1/context/decision-summary`
 - `POST /v1/notes/drafts`
 - `POST /v1/notes/validate`

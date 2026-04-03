@@ -9,6 +9,10 @@ import { OllamaClient } from "./ollama-client.js";
 interface OllamaLocalReasoningProviderOptions {
   baseUrl: string;
   model: string;
+  temperature?: number;
+  seed?: number;
+  maxOutputTokens?: number;
+  timeoutMs?: number;
   fallback?: LocalReasoningProvider;
   fetchImplementation?: typeof fetch;
 }
@@ -27,7 +31,8 @@ export class OllamaLocalReasoningProvider implements LocalReasoningProvider {
     this.providerId = `ollama-reasoning:${options.model}`;
     this.client = new OllamaClient({
       baseUrl: options.baseUrl,
-      fetchImplementation: options.fetchImplementation
+      fetchImplementation: options.fetchImplementation,
+      timeoutMs: options.timeoutMs
     });
   }
 
@@ -41,7 +46,12 @@ export class OllamaLocalReasoningProvider implements LocalReasoningProvider {
         ].join(" "),
         prompt: `Query: ${query}`,
         format: "json",
-        raw: false
+        raw: false,
+        options: {
+          temperature: this.options.temperature ?? 0,
+          seed: this.options.seed ?? 42,
+          num_predict: this.options.maxOutputTokens ?? 256
+        }
       });
 
       if (result.intent) {
@@ -89,7 +99,12 @@ export class OllamaLocalReasoningProvider implements LocalReasoningProvider {
           2
         ),
         format: "json",
-        raw: false
+        raw: false,
+        options: {
+          temperature: this.options.temperature ?? 0,
+          seed: this.options.seed ?? 42,
+          num_predict: this.options.maxOutputTokens ?? 256
+        }
       });
 
       if (result.answerability) {
@@ -122,7 +137,12 @@ export class OllamaLocalReasoningProvider implements LocalReasoningProvider {
           2
         ),
         format: "json",
-        raw: false
+        raw: false,
+        options: {
+          temperature: this.options.temperature ?? 0,
+          seed: this.options.seed ?? 42,
+          num_predict: this.options.maxOutputTokens ?? 128
+        }
       });
 
       if (result.summary?.trim()) {

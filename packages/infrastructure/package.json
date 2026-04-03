@@ -12,6 +12,7 @@
   "dependencies": {
     "@multi-agent-brain/application": "workspace:*",
     "@multi-agent-brain/contracts": "workspace:*",
-    "@multi-agent-brain/domain": "workspace:*"
+    "@multi-agent-brain/domain": "workspace:*",
+    "@multi-agent-brain/orchestration": "workspace:*"
   }
 }

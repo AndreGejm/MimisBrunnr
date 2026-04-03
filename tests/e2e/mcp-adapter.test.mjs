@@ -1,14 +1,22 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir as fsMkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import test from "node:test";
 import { spawn } from "node:child_process";
 
-test("brain-mcp serves initialize, tools/list, and validate_note over stdio MCP framing", async (t) => {
+test("brain-mcp serves initialize, tools/list, get_context_packet, and validate_note over stdio MCP framing", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "mab-mcp-"));
+  const repoRoot = path.join(root, "repo");
+  await fsMkdir(path.join(repoRoot, ".git"), { recursive: true });
+  await fsMkdir(path.join(repoRoot, "src"), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, "src", "foo.py"),
+    'def greet(name: str) -> str:\n    return f"Hello, {name}"\n',
+    "utf8"
+  );
   const child = spawn(
     process.execPath,
     [path.join(process.cwd(), "apps", "brain-mcp", "dist", "main.js")],
@@ -26,6 +34,8 @@ test("brain-mcp serves initialize, tools/list, and validate_note over stdio MCP 
         MAB_REASONING_PROVIDER: "heuristic",
         MAB_DRAFTING_PROVIDER: "disabled",
         MAB_RERANKER_PROVIDER: "local",
+        MAB_PROVIDER_DOCKER_OLLAMA_BASE_URL: "http://127.0.0.1:1",
+        MAB_OLLAMA_BASE_URL: "http://127.0.0.1:1",
         MAB_LOG_LEVEL: "error"
       },
       stdio: ["pipe", "pipe", "pipe"]
@@ -62,11 +72,54 @@ test("brain-mcp serves initialize, tools/list, and validate_note over stdio MCP 
   });
   const listResponse = await transport.next();
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "validate_note"));
+  assert.ok(listResponse.result.tools.some((tool) => tool.name === "get_context_packet"));
+  assert.ok(listResponse.result.tools.some((tool) => tool.name === "execute_coding_task"));
+
+  writeMcpMessage(child.stdin, {
+    jsonrpc: "2.0",
+    id: 3,
+    method: "tools/call",
+    params: {
+      name: "get_context_packet",
+      arguments: {
+        intent: "architecture_recall",
+        budget: {
+          maxTokens: 320,
+          maxSources: 2,
+          maxRawExcerpts: 1,
+          maxSummarySentences: 2
+        },
+        includeRawExcerpts: true,
+        candidates: [
+          {
+            noteType: "architecture",
+            score: 0.85,
+            summary: "MCP can now assemble bounded context packets directly.",
+            rawText: "MCP can now assemble bounded context packets directly from ranked candidates.",
+            scope: "architecture",
+            qualifiers: ["bounded retrieval"],
+            tags: ["project/multi-agent-brain"],
+            stalenessClass: "current",
+            provenance: {
+              noteId: "note-mcp-1",
+              notePath: "context_brain/architecture/mcp-packets.md",
+              headingPath: ["Summary"]
+            }
+          }
+        ]
+      }
+    }
+  });
+
+  const packetResponse = await transport.next();
+  assert.equal(packetResponse.result.isError, false);
+  assert.equal(packetResponse.result.structuredContent.packet.packetType, "implementation");
+  assert.equal(packetResponse.result.structuredContent.packet.evidence[0].noteId, "note-mcp-1");
 
   const noteId = randomUUID();
   writeMcpMessage(child.stdin, {
     jsonrpc: "2.0",
-    id: 3,
+    id: 4,
     method: "tools/call",
     params: {
       name: "validate_note",
@@ -99,6 +152,30 @@ test("brain-mcp serves initialize, tools/list, and validate_note over stdio MCP 
     toolResponse.result.structuredContent.violations.some(
       (issue) => issue.field === "body.sections"
     )
+  );
+
+  writeMcpMessage(child.stdin, {
+    jsonrpc: "2.0",
+    id: 5,
+    method: "tools/call",
+    params: {
+      name: "execute_coding_task",
+      arguments: {
+        taskType: "propose_fix",
+        task: "Fix the writer promotion bug.",
+        context: "The bug affects writer promotion.",
+        repoRoot,
+        filePath: "src/foo.py"
+      }
+    }
+  });
+
+  const codingResponse = await transport.next();
+  assert.equal(codingResponse.result.isError, false);
+  assert.equal(codingResponse.result.structuredContent.status, "fail");
+  assert.doesNotMatch(
+    codingResponse.result.structuredContent.reason,
+    /allowed_patch_root|LOCAL_EXPERT_REPO_ROOT/i
   );
 });
 

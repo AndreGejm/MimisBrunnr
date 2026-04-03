@@ -22,6 +22,18 @@ Use it to distinguish:
 
 For the current implemented state, see [`current-implementation.md`](./current-implementation.md).
 
+For rollout readiness and the MCP adoption path, see [`go-live-gates.md`](./go-live-gates.md).
+
+## Rollout-Critical Priority
+
+If the goal is to make Multi Agent Brain the default MCP tool across all workspaces, the next backlog order is:
+
+1. `BK-001` agent-scoped authentication and authorization
+2. `BK-007` temporal-validity refinement
+3. `BK-002` paid escalation provider wiring
+
+The pilot and all-workspace go-live gates for this sequence are documented in [`go-live-gates.md`](./go-live-gates.md).
+
 ## Ready Now
 
 | ID | Work Item | Source Requirement | Complexity | Status | Repo Targets |
@@ -92,9 +104,9 @@ For the current implemented state, see [`current-implementation.md`](./current-i
 | --- | --- | --- | --- |
 | BK-001 | Implement agent-scoped authentication and authorization | Actor metadata exists, but there is no full auth layer or policy enforcement | partial |
 | BK-002 | Wire a real paid escalation provider behind the reserved `paid_escalation` role | The model role exists, but the provider path is not fully implemented | partial |
-| BK-003 | Expose context-packet assembly directly through transports | Packet assembly exists internally, but is not surfaced as a first-class adapter operation | partial |
-| BK-004 | Align `docker/compose.local.yml` with the live Docker Model Runner plus Qwen stack | Compose is still conservative and fallback-oriented | partial |
-| BK-005 | Refresh repository documentation to match the current implementation | Several READMEs still describe older or partial states | partial |
+| BK-003 | Expose context-packet assembly directly through transports | First-class packet assembly is now exposed through CLI, HTTP, and MCP | done |
+| BK-004 | Align `docker/compose.local.yml` with the live Docker Model Runner plus Qwen stack | Compose now mirrors the local Docker Model Runner plus Qwen role bindings | done |
+| BK-005 | Refresh repository documentation to match the current implementation | Core repo READMEs and planning docs are synchronized with the current implementation | done |
 | BK-006 | Define a formal Git-centric versioning contract | Promotion and audit exist, but Git is not yet part of the application contract | later |
 | BK-007 | Expand temporal-validity handling beyond current-state and staleness heuristics | Some temporal behavior exists, but not the full feature | partial |
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir as fsMkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -45,6 +45,100 @@ test("brain-cli drafts notes through the staging service with JSON input", async
   assert.equal(payload.ok, true);
   assert.equal(payload.data.frontmatter.corpusId, "context_brain");
   assert.match(payload.data.draftPath, /^context_brain\//);
+});
+
+test("brain-cli exposes direct context-packet assembly as a thin transport command", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-packet-"));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const requestPath = path.join(root, "context-packet.json");
+  await writeFile(
+    requestPath,
+    JSON.stringify({
+      intent: "architecture_recall",
+      budget: {
+        maxTokens: 320,
+        maxSources: 2,
+        maxRawExcerpts: 1,
+        maxSummarySentences: 2
+      },
+      includeRawExcerpts: true,
+      candidates: [
+        {
+          noteType: "architecture",
+          score: 0.84,
+          summary: "Architecture context for bounded retrieval packets.",
+          rawText: "Architecture context for bounded retrieval packets with provenance attached.",
+          scope: "architecture",
+          qualifiers: ["bounded retrieval"],
+          tags: ["project/multi-agent-brain"],
+          stalenessClass: "current",
+          provenance: {
+            noteId: "note-1",
+            notePath: "context_brain/architecture/retrieval.md",
+            headingPath: ["Summary"]
+          }
+        }
+      ]
+    }),
+    "utf8"
+  );
+
+  const result = await runNodeCommand(
+    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    ["get-context-packet", "--input", requestPath],
+    cliEnvironment(root)
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.packet.packetType, "implementation");
+  assert.equal(payload.packet.answerability, "local_answer");
+  assert.equal(payload.packet.evidence[0].noteId, "note-1");
+});
+
+test("brain-cli executes coding tasks through the vendored runtime bridge", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-coding-"));
+  const repoRoot = path.join(root, "repo");
+  await fsMkdir(path.join(repoRoot, ".git"), { recursive: true });
+  await fsMkdir(path.join(repoRoot, "src"), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, "src", "foo.py"),
+    'def greet(name: str) -> str:\n    return f"Hello, {name}"\n',
+    "utf8"
+  );
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const requestPath = path.join(root, "coding-task.json");
+  await writeFile(
+    requestPath,
+    JSON.stringify({
+      taskType: "propose_fix",
+      task: "Fix the writer promotion bug.",
+      context: "The bug affects writer promotion.",
+      filePath: "src/foo.py"
+    }),
+    "utf8"
+  );
+
+  const result = await runNodeCommand(
+    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    ["execute-coding-task", "--input", requestPath],
+    cliEnvironment(root, {
+      MAB_PROVIDER_DOCKER_OLLAMA_BASE_URL: "http://127.0.0.1:1",
+      MAB_OLLAMA_BASE_URL: "http://127.0.0.1:1"
+    }),
+    repoRoot
+  );
+
+  assert.equal(result.exitCode, 1, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.status, "fail");
+  assert.doesNotMatch(payload.reason, /allowed_patch_root|LOCAL_EXPERT_REPO_ROOT/i);
 });
 
 test("brain-api exposes validation as a thin HTTP transport over services", async (t) => {
@@ -117,7 +211,137 @@ test("brain-api exposes validation as a thin HTTP transport over services", asyn
   assert.ok(payload.violations.some((issue) => issue.field === "body.sections"));
 });
 
-function cliEnvironment(root) {
+test("brain-api exposes direct context-packet assembly over HTTP", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-packet-"));
+  const { createBrainApiServer } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+    ).href
+  );
+
+  const api = createBrainApiServer({
+    nodeEnv: "test",
+    vaultRoot: path.join(root, "vault", "canonical"),
+    stagingRoot: path.join(root, "vault", "staging"),
+    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    qdrantUrl: "http://127.0.0.1:6333",
+    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    embeddingProvider: "hash",
+    reasoningProvider: "heuristic",
+    draftingProvider: "disabled",
+    rerankerProvider: "local",
+    apiHost: "127.0.0.1",
+    apiPort: 18183,
+    logLevel: "error"
+  });
+
+  t.after(async () => {
+    await api.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await api.listen();
+
+  const response = await fetch("http://127.0.0.1:18183/v1/context/packet", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      intent: "architecture_recall",
+      budget: {
+        maxTokens: 320,
+        maxSources: 2,
+        maxRawExcerpts: 1,
+        maxSummarySentences: 2
+      },
+      includeRawExcerpts: false,
+      candidates: [
+        {
+          noteType: "architecture",
+          score: 0.84,
+          summary: "HTTP route can assemble a bounded packet directly.",
+          scope: "architecture",
+          qualifiers: ["bounded retrieval"],
+          tags: ["project/multi-agent-brain"],
+          stalenessClass: "current",
+          provenance: {
+            noteId: "note-http-1",
+            notePath: "context_brain/architecture/http-packet.md",
+            headingPath: ["Summary"]
+          }
+        }
+      ]
+    })
+  });
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.packet.packetType, "implementation");
+  assert.equal(payload.packet.evidence[0].noteId, "note-http-1");
+});
+
+test("brain-api exposes coding execution through the root orchestrator", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-coding-"));
+  const repoRoot = path.join(root, "repo");
+  await fsMkdir(path.join(repoRoot, ".git"), { recursive: true });
+  await fsMkdir(path.join(repoRoot, "src"), { recursive: true });
+  await writeFile(
+    path.join(repoRoot, "src", "foo.py"),
+    'def greet(name: str) -> str:\n    return f"Hello, {name}"\n',
+    "utf8"
+  );
+  const { createBrainApiServer } = await import(
+    pathToFileURL(path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")).href
+  );
+
+  const api = createBrainApiServer({
+    nodeEnv: "test",
+    vaultRoot: path.join(root, "vault", "canonical"),
+    stagingRoot: path.join(root, "vault", "staging"),
+    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    qdrantUrl: "http://127.0.0.1:6333",
+    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    embeddingProvider: "hash",
+    reasoningProvider: "heuristic",
+    draftingProvider: "disabled",
+    rerankerProvider: "local",
+    providerEndpoints: {
+      dockerOllamaBaseUrl: "http://127.0.0.1:1"
+    },
+    apiHost: "127.0.0.1",
+    apiPort: 18182,
+    logLevel: "error"
+  });
+
+  t.after(async () => {
+    await api.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await api.listen();
+
+  const response = await fetch("http://127.0.0.1:18182/v1/coding/execute", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      taskType: "propose_fix",
+      task: "Fix the writer promotion bug.",
+      context: "The bug affects writer promotion.",
+      repoRoot,
+      filePath: "src/foo.py"
+    })
+  });
+
+  assert.equal(response.status, 422);
+  const payload = await response.json();
+  assert.equal(payload.status, "fail");
+  assert.doesNotMatch(payload.reason, /allowed_patch_root|LOCAL_EXPERT_REPO_ROOT/i);
+});
+
+function cliEnvironment(root, overrides = {}) {
   return {
     ...process.env,
     MAB_NODE_ENV: "test",
@@ -130,14 +354,15 @@ function cliEnvironment(root) {
     MAB_REASONING_PROVIDER: "heuristic",
     MAB_DRAFTING_PROVIDER: "disabled",
     MAB_RERANKER_PROVIDER: "local",
-    MAB_LOG_LEVEL: "error"
+    MAB_LOG_LEVEL: "error",
+    ...overrides
   };
 }
 
-function runNodeCommand(scriptPath, args, env) {
+function runNodeCommand(scriptPath, args, env, cwd = process.cwd()) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [scriptPath, ...args], {
-      cwd: process.cwd(),
+      cwd,
       env,
       stdio: ["ignore", "pipe", "pipe"]
     });

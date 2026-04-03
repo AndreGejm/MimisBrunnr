@@ -6,6 +6,7 @@ export * from "./drafting/draft-note.contract.js";
 export * from "./history/get-decision-summary.contract.js";
 export * from "./history/query-history.contract.js";
 export * from "./mcp/index.js";
+export * from "./orchestration/execute-coding-task.contract.js";
 export * from "./promotion/promote-note.contract.js";
 export * from "./retrieval/assemble-context-packet.contract.js";
 export * from "./retrieval/retrieve-context.contract.js";

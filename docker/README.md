@@ -9,9 +9,14 @@ Runtime assets for local container execution.
 
 ## Current Stack Note
 
-The compose file is intentionally more conservative than the live workstation setup.
+`compose.local.yml` now mirrors the active local model stack:
 
-Today the live local stack uses Docker Model Runner plus Qwen-family models, while `compose.local.yml` still defaults to safer heuristic or fallback-oriented provider settings. That makes compose useful for reproducible local bring-up, but it is not yet a full declaration of the active local model stack.
+- Docker Model Runner is reached from the container at `http://model-runner.docker.internal:12434`
+- the compose profile binds the same Qwen-family roles used on the workstation
+- Qdrant remains the vector sidecar
+- containerized runs still use `/data/vault/canonical` and `/data/vault/staging` inside the container
+
+The host-side default canonical brain path for direct Windows runs remains `F:\Dev\AI Context Brain` when `MAB_VAULT_ROOT` is unset.
 
 ## Health
 

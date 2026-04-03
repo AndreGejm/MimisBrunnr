@@ -9,6 +9,7 @@
   "references": [
     { "path": "../domain" },
     { "path": "../contracts" },
-    { "path": "../application" }
+    { "path": "../application" },
+    { "path": "../orchestration" }
   ]
 }

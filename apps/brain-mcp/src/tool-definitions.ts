@@ -10,6 +10,32 @@ export interface McpToolDefinition {
 
 export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
   {
+    name: "execute_coding_task",
+    title: "Execute Coding Task",
+    description: "Run a coding-domain task through the vendored safety-gated coding runtime.",
+    defaultActorRole: "operator",
+    inputSchema: {
+      type: "object",
+      required: ["taskType", "task"],
+      additionalProperties: true,
+      properties: {
+        actor: { type: "object" },
+        taskType: {
+          type: "string",
+          enum: ["triage", "review", "draft_patch", "generate_tests", "summarize_diff", "propose_fix"]
+        },
+        task: { type: "string" },
+        context: { type: "string" },
+        repoRoot: { type: "string" },
+        filePath: { type: "string" },
+        symbolName: { type: "string" },
+        diffText: { type: "string" },
+        pytestTarget: { type: "string" },
+        lintTarget: { type: "string" }
+      }
+    }
+  },
+  {
     name: "search_context",
     title: "Search Context",
     description: "Run bounded hybrid retrieval and return a context packet with provenance.",
@@ -41,6 +67,86 @@ export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
         tagFilters: { type: "array", items: { type: "string" } },
         includeSuperseded: { type: "boolean" },
         requireEvidence: { type: "boolean" }
+      }
+    }
+  },
+  {
+    name: "get_context_packet",
+    title: "Get Context Packet",
+    description: "Assemble a bounded context packet directly from ranked candidates and a retrieval budget.",
+    defaultActorRole: "retrieval",
+    inputSchema: {
+      type: "object",
+      required: ["intent", "budget", "candidates", "includeRawExcerpts"],
+      additionalProperties: true,
+      properties: {
+        actor: { type: "object" },
+        intent: {
+          type: "string",
+          enum: [
+            "fact_lookup",
+            "decision_lookup",
+            "implementation_guidance",
+            "architecture_recall",
+            "status_timeline",
+            "debugging"
+          ]
+        },
+        budget: {
+          type: "object",
+          required: ["maxTokens", "maxSources", "maxRawExcerpts", "maxSummarySentences"],
+          properties: {
+            maxTokens: { type: "number" },
+            maxSources: { type: "number" },
+            maxRawExcerpts: { type: "number" },
+            maxSummarySentences: { type: "number" }
+          }
+        },
+        candidates: {
+          type: "array",
+          items: {
+            type: "object",
+            required: [
+              "noteType",
+              "score",
+              "summary",
+              "scope",
+              "qualifiers",
+              "tags",
+              "stalenessClass",
+              "provenance"
+            ],
+            additionalProperties: true,
+            properties: {
+              noteType: { type: "string" },
+              score: { type: "number" },
+              summary: { type: "string" },
+              rawText: { type: "string" },
+              scope: { type: "string" },
+              qualifiers: { type: "array", items: { type: "string" } },
+              tags: { type: "array", items: { type: "string" } },
+              stalenessClass: {
+                type: "string",
+                enum: ["current", "stale", "superseded"]
+              },
+              provenance: {
+                type: "object",
+                required: ["noteId", "notePath", "headingPath"],
+                additionalProperties: true,
+                properties: {
+                  noteId: { type: "string" },
+                  chunkId: { type: "string" },
+                  notePath: { type: "string" },
+                  headingPath: {
+                    type: "array",
+                    items: { type: "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        includeRawExcerpts: { type: "boolean" }
       }
     }
   },

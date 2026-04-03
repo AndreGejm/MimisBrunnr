@@ -1,0 +1,193 @@
+import { spawn } from "node:child_process";
+import path from "node:path";
+import type {
+  ExecuteCodingTaskRequest,
+  ExecuteCodingTaskResponse
+} from "@multi-agent-brain/contracts";
+import type {
+  CodingControllerBridge,
+  ModelRoleBinding
+} from "@multi-agent-brain/orchestration";
+
+export interface PythonCodingControllerBridgeOptions {
+  pythonExecutable: string;
+  pythonPath: string;
+  moduleName: string;
+  timeoutMs: number;
+  ollamaBaseUrl: string;
+  codingBinding: ModelRoleBinding;
+}
+
+export class PythonCodingControllerBridge implements CodingControllerBridge {
+  constructor(private readonly options: PythonCodingControllerBridgeOptions) {}
+
+  async executeTask(
+    request: ExecuteCodingTaskRequest
+  ): Promise<ExecuteCodingTaskResponse> {
+    const command = buildPythonCommand(
+      this.options.pythonExecutable,
+      this.options.moduleName
+    );
+    const bridgePayload = {
+      taskType: request.taskType,
+      task: request.task,
+      context: request.context ?? "",
+      repoRoot: request.repoRoot,
+      filePath: request.filePath,
+      symbolName: request.symbolName,
+      diffText: request.diffText,
+      pytestTarget: request.pytestTarget,
+      lintTarget: request.lintTarget,
+      metadata: {
+        actorId: request.actor.actorId,
+        actorRole: request.actor.actorRole,
+        source: request.actor.source,
+        transport: request.actor.transport,
+        requestId: request.actor.requestId
+      }
+    };
+
+    return new Promise<ExecuteCodingTaskResponse>((resolve) => {
+      const child = spawn(command.executable, command.args, {
+        cwd: process.cwd(),
+        env: buildBridgeEnvironment(this.options),
+        stdio: ["pipe", "pipe", "pipe"]
+      });
+
+      let stdout = "";
+      let stderr = "";
+      let settled = false;
+
+      const timeout = setTimeout(() => {
+        child.kill();
+        if (!settled) {
+          settled = true;
+          resolve({
+            status: "escalate",
+            reason: `Vendored coding runtime timed out after ${this.options.timeoutMs} ms.`,
+            attempts: 0,
+            escalationMetadata: {
+              bridge: "python",
+              timeoutMs: this.options.timeoutMs
+            }
+          });
+        }
+      }, this.options.timeoutMs);
+
+      child.stdout.on("data", (chunk) => {
+        stdout += String(chunk);
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += String(chunk);
+      });
+
+      child.once("error", (error) => {
+        clearTimeout(timeout);
+        if (!settled) {
+          settled = true;
+          resolve({
+            status: "escalate",
+            reason: `Failed to start vendored coding runtime: ${error.message}`,
+            attempts: 0,
+            escalationMetadata: {
+              bridge: "python",
+              stderr: stderr || undefined
+            }
+          });
+        }
+      });
+
+      child.once("close", (exitCode) => {
+        clearTimeout(timeout);
+        if (settled) {
+          return;
+        }
+        settled = true;
+        resolve(normalizeBridgeResponse(stdout, stderr, exitCode));
+      });
+
+      child.stdin.write(JSON.stringify(bridgePayload));
+      child.stdin.end();
+    });
+  }
+}
+
+function buildPythonCommand(
+  pythonExecutable: string,
+  moduleName: string
+): { executable: string; args: string[] } {
+  if (path.basename(pythonExecutable).toLowerCase() === "py") {
+    return {
+      executable: pythonExecutable,
+      args: ["-3", "-m", moduleName]
+    };
+  }
+
+  return {
+    executable: pythonExecutable,
+    args: ["-m", moduleName]
+  };
+}
+
+function buildBridgeEnvironment(
+  options: PythonCodingControllerBridgeOptions
+): NodeJS.ProcessEnv {
+  const pythonPath = process.env.PYTHONPATH
+    ? `${options.pythonPath}${path.delimiter}${process.env.PYTHONPATH}`
+    : options.pythonPath;
+
+  return {
+    ...process.env,
+    PYTHONPATH: pythonPath,
+    OLLAMA_API_URL: toGenerateUrl(options.ollamaBaseUrl),
+    CODING_MODEL: options.codingBinding.modelId ?? "qwen3-coder:30B"
+  };
+}
+
+function toGenerateUrl(baseUrl: string): string {
+  const normalized = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+  return normalized.endsWith("/api/generate")
+    ? normalized
+    : `${normalized}/api/generate`;
+}
+
+function normalizeBridgeResponse(
+  stdout: string,
+  stderr: string,
+  exitCode: number | null
+): ExecuteCodingTaskResponse {
+  try {
+    const parsed = JSON.parse(stdout.trim()) as Partial<ExecuteCodingTaskResponse>;
+    if (
+      parsed &&
+      (parsed.status === "success" || parsed.status === "fail" || parsed.status === "escalate") &&
+      typeof parsed.reason === "string"
+    ) {
+      return {
+        status: parsed.status,
+        reason: parsed.reason,
+        attempts: typeof parsed.attempts === "number" ? parsed.attempts : 0,
+        toolUsed: parsed.toolUsed,
+        localResult: parsed.localResult,
+        validations: parsed.validations,
+        escalationMetadata: parsed.escalationMetadata
+      };
+    }
+  } catch {
+    // fall through to bridge failure response
+  }
+
+  return {
+    status: "escalate",
+    reason:
+      stderr.trim() ||
+      `Vendored coding runtime returned invalid JSON output (exit code ${exitCode ?? "unknown"}).`,
+    attempts: 0,
+    escalationMetadata: {
+      bridge: "python",
+      exitCode: exitCode ?? undefined,
+      stdout: stdout.trim() || undefined,
+      stderr: stderr.trim() || undefined
+    }
+  };
+}

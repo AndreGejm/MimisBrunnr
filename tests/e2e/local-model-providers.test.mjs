@@ -8,19 +8,19 @@ import test from "node:test";
 const infrastructure = await import("../../packages/infrastructure/dist/index.js");
 const application = await import("../../packages/application/dist/index.js");
 
-test("ollama embedding provider returns embeddings from the configured local model API", async () => {
+test("ollama embedding provider returns embeddings from the OpenAI-compatible local model API", async () => {
   const provider = new infrastructure.OllamaEmbeddingProvider({
-    baseUrl: "http://127.0.0.1:11434",
-    model: "embeddinggemma",
+    baseUrl: "http://127.0.0.1:12434",
+    model: "docker.io/ai/qwen3-embedding:0.6B-F16",
     fetchImplementation: async (url, init) => {
-      assert.match(String(url), /\/api\/embed$/);
+      assert.match(String(url), /\/engines\/v1\/embeddings$/);
       const payload = JSON.parse(String(init.body));
-      assert.equal(payload.model, "embeddinggemma");
+      assert.equal(payload.model, "docker.io/ai/qwen3-embedding:0.6B-F16");
       return new Response(
         JSON.stringify({
-          embeddings: [
-            [0.1, 0.2, 0.3],
-            [0.3, 0.2, 0.1]
+          data: [
+            { embedding: [0.1, 0.2, 0.3] },
+            { embedding: [0.3, 0.2, 0.1] }
           ]
         }),
         {
@@ -38,6 +38,104 @@ test("ollama embedding provider returns embeddings from the configured local mod
   ]);
 });
 
+test("ollama embedding provider falls back to the engine-qualified OpenAI endpoint when needed", async () => {
+  const seenPaths = [];
+  const provider = new infrastructure.OllamaEmbeddingProvider({
+    baseUrl: "http://127.0.0.1:12434",
+    model: "docker.io/ai/qwen3-embedding:0.6B-F16",
+    fetchImplementation: async (url, init) => {
+      const requestUrl = String(url);
+      seenPaths.push(requestUrl);
+
+      if (/\/engines\/v1\/embeddings$/.test(requestUrl)) {
+        return new Response(
+          JSON.stringify({ error: "not found" }),
+          {
+            status: 404,
+            headers: { "content-type": "application/json" }
+          }
+        );
+      }
+
+      assert.match(requestUrl, /\/engines\/llama\.cpp\/v1\/embeddings$/);
+      const payload = JSON.parse(String(init.body));
+      assert.equal(payload.model, "docker.io/ai/qwen3-embedding:0.6B-F16");
+      return new Response(
+        JSON.stringify({
+          data: [
+            { embedding: [0.4, 0.5, 0.6] }
+          ]
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        }
+      );
+    }
+  });
+
+  const embeddings = await provider.embedTexts(["alpha"]);
+  assert.deepEqual(embeddings, [
+    [0.4, 0.5, 0.6]
+  ]);
+  assert.deepEqual(seenPaths.map((value) => new URL(value).pathname), [
+    "/engines/v1/embeddings",
+    "/engines/llama.cpp/v1/embeddings"
+  ]);
+});
+
+test("ollama embedding provider falls back to the legacy embed path when OpenAI-compatible endpoints are unavailable", async () => {
+  const seenPaths = [];
+  const provider = new infrastructure.OllamaEmbeddingProvider({
+    baseUrl: "http://127.0.0.1:12434",
+    model: "docker.io/ai/qwen3-embedding:0.6B-F16",
+    fetchImplementation: async (url, init) => {
+      const requestUrl = String(url);
+      seenPaths.push(requestUrl);
+
+      if (
+        /\/engines\/v1\/embeddings$/.test(requestUrl) ||
+        /\/engines\/llama\.cpp\/v1\/embeddings$/.test(requestUrl) ||
+        /\/api\/embeddings$/.test(requestUrl)
+      ) {
+        return new Response(
+          JSON.stringify({ error: "not found" }),
+          {
+            status: 404,
+            headers: { "content-type": "application/json" }
+          }
+        );
+      }
+
+      assert.match(requestUrl, /\/api\/embed$/);
+      const payload = JSON.parse(String(init.body));
+      assert.equal(payload.model, "docker.io/ai/qwen3-embedding:0.6B-F16");
+      return new Response(
+        JSON.stringify({
+          embeddings: [
+            [0.7, 0.8, 0.9]
+          ]
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        }
+      );
+    }
+  });
+
+  const embeddings = await provider.embedTexts(["alpha"]);
+  assert.deepEqual(embeddings, [
+    [0.7, 0.8, 0.9]
+  ]);
+  assert.deepEqual(seenPaths.map((value) => new URL(value).pathname), [
+    "/engines/v1/embeddings",
+    "/engines/llama.cpp/v1/embeddings",
+    "/api/embeddings",
+    "/api/embed"
+  ]);
+});
+
 test("ollama local reasoning provider parses structured reasoning outputs", async () => {
   const responses = [
     { response: JSON.stringify({ intent: "debugging" }) },
@@ -46,7 +144,7 @@ test("ollama local reasoning provider parses structured reasoning outputs", asyn
   ];
 
   const provider = new infrastructure.OllamaLocalReasoningProvider({
-    baseUrl: "http://127.0.0.1:11434",
+    baseUrl: "http://127.0.0.1:12434",
     model: "qwen3",
     fetchImplementation: async () =>
       new Response(JSON.stringify(responses.shift()), {
@@ -67,6 +165,84 @@ test("ollama local reasoning provider parses structured reasoning outputs", asyn
 
   const uncertainty = await provider.summarizeUncertainty("promotion failure", ["limited evidence"]);
   assert.equal(uncertainty, "Local context is partial.");
+});
+
+test("ollama reranker provider returns candidates in model-selected order", async () => {
+  const provider = new infrastructure.OllamaRerankerProvider({
+    baseUrl: "http://127.0.0.1:12434",
+    model: "qwen3-reranker",
+    fetchImplementation: async (url, init) => {
+      assert.match(String(url), /\/api\/generate$/);
+      const payload = JSON.parse(String(init.body));
+      assert.equal(payload.model, "qwen3-reranker");
+      return new Response(
+        JSON.stringify({
+          response: JSON.stringify({ orderedIndices: [2, 0, 1] })
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        }
+      );
+    }
+  });
+
+  const reordered = await provider.rerankCandidates({
+    query: "Which note is the current decision?",
+    intent: "decision_lookup",
+    limit: 2,
+    candidates: [
+      {
+        noteType: "decision",
+        score: 0.5,
+        summary: "First candidate",
+        scope: "current state",
+        qualifiers: [],
+        tags: ["project/multi-agent-brain"],
+        stalenessClass: "current",
+        provenance: {
+          noteId: "note-1",
+          chunkId: "chunk-1",
+          notePath: "context_brain/decision/one.md",
+          headingPath: ["Context"]
+        }
+      },
+      {
+        noteType: "decision",
+        score: 0.4,
+        summary: "Second candidate",
+        scope: "current state",
+        qualifiers: [],
+        tags: ["project/multi-agent-brain"],
+        stalenessClass: "current",
+        provenance: {
+          noteId: "note-2",
+          chunkId: "chunk-2",
+          notePath: "context_brain/decision/two.md",
+          headingPath: ["Decision"]
+        }
+      },
+      {
+        noteType: "decision",
+        score: 0.3,
+        summary: "Third candidate",
+        scope: "current state",
+        qualifiers: [],
+        tags: ["project/multi-agent-brain"],
+        stalenessClass: "current",
+        provenance: {
+          noteId: "note-3",
+          chunkId: "chunk-3",
+          notePath: "context_brain/decision/three.md",
+          headingPath: ["Consequences"]
+        }
+      }
+    ]
+  });
+
+  assert.equal(reordered.length, 2);
+  assert.equal(reordered[0].provenance.noteId, "note-3");
+  assert.equal(reordered[1].provenance.noteId, "note-1");
 });
 
 test("staging draft service uses the drafting provider output before deterministic validation", async (t) => {

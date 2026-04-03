@@ -6,7 +6,9 @@ import process from "node:process";
 import type {
   ActorContext,
   ActorRole,
+  AssembleContextPacketRequest,
   DraftNoteRequest,
+  ExecuteCodingTaskRequest,
   GetDecisionSummaryRequest,
   PromoteNoteRequest,
   QueryHistoryRequest,
@@ -16,7 +18,9 @@ import type {
 import { buildServiceContainer, loadEnvironment } from "@multi-agent-brain/infrastructure";
 
 type CommandName =
+  | "execute-coding-task"
   | "search-context"
+  | "get-context-packet"
   | "fetch-decision-summary"
   | "draft-note"
   | "validate-note"
@@ -37,7 +41,9 @@ interface ParsedCli {
 }
 
 const COMMANDS: ReadonlyArray<CommandName> = [
+  "execute-coding-task",
   "search-context",
+  "get-context-packet",
   "fetch-decision-summary",
   "draft-note",
   "validate-note",
@@ -46,7 +52,9 @@ const COMMANDS: ReadonlyArray<CommandName> = [
 ];
 
 const DEFAULT_ACTOR_ROLE: Record<CommandName, ActorRole> = {
+  "execute-coding-task": "operator",
   "search-context": "retrieval",
+  "get-context-packet": "retrieval",
   "fetch-decision-summary": "retrieval",
   "draft-note": "writer",
   "validate-note": "orchestrator",
@@ -65,9 +73,12 @@ async function main(): Promise<void> {
 
   const container = buildServiceContainer(loadEnvironment());
   try {
-    const request = await loadCommandPayload(parsed.options);
-    const actor = buildActorContext(parsed.command, request.actor);
-    const normalizedRequest = { ...request, actor };
+  const request = await loadCommandPayload(parsed.options);
+  const actor = buildActorContext(parsed.command, request.actor);
+  const normalizedRequest = normalizeCommandRequest(parsed.command, {
+    ...request,
+    actor
+  });
 
     const result = await runCommand(parsed.command, normalizedRequest, container);
     writeJson(result, parsed.options.pretty);
@@ -97,27 +108,35 @@ async function runCommand(
 ): Promise<unknown> {
   switch (command) {
     case "search-context":
-      return container.services.retrieveContextService.retrieveContext(
+      return container.orchestrator.searchContext(
         request as unknown as RetrieveContextRequest
       );
+    case "get-context-packet":
+      return container.orchestrator.getContextPacket(
+        request as unknown as AssembleContextPacketRequest
+      );
+    case "execute-coding-task":
+      return container.orchestrator.executeCodingTask(
+        request as unknown as ExecuteCodingTaskRequest
+      );
     case "fetch-decision-summary":
-      return container.services.decisionSummaryService.getDecisionSummary(
+      return container.orchestrator.fetchDecisionSummary(
         request as unknown as GetDecisionSummaryRequest
       );
     case "draft-note":
-      return container.services.stagingDraftService.createDraft(
+      return container.orchestrator.draftNote(
         request as unknown as DraftNoteRequest
       );
     case "validate-note":
-      return container.services.noteValidationService.validate(
+      return container.orchestrator.validateNote(
         request as unknown as ValidateNoteRequest
       );
     case "promote-note":
-      return container.services.promotionOrchestratorService.promoteDraft(
+      return container.orchestrator.promoteNote(
         request as unknown as PromoteNoteRequest
       );
     case "query-history":
-      return container.services.auditHistoryService.queryHistory(
+      return container.orchestrator.queryHistory(
         request as unknown as QueryHistoryRequest
       );
   }
@@ -238,12 +257,35 @@ function buildActorContext(command: CommandName, actor: unknown): ActorContext {
   };
 }
 
+function normalizeCommandRequest(command: CommandName, request: JsonRecord): JsonRecord {
+  if (
+    command === "execute-coding-task" &&
+    typeof request.repoRoot !== "string"
+  ) {
+    return {
+      ...request,
+      repoRoot: process.cwd()
+    };
+  }
+
+  return request;
+}
+
 function shouldFailProcess(result: unknown, command: CommandName): boolean {
   if (!result || typeof result !== "object") {
     return true;
   }
 
   if ("ok" in result && result.ok === false) {
+    return true;
+  }
+
+  if (
+    command === "execute-coding-task" &&
+    "status" in result &&
+    typeof result.status === "string" &&
+    result.status !== "success"
+  ) {
     return true;
   }
 
@@ -269,7 +311,9 @@ function printUsage(): void {
 brain-cli <command> [--input <file> | --stdin | --json <payload>] [--pretty | --no-pretty]
 
 Commands:
+  execute-coding-task  Run a coding-domain task through the vendored safety-gated runtime
   search-context   Run bounded retrieval through retrieveContextService
+  get-context-packet  Assemble a bounded packet directly from ranked candidates
   fetch-decision-summary  Retrieve a bounded decision-focused packet
   draft-note       Create a staging draft through stagingDraftService
   validate-note    Run deterministic schema validation
@@ -279,6 +323,7 @@ Commands:
 Notes:
   - Input payloads are JSON objects shaped like the existing service contracts.
   - Actor context is optional in the payload; the CLI injects command-safe defaults.
+  - execute-coding-task defaults repoRoot to the current working directory when omitted.
   - Output is always JSON so later HTTP and MCP adapters can mirror the same response shape.
 `.trim();
 

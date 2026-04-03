@@ -12,6 +12,7 @@ Thin MCP stdio adapter over the existing application services.
 
 - `execute_coding_task`
 - `search_context`
+- `get_context_packet`
 - `fetch_decision_summary`
 - `draft_note`
 - `validate_note`
