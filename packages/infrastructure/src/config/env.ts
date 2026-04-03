@@ -5,6 +5,10 @@ export interface AppEnvironment {
   sqlitePath: string;
   qdrantUrl: string;
   qdrantCollection: string;
+  ollamaBaseUrl: string;
+  ollamaEmbeddingModel: string;
+  ollamaReasoningModel: string;
+  ollamaDraftingModel: string;
   embeddingProvider: "disabled" | "hash" | "ollama";
   reasoningProvider: "disabled" | "heuristic" | "ollama";
   draftingProvider: "disabled" | "ollama";
@@ -27,6 +31,10 @@ export function loadEnvironment(env: NodeJS.ProcessEnv = process.env): AppEnviro
     sqlitePath: env.MAB_SQLITE_PATH ?? "./state/multi-agent-brain.sqlite",
     qdrantUrl: env.MAB_QDRANT_URL ?? "http://127.0.0.1:6333",
     qdrantCollection: env.MAB_QDRANT_COLLECTION ?? "context_brain_chunks",
+    ollamaBaseUrl: env.MAB_OLLAMA_BASE_URL ?? "http://127.0.0.1:11434",
+    ollamaEmbeddingModel: env.MAB_OLLAMA_EMBEDDING_MODEL ?? "embeddinggemma",
+    ollamaReasoningModel: env.MAB_OLLAMA_REASONING_MODEL ?? "qwen3",
+    ollamaDraftingModel: env.MAB_OLLAMA_DRAFTING_MODEL ?? "qwen3",
     embeddingProvider: (env.MAB_EMBEDDING_PROVIDER as AppEnvironment["embeddingProvider"]) ?? "hash",
     reasoningProvider: (env.MAB_REASONING_PROVIDER as AppEnvironment["reasoningProvider"]) ?? "heuristic",
     draftingProvider: (env.MAB_DRAFTING_PROVIDER as AppEnvironment["draftingProvider"]) ?? "ollama",

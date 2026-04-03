@@ -21,6 +21,7 @@ import {
   AuditHistoryService as ConcreteAuditHistoryService,
   CanonicalNoteService as ConcreteCanonicalNoteService,
   ChunkingService as ConcreteChunkingService,
+  DecisionSummaryService as ConcreteDecisionSummaryService,
   NoteValidationService as ConcreteNoteValidationService,
   PromotionOrchestratorService as ConcretePromotionOrchestratorService,
   RetrieveContextService as ConcreteRetrieveContextService,
@@ -30,6 +31,9 @@ import { loadEnvironment, type AppEnvironment } from "../config/env.js";
 import { SqliteFtsIndex } from "../fts/sqlite-fts-index.js";
 import { HashEmbeddingProvider } from "../providers/hash-embedding-provider.js";
 import { HeuristicLocalReasoningProvider } from "../providers/heuristic-local-reasoning-provider.js";
+import { OllamaDraftingProvider } from "../providers/ollama-drafting-provider.js";
+import { OllamaEmbeddingProvider } from "../providers/ollama-embedding-provider.js";
+import { OllamaLocalReasoningProvider } from "../providers/ollama-local-reasoning-provider.js";
 import { SqliteAuditLog } from "../sqlite/sqlite-audit-log.js";
 import { SqliteMetadataControlStore } from "../sqlite/sqlite-metadata-control-store.js";
 import { QdrantVectorIndex } from "../vector/qdrant-vector-index.js";
@@ -57,6 +61,7 @@ export interface ServiceRegistry {
   chunkingService: ChunkingService;
   promotionOrchestratorService: PromotionOrchestratorService;
   retrieveContextService: RetrieveContextService;
+  decisionSummaryService: ConcreteDecisionSummaryService;
 }
 
 export interface ServiceContainer {
@@ -78,14 +83,35 @@ export function buildServiceContainer(
     baseUrl: env.qdrantUrl,
     collectionName: env.qdrantCollection
   });
+  const fallbackEmbeddingProvider = new HashEmbeddingProvider();
   const embeddingProvider =
     env.embeddingProvider === "disabled"
       ? undefined
-      : new HashEmbeddingProvider();
+      : env.embeddingProvider === "ollama"
+        ? new OllamaEmbeddingProvider({
+            baseUrl: env.ollamaBaseUrl,
+            model: env.ollamaEmbeddingModel,
+            fallback: fallbackEmbeddingProvider
+          })
+        : fallbackEmbeddingProvider;
+  const fallbackReasoningProvider = new HeuristicLocalReasoningProvider();
   const localReasoningProvider =
     env.reasoningProvider === "disabled"
       ? undefined
-      : new HeuristicLocalReasoningProvider();
+      : env.reasoningProvider === "ollama"
+        ? new OllamaLocalReasoningProvider({
+            baseUrl: env.ollamaBaseUrl,
+            model: env.ollamaReasoningModel,
+            fallback: fallbackReasoningProvider
+          })
+        : fallbackReasoningProvider;
+  const draftingProvider =
+    env.draftingProvider === "ollama"
+      ? new OllamaDraftingProvider({
+          baseUrl: env.ollamaBaseUrl,
+          model: env.ollamaDraftingModel
+        })
+      : undefined;
   const noteValidationService = new ConcreteNoteValidationService();
   const auditHistoryService = new ConcreteAuditHistoryService(auditLog);
   const canonicalNoteService = new ConcreteCanonicalNoteService(
@@ -95,7 +121,8 @@ export function buildServiceContainer(
   const stagingDraftService = new ConcreteStagingDraftService(
     stagingNoteRepository,
     metadataControlStore,
-    noteValidationService
+    noteValidationService,
+    draftingProvider
   );
   const chunkingService = new ConcreteChunkingService();
   const promotionOrchestratorService = new ConcretePromotionOrchestratorService(
@@ -114,8 +141,13 @@ export function buildServiceContainer(
     metadataControlStore,
     vectorIndex,
     embeddingProvider,
-    localReasoningProvider
+    localReasoningProvider,
+    auditHistoryService
   });
+  const decisionSummaryService = new ConcreteDecisionSummaryService(
+    retrieveContextService,
+    auditHistoryService
+  );
 
   return {
     env,
@@ -128,6 +160,8 @@ export function buildServiceContainer(
       vectorIndex,
       embeddingProvider,
       localReasoningProvider
+      ,
+      draftingProvider
     },
     services: {
       auditHistoryService,
@@ -136,7 +170,8 @@ export function buildServiceContainer(
       stagingDraftService,
       chunkingService,
       promotionOrchestratorService,
-      retrieveContextService
+      retrieveContextService,
+      decisionSummaryService
     },
     dispose() {
       closeIfSupported(lexicalIndex);

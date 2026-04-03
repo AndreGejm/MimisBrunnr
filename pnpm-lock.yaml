@@ -15,6 +15,33 @@ importers:
         specifier: ^5.8.3
         version: 5.9.3
 
+  apps/brain-api:
+    dependencies:
+      '@multi-agent-brain/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@multi-agent-brain/infrastructure':
+        specifier: workspace:*
+        version: link:../../packages/infrastructure
+
+  apps/brain-cli:
+    dependencies:
+      '@multi-agent-brain/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@multi-agent-brain/infrastructure':
+        specifier: workspace:*
+        version: link:../../packages/infrastructure
+
+  apps/brain-mcp:
+    dependencies:
+      '@multi-agent-brain/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@multi-agent-brain/infrastructure':
+        specifier: workspace:*
+        version: link:../../packages/infrastructure
+
   packages/application:
     dependencies:
       '@multi-agent-brain/contracts':

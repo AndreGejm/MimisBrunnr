@@ -1,0 +1,17 @@
+{
+  "name": "@multi-agent-brain/brain-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.js",
+  "types": "dist/main.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "serve": "node dist/main.js"
+  },
+  "dependencies": {
+    "@multi-agent-brain/contracts": "workspace:*",
+    "@multi-agent-brain/infrastructure": "workspace:*"
+  }
+}

@@ -241,6 +241,45 @@ test("retrieval packets stay within explicit source and raw-excerpt budgets", as
   assert.ok(result.data.packet.budgetUsage.sourceCount <= 2);
 });
 
+test("decision summary retrieval returns a decision packet and records audit history", async (t) => {
+  const { container } = await createHarness(t);
+
+  await createAndPromote(container, {
+    title: "Writer Agent Policy",
+    noteType: "decision",
+    bodyHints: [
+      "Writer agents only create staging drafts.",
+      "The orchestrator alone promotes canonical notes."
+    ],
+    scope: "writer-policy",
+    promoteAsCurrentState: true
+  });
+
+  const result = await container.services.decisionSummaryService.getDecisionSummary({
+    actor: actor("retrieval"),
+    topic: "writer agent policy",
+    budget: {
+      maxTokens: 320,
+      maxSources: 2,
+      maxRawExcerpts: 1,
+      maxSummarySentences: 2
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.data.decisionPacket.packetType, "decision");
+  assert.ok(result.data.decisionPacket.evidence.length >= 1);
+
+  const history = await container.services.auditHistoryService.queryHistory({
+    actor: actor("operator"),
+    limit: 20
+  });
+
+  assert.equal(history.ok, true);
+  assert.ok(history.data.entries.some((entry) => entry.actionType === "fetch_decision_summary"));
+  assert.ok(history.data.entries.some((entry) => entry.actionType === "retrieve_context"));
+});
+
 test("schema validation blocks missing required sections", async (t) => {
   const { container } = await createHarness(t);
   const noteId = randomUUID();

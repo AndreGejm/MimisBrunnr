@@ -6,7 +6,7 @@ import type { AuditEntry } from "@multi-agent-brain/domain";
 type AuditHistoryErrorCode = "forbidden" | "query_failed" | "write_failed";
 
 const HISTORY_READ_ROLES = new Set(["retrieval", "writer", "orchestrator", "operator", "system"]);
-const HISTORY_WRITE_ROLES = new Set(["writer", "orchestrator", "operator", "system"]);
+const HISTORY_WRITE_ROLES = new Set(["retrieval", "writer", "orchestrator", "operator", "system"]);
 
 export class AuditHistoryService {
   constructor(private readonly auditLog: AuditLog) {}

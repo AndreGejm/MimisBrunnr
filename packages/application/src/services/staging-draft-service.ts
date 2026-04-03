@@ -4,6 +4,7 @@ import type {
   StagingNoteRepository
 } from "../ports/staging-note-repository.js";
 import type { MetadataControlStore } from "../ports/metadata-control-store.js";
+import type { DraftingProvider } from "../ports/drafting-provider.js";
 import { NOTE_VALIDATION_POLICY, NoteValidationService } from "./note-validation-service.js";
 import type {
   DraftNoteRequest,
@@ -20,7 +21,8 @@ export class StagingDraftService {
   constructor(
     private readonly stagingNoteRepository: StagingNoteRepository,
     private readonly metadataControlStore: MetadataControlStore,
-    private readonly noteValidationService: NoteValidationService
+    private readonly noteValidationService: NoteValidationService,
+    private readonly draftingProvider?: DraftingProvider
   ) {}
 
   async createDraft(
@@ -54,7 +56,8 @@ export class StagingDraftService {
     const draftNoteId = request.frontmatterOverrides?.noteId ?? randomUUID();
     const frontmatter = buildDraftFrontmatter(request, draftNoteId);
     const draftPath = buildDraftPath(request.targetCorpus, request.title, draftNoteId);
-    const body = buildDraftBody(request.noteType, request.bodyHints ?? [], request.supportingSources.map((source) => source.notePath));
+    const generatedDraft = await this.generateDraftBody(request, draftNoteId);
+    const body = generatedDraft.body;
     const validation = this.noteValidationService.validate({
       actor: request.actor,
       targetCorpus: request.targetCorpus,
@@ -110,9 +113,12 @@ export class StagingDraftService {
           draftPath: persisted.draftPath,
           frontmatter: persisted.frontmatter,
           body: persisted.body,
-          warnings: validation.violations
+          warnings: [
+            ...generatedDraft.warnings,
+            ...validation.violations
             .filter((violation) => violation.severity === "warning")
             .map((violation) => violation.message)
+          ]
         }
       };
     } catch (error) {
@@ -147,6 +153,53 @@ export class StagingDraftService {
       ok: true,
       data: draft
     };
+  }
+
+  private async generateDraftBody(
+    request: DraftNoteRequest,
+    draftNoteId: NoteId
+  ): Promise<{ body: string; warnings: string[] }> {
+    const fallbackBody = buildDraftBody(
+      request.noteType,
+      request.bodyHints ?? [],
+      request.supportingSources.map((source) => source.notePath)
+    );
+
+    if (!this.draftingProvider) {
+      return {
+        body: fallbackBody,
+        warnings: []
+      };
+    }
+
+    try {
+      const generated = await this.draftingProvider.draftStructuredNote({
+        ...request,
+        frontmatterOverrides: {
+          ...request.frontmatterOverrides,
+          noteId: draftNoteId
+        }
+      });
+
+      if (!generated.body.trim()) {
+        return {
+          body: fallbackBody,
+          warnings: ["Local drafting provider returned an empty body; deterministic fallback was used."]
+        };
+      }
+
+      return {
+        body: generated.body,
+        warnings: generated.warnings ?? []
+      };
+    } catch (error) {
+      return {
+        body: fallbackBody,
+        warnings: [
+          `Local drafting provider failed; deterministic fallback was used. Reason: ${error instanceof Error ? error.message : String(error)}`
+        ]
+      };
+    }
   }
 }
 

@@ -1,0 +1,275 @@
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { randomUUID } from "node:crypto";
+import type {
+  ActorContext,
+  ActorRole,
+  DraftNoteRequest,
+  GetDecisionSummaryRequest,
+  PromoteNoteRequest,
+  QueryHistoryRequest,
+  RetrieveContextRequest,
+  ServiceError,
+  ValidateNoteRequest
+} from "@multi-agent-brain/contracts";
+import {
+  buildServiceContainer,
+  loadEnvironment,
+  runRuntimeHealthChecks,
+  type AppEnvironment
+} from "@multi-agent-brain/infrastructure";
+
+type RouteName =
+  | "search-context"
+  | "fetch-decision-summary"
+  | "draft-note"
+  | "validate-note"
+  | "promote-note"
+  | "query-history";
+
+type JsonRecord = Record<string, unknown>;
+
+const DEFAULT_ACTOR_ROLE: Record<RouteName, ActorRole> = {
+  "search-context": "retrieval",
+  "fetch-decision-summary": "retrieval",
+  "draft-note": "writer",
+  "validate-note": "orchestrator",
+  "promote-note": "orchestrator",
+  "query-history": "operator"
+};
+
+const ROUTES: Record<string, { method: "GET" | "POST"; name?: RouteName; healthMode?: "live" | "ready" }> = {
+  "/health/live": { method: "GET", healthMode: "live" },
+  "/health/ready": { method: "GET", healthMode: "ready" },
+  "/v1/context/search": { method: "POST", name: "search-context" },
+  "/v1/context/decision-summary": { method: "POST", name: "fetch-decision-summary" },
+  "/v1/notes/drafts": { method: "POST", name: "draft-note" },
+  "/v1/notes/validate": { method: "POST", name: "validate-note" },
+  "/v1/notes/promote": { method: "POST", name: "promote-note" },
+  "/v1/history/query": { method: "POST", name: "query-history" }
+};
+
+export interface BrainApiServer {
+  env: AppEnvironment;
+  server: Server;
+  listen(): Promise<void>;
+  close(): Promise<void>;
+}
+
+export function createBrainApiServer(env: AppEnvironment = loadEnvironment()): BrainApiServer {
+  const container = buildServiceContainer(env);
+
+  const server = createServer(async (request, response) => {
+    try {
+      await handleRequest(request, response, container);
+    } catch (error) {
+      sendJson(response, 500, {
+        ok: false,
+        error: {
+          code: "http_failed",
+          message: error instanceof Error ? error.message : String(error)
+        }
+      });
+    }
+  });
+
+  return {
+    env,
+    server,
+    async listen() {
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(env.apiPort, env.apiHost, () => {
+          server.off("error", reject);
+          resolve();
+        });
+      });
+    },
+    async close() {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+      container.dispose();
+    }
+  };
+}
+
+async function handleRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  container: ReturnType<typeof buildServiceContainer>
+): Promise<void> {
+  const url = new URL(request.url ?? "/", "http://127.0.0.1");
+  const route = ROUTES[url.pathname];
+
+  if (!route) {
+    sendJson(response, 404, {
+      ok: false,
+      error: {
+        code: "not_found",
+        message: `Route '${url.pathname}' was not found.`
+      }
+    });
+    return;
+  }
+
+  if (request.method !== route.method) {
+    sendJson(response, 405, {
+      ok: false,
+      error: {
+        code: "method_not_allowed",
+        message: `Route '${url.pathname}' only supports ${route.method}.`
+      }
+    });
+    return;
+  }
+
+  if (route.healthMode) {
+    const report = await runRuntimeHealthChecks(container.env, route.healthMode);
+    const statusCode =
+      route.healthMode === "live"
+        ? report.status === "fail" ? 503 : 200
+        : report.status === "pass" ? 200 : 503;
+    sendJson(response, statusCode, report);
+    return;
+  }
+
+  if (!route.name) {
+    sendJson(response, 500, {
+      ok: false,
+      error: {
+        code: "route_configuration_invalid",
+        message: `Route '${url.pathname}' is missing a service mapping.`
+      }
+    });
+    return;
+  }
+
+  const body = await readJsonBody(request);
+  const actor = buildActorContext(route.name, body.actor, request.headers);
+  const normalizedRequest = { ...body, actor };
+
+  switch (route.name) {
+    case "search-context": {
+      const result = await container.services.retrieveContextService.retrieveContext(
+        normalizedRequest as unknown as RetrieveContextRequest
+      );
+      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
+      return;
+    }
+    case "fetch-decision-summary": {
+      const result = await container.services.decisionSummaryService.getDecisionSummary(
+        normalizedRequest as unknown as GetDecisionSummaryRequest
+      );
+      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
+      return;
+    }
+    case "draft-note": {
+      const result = await container.services.stagingDraftService.createDraft(
+        normalizedRequest as unknown as DraftNoteRequest
+      );
+      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
+      return;
+    }
+    case "validate-note": {
+      const result = container.services.noteValidationService.validate(
+        normalizedRequest as unknown as ValidateNoteRequest
+      );
+      sendJson(response, result.valid ? 200 : 422, result);
+      return;
+    }
+    case "promote-note": {
+      const result = await container.services.promotionOrchestratorService.promoteDraft(
+        normalizedRequest as unknown as PromoteNoteRequest
+      );
+      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
+      return;
+    }
+    case "query-history": {
+      const result = await container.services.auditHistoryService.queryHistory(
+        normalizedRequest as unknown as QueryHistoryRequest
+      );
+      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
+      return;
+    }
+  }
+}
+
+async function readJsonBody(request: IncomingMessage): Promise<JsonRecord> {
+  const chunks: Buffer[] = [];
+  let totalLength = 0;
+
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalLength += buffer.length;
+    if (totalLength > 1024 * 1024) {
+      throw new Error("HTTP request body exceeded the 1 MB safety limit.");
+    }
+    chunks.push(buffer);
+  }
+
+  const raw = Buffer.concat(chunks).toString("utf8").trim();
+  if (!raw) {
+    throw new Error("HTTP request body must be a JSON object.");
+  }
+
+  const parsed = JSON.parse(raw) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("HTTP request body must be a JSON object.");
+  }
+
+  return parsed as JsonRecord;
+}
+
+function buildActorContext(
+  routeName: RouteName,
+  actor: unknown,
+  headers: IncomingMessage["headers"]
+): ActorContext {
+  const input = actor && typeof actor === "object" ? actor as Partial<ActorContext> : {};
+  const now = new Date().toISOString();
+
+  return {
+    actorId: firstHeader(headers["x-brain-actor-id"]) ?? input.actorId ?? `${routeName}-http`,
+    actorRole: (firstHeader(headers["x-brain-actor-role"]) as ActorRole | undefined) ?? input.actorRole ?? DEFAULT_ACTOR_ROLE[routeName],
+    transport: "http",
+    source: firstHeader(headers["x-brain-source"]) ?? input.source ?? "brain-api",
+    requestId: firstHeader(headers["x-request-id"]) ?? input.requestId ?? randomUUID(),
+    initiatedAt: input.initiatedAt ?? now,
+    toolName: firstHeader(headers["x-brain-tool-name"]) ?? input.toolName ?? routeName
+  };
+}
+
+function firstHeader(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) {
+    return value[0];
+  }
+  return value;
+}
+
+function mapServiceErrorToStatus(error: ServiceError): number {
+  switch (error.code) {
+    case "forbidden":
+      return 403;
+    case "not_found":
+      return 404;
+    case "revision_conflict":
+    case "duplicate_detected":
+      return 409;
+    case "validation_failed":
+      return 422;
+    default:
+      return 500;
+  }
+}
+
+function sendJson(response: ServerResponse, status: number, body: unknown): void {
+  response.statusCode = status;
+  response.setHeader("content-type", "application/json; charset=utf-8");
+  response.end(JSON.stringify(body, null, 2));
+}

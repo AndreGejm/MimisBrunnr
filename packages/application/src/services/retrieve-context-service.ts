@@ -3,6 +3,7 @@ import type { LexicalIndex } from "../ports/lexical-index.js";
 import type { LocalReasoningProvider } from "../ports/local-reasoning-provider.js";
 import type { MetadataControlStore } from "../ports/metadata-control-store.js";
 import type { VectorIndex } from "../ports/vector-index.js";
+import { AuditHistoryService } from "./audit-history-service.js";
 import {
   DEFAULT_CONTEXT_BUDGET,
   type AssembleContextPacketRequest,
@@ -31,6 +32,7 @@ export class RetrieveContextService {
     vectorIndex: VectorIndex;
     embeddingProvider?: EmbeddingProvider;
     localReasoningProvider?: LocalReasoningProvider;
+    auditHistoryService?: AuditHistoryService;
   }) {
     this.queryIntentService = new QueryIntentService(input.localReasoningProvider);
     this.lexicalRetrievalService = new LexicalRetrievalService(
@@ -44,7 +46,10 @@ export class RetrieveContextService {
     );
     this.rankingFusionService = new RankingFusionService();
     this.contextPacketService = new ContextPacketService(input.metadataControlStore);
+    this.auditHistoryService = input.auditHistoryService;
   }
+
+  private readonly auditHistoryService?: AuditHistoryService;
 
   async retrieveContext(
     request: RetrieveContextRequest
@@ -88,21 +93,61 @@ export class RetrieveContextService {
         } satisfies AssembleContextPacketRequest,
         answerability
       );
+      const packet = packetResponse.packet;
+
+      const auditResult = await this.auditHistoryService?.recordAction({
+        actionType: "retrieve_context",
+        actorId: request.actor.actorId,
+        actorRole: request.actor.actorRole,
+        source: request.actor.source,
+        toolName: request.actor.toolName,
+        occurredAt: new Date().toISOString(),
+        outcome: answerability === "local_answer" ? "accepted" : "partial",
+        affectedNoteIds: packet.evidence.map((source) => source.noteId),
+        affectedChunkIds: packet.evidence.flatMap((source) => (source.chunkId ? [source.chunkId] : [])),
+        detail: {
+          query: request.query,
+          intent,
+          answerability,
+          budget,
+          candidateCounts: {
+            lexical: lexicalCandidates.length,
+            vector: vectorCandidates.length,
+            reranked: rankedCandidates.length
+          }
+        }
+      });
 
       return {
         ok: true,
         data: {
-          packet: packetResponse.packet,
+          packet,
           candidateCounts: {
             lexical: lexicalCandidates.length,
             vector: vectorCandidates.length,
             reranked: rankedCandidates.length,
-            delivered: packetResponse.packet.evidence.length
+            delivered: packet.evidence.length
           },
-          provenance: packetResponse.packet.evidence
-        }
+          provenance: packet.evidence
+        },
+        warnings: auditResult && !auditResult.ok ? [auditResult.error.message] : undefined
       };
     } catch (error) {
+      await this.auditHistoryService?.recordAction({
+        actionType: "retrieve_context",
+        actorId: request.actor.actorId,
+        actorRole: request.actor.actorRole,
+        source: request.actor.source,
+        toolName: request.actor.toolName,
+        occurredAt: new Date().toISOString(),
+        outcome: "rejected",
+        affectedNoteIds: [],
+        affectedChunkIds: [],
+        detail: {
+          query: request.query,
+          reason: error instanceof Error ? error.message : String(error)
+        }
+      });
       return {
         ok: false,
         error: {

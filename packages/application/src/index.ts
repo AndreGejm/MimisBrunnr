@@ -12,6 +12,7 @@ export * from "./services/audit-history-service.js";
 export * from "./services/canonical-note-service.js";
 export * from "./services/chunking-service.js";
 export * from "./services/context-packet-service.js";
+export * from "./services/decision-summary-service.js";
 export * from "./services/lexical-retrieval-service.js";
 export * from "./services/note-validation-service.js";
 export * from "./services/promotion-orchestrator-service.js";

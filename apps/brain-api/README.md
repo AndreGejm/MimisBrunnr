@@ -1,3 +1,25 @@
 # brain-api
 
-Reserved for the thin local HTTP adapter in a later wave.
+Thin local HTTP adapter over the existing application services.
+
+## Routes
+
+- `POST /v1/context/search`
+- `POST /v1/context/decision-summary`
+- `POST /v1/notes/drafts`
+- `POST /v1/notes/validate`
+- `POST /v1/notes/promote`
+- `POST /v1/history/query`
+
+## Behavior
+
+- request and response bodies are JSON
+- request payloads mirror the existing service contracts
+- actor context can be supplied in the body or through `x-brain-*` headers
+- route handlers stay thin and delegate directly to the service layer
+
+## Run
+
+```bash
+pnpm api
+```
