@@ -1,0 +1,152 @@
+# Current Implementation
+
+This document describes what is actually implemented in the repository today.
+
+For anything incomplete, deferred, or intentionally outside the current stack, see [`backlog.md`](./backlog.md).
+
+## Architectural Summary
+
+The running architecture is a local-first monorepo with clear boundaries:
+
+- `packages/domain`
+  - note, chunk, retrieval, audit, and lifecycle primitives
+- `packages/contracts`
+  - typed request and response contracts used across transports
+- `packages/application`
+  - note validation, staging drafts, chunking, retrieval, packet assembly, promotion, and history services
+- `packages/infrastructure`
+  - filesystem repositories, SQLite adapters, FTS, Qdrant, health checks, provider implementations, and bootstrap
+- `packages/orchestration`
+  - root routing, domain controllers, model-role resolution, and provider registry
+- `apps/brain-cli`
+  - thin JSON CLI transport
+- `apps/brain-api`
+  - thin HTTP transport
+- `apps/brain-mcp`
+  - thin MCP stdio transport
+- `runtimes/local_experts`
+  - vendored Python coding runtime used by the coding domain
+
+## What Is Implemented
+
+### Core runtime
+
+- service-container bootstrap that assembles the full runtime
+- deterministic root orchestrator
+- separate brain and coding domains
+- transport-agnostic application core
+
+### Memory and storage
+
+- canonical Markdown note repository on disk
+- staging note repository on disk
+- structured frontmatter and note validation
+- controlled tag vocabulary enforcement
+- corpus separation for `context_brain` and `general_notes`
+- SQLite metadata authority
+- SQLite audit history
+
+### Retrieval
+
+- Markdown-aware chunking
+- chunk adjacency preservation
+- SQLite FTS lexical retrieval
+- Qdrant vector retrieval
+- ranking fusion with staleness-aware behavior
+- bounded context packet assembly
+- decision-summary generation
+
+### Governance
+
+- staging-only drafting flow
+- deterministic promotion gate
+- duplicate detection
+- supersede and current-state logic
+- promotion event recording
+- audit-history queries
+
+### Local model and coding stack
+
+- Docker Model Runner local integration
+- Qwen-based local model stack
+- model-role and provider abstraction layer
+- vendored Python coding runtime integrated through the orchestrator
+- bounded coding task execution with repo-root constraints
+
+## Active Local Stack
+
+- Node.js 22+
+- TypeScript
+- pnpm workspace
+- SQLite
+- Qdrant
+- Docker Model Runner
+- `qwen3:4B-F16`
+- `qwen3-coder`
+- `qwen3-reranker`
+- `docker.io/ai/qwen3-embedding:0.6B-F16`
+
+## Transport Surfaces
+
+### CLI
+
+- `execute-coding-task`
+- `search-context`
+- `fetch-decision-summary`
+- `draft-note`
+- `validate-note`
+- `promote-note`
+- `query-history`
+
+### HTTP
+
+- `GET /health/live`
+- `GET /health/ready`
+- `POST /v1/coding/execute`
+- `POST /v1/context/search`
+- `POST /v1/context/decision-summary`
+- `POST /v1/notes/drafts`
+- `POST /v1/notes/validate`
+- `POST /v1/notes/promote`
+- `POST /v1/history/query`
+
+### MCP tools
+
+- `execute_coding_task`
+- `search_context`
+- `fetch_decision_summary`
+- `draft_note`
+- `validate_note`
+- `promote_note`
+- `query_history`
+
+## Partial Or Incomplete Areas
+
+These areas have enabling structure but are not fully complete:
+
+- agent-scoped authentication
+- paid escalation provider wiring
+- direct transport exposure for context-packet assembly
+- Docker Compose alignment with the live Docker Model Runner stack
+- documentation freshness across all repo docs
+- formal Git-centric versioning contract
+- richer temporal-validity support beyond current-state and staleness handling
+
+See [`backlog.md`](./backlog.md) for the linked backlog items.
+
+## Not Yet Implemented Or Not In Stack
+
+The following items are not part of the current production stack:
+
+- entity graph
+- session briefing
+- import/export workflows
+- formal LLM consolidation program
+- reflection loops
+- cross-agent corroboration
+- webhooks and SSE
+- dashboard or graph UI
+- richer client-resolution and multi-collection UX
+- batch ingest and update flows
+
+These are tracked in [`backlog.md`](./backlog.md).

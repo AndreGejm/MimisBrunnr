@@ -2,10 +2,25 @@
 
 Statuses:
 
-- `done`: implemented in the current scaffold
+- `done`: implemented in the current repository
 - `ready`: can be implemented now
 - `blocked`: depends on earlier backlog items
 - `later`: intentionally deferred until the core is stable
+- `partial`: enabled in part, but not complete
+- `not-in-stack`: intentionally outside the current production stack
+
+## How To Read This File
+
+This is the general backlog for the repository.
+
+Use it to distinguish:
+
+- what is already implemented
+- what still needs completion
+- what is intentionally deferred
+- what is not part of the current stack even if the architecture can support it
+
+For the current implemented state, see [`current-implementation.md`](./current-implementation.md).
 
 ## Ready Now
 
@@ -62,3 +77,43 @@ Statuses:
 | LR-004 | Add health checks and Docker runtime assets | Requirement-Docker-Readiness | medium | done | LR-002, LR-003 | `docker/*`, `packages/infrastructure/src/health/*` |
 | LR-005 | Add regression suites for schema, chunking, packet size, promotion, and corpus separation | Requirement-Validation-And-Regression | medium | done | GV-005, RT-008 | `tests/e2e/*` |
 | LR-006 | Add MCP transport as a thin adapter over stable services | Requirement-MCP-Adapter-Readiness | medium | done | LR-002, LR-003, LR-005 | `apps/brain-mcp/src/**` |
+
+## Coding Runtime Integration
+
+| ID | Work Item | Source Requirement | Complexity | Status | Depends On | Repo Targets |
+| --- | --- | --- | --- | --- | --- | --- |
+| CR-001 | Vendor the local-experts coding runtime into this repository | Requirement-Service-Oriented-Architecture | medium | done | LR-006 | `runtimes/local_experts/**` |
+| CR-002 | Replace the placeholder coding bridge with an adapter over the vendored runtime | Requirement-Transport-Isolation | high | done | CR-001 | `packages/orchestration/src/coding/*`, `packages/infrastructure/src/coding/*`, `runtimes/local_experts/**` |
+| CR-003 | Add first-class coding-runtime regression coverage through the root orchestrator | Requirement-Validation-And-Regression | medium | done | CR-002 | `tests/e2e/*`, `runtimes/local_experts/tests/*` |
+
+## Partial Or Remaining Core Work
+
+| ID | Work Item | Why It Is Still Here | Status |
+| --- | --- | --- | --- |
+| BK-001 | Implement agent-scoped authentication and authorization | Actor metadata exists, but there is no full auth layer or policy enforcement | partial |
+| BK-002 | Wire a real paid escalation provider behind the reserved `paid_escalation` role | The model role exists, but the provider path is not fully implemented | partial |
+| BK-003 | Expose context-packet assembly directly through transports | Packet assembly exists internally, but is not surfaced as a first-class adapter operation | partial |
+| BK-004 | Align `docker/compose.local.yml` with the live Docker Model Runner plus Qwen stack | Compose is still conservative and fallback-oriented | partial |
+| BK-005 | Refresh repository documentation to match the current implementation | Several READMEs still describe older or partial states | partial |
+| BK-006 | Define a formal Git-centric versioning contract | Promotion and audit exist, but Git is not yet part of the application contract | later |
+| BK-007 | Expand temporal-validity handling beyond current-state and staleness heuristics | Some temporal behavior exists, but not the full feature | partial |
+
+## Optional Enhancement Backlog
+
+| ID | Work Item | Why It Is Backlog | Status |
+| --- | --- | --- | --- |
+| BK-101 | Add entity graph storage and traversal | Compatible with the architecture, but not required for the current core stack | ready |
+| BK-102 | Add session briefing artifacts | Useful on top of retrieval and audit history, but not foundational | later |
+| BK-103 | Add import and export workflows | Useful for scale and interoperability, but not necessary for the local-first baseline | later |
+| BK-104 | Formalize LLM consolidation as a stack-governance feature | The stack is operationally consolidated, but not documented or enforced as policy | later |
+| BK-105 | Add reflection loops | Useful after the deterministic core is fully stable | later |
+| BK-106 | Add cross-agent corroboration | Advanced coordination feature, not part of the current write path | later |
+| BK-107 | Add client-resolution and richer multi-collection UX | Scaling and usability enhancement rather than a missing primitive | later |
+| BK-108 | Add batch ingest and update workflows | Operational scaling feature, not part of the current baseline | later |
+
+## Not In The Current Stack
+
+| ID | Work Item | Why It Is Not In Stack | Status |
+| --- | --- | --- | --- |
+| BK-201 | Add webhooks and SSE | The system is currently request-response oriented | not-in-stack |
+| BK-202 | Add dashboard and graph UI | The stack is service-first and currently has no UI layer | not-in-stack |
