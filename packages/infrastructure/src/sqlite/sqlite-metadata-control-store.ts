@@ -40,6 +40,8 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
         revision,
         updated_at,
         current_state,
+        valid_from,
+        valid_until,
         summary,
         scope,
         content_hash,
@@ -53,6 +55,8 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
         :revision,
         :updatedAt,
         :currentState,
+        :validFrom,
+        :validUntil,
         :summary,
         :scope,
         :contentHash,
@@ -66,6 +70,8 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
         revision = excluded.revision,
         updated_at = excluded.updated_at,
         current_state = excluded.current_state,
+        valid_from = excluded.valid_from,
+        valid_until = excluded.valid_until,
         summary = excluded.summary,
         scope = excluded.scope,
         content_hash = excluded.content_hash,
@@ -89,6 +95,8 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
         revision: note.revision,
         updatedAt: note.updatedAt,
         currentState: note.currentState ? 1 : 0,
+        validFrom: note.validFrom ?? null,
+        validUntil: note.validUntil ?? null,
         summary: note.summary ?? null,
         scope: note.scope ?? null,
         contentHash: note.contentHash ?? null,
@@ -323,6 +331,8 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
         revision,
         updated_at,
         current_state,
+        valid_from,
+        valid_until,
         summary,
         scope,
         content_hash,
@@ -438,6 +448,8 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
         revision TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         current_state INTEGER NOT NULL,
+        valid_from TEXT,
+        valid_until TEXT,
         summary TEXT,
         scope TEXT,
         content_hash TEXT,
@@ -530,6 +542,9 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
       CREATE INDEX IF NOT EXISTS idx_promotion_events_promoted_at ON promotion_events(promoted_at);
       CREATE INDEX IF NOT EXISTS idx_audit_entries_occurred_at ON audit_entries(occurred_at);
     `);
+
+    ensureColumnExists(this.database, "notes", "valid_from", "TEXT");
+    ensureColumnExists(this.database, "notes", "valid_until", "TEXT");
   }
 
   private mapNoteRow(row: SqliteNoteRow): MetadataNoteRecord {
@@ -549,6 +564,8 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
       revision: row.revision,
       updatedAt: row.updated_at,
       currentState: row.current_state === 1,
+      validFrom: row.valid_from ?? undefined,
+      validUntil: row.valid_until ?? undefined,
       summary: row.summary ?? undefined,
       scope: row.scope ?? undefined,
       contentHash: row.content_hash ?? undefined,
@@ -597,6 +614,8 @@ interface SqliteNoteRow {
   revision: string;
   updated_at: string;
   current_state: number;
+  valid_from: string | null;
+  valid_until: string | null;
   summary: string | null;
   scope: string | null;
   content_hash: string | null;
@@ -633,4 +652,20 @@ interface SqliteChunkRow {
   staleness_class: ChunkRecord["stalenessClass"];
   token_estimate: number;
   updated_at: string;
+}
+
+function ensureColumnExists(
+  database: DatabaseSync,
+  tableName: string,
+  columnName: string,
+  definition: string
+): void {
+  const columns = database.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{
+    name: string;
+  }>;
+  if (columns.some((column) => column.name === columnName)) {
+    return;
+  }
+
+  database.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
 }

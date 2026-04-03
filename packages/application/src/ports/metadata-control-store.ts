@@ -18,6 +18,8 @@ export interface MetadataNoteRecord {
   revision: string;
   updatedAt: string;
   currentState: boolean;
+  validFrom?: string;
+  validUntil?: string;
   summary?: string;
   scope?: string;
   tags?: ControlledTag[];

@@ -167,6 +167,52 @@ test("ollama local reasoning provider parses structured reasoning outputs", asyn
   assert.equal(uncertainty, "Local context is partial.");
 });
 
+test("openai-compatible paid reasoning provider parses structured reasoning outputs", async () => {
+  const seenAuthorizations = [];
+  const responses = [
+    { choices: [{ message: { content: JSON.stringify({ intent: "architecture_recall" }) } }] },
+    { choices: [{ message: { content: JSON.stringify({ answerability: "needs_escalation" }) } }] },
+    { choices: [{ message: { content: JSON.stringify({ summary: "Escalate to the paid provider for authoritative synthesis." }) } }] }
+  ];
+
+  const provider = new infrastructure.OpenAiCompatibleLocalReasoningProvider({
+    baseUrl: "https://paid.example.test/v1",
+    apiKey: "top-secret",
+    model: "gpt-paid-test",
+    fetchImplementation: async (url, init) => {
+      assert.match(String(url), /\/v1\/chat\/completions$/);
+      seenAuthorizations.push(init.headers.authorization);
+      const payload = JSON.parse(String(init.body));
+      assert.equal(payload.model, "gpt-paid-test");
+      return new Response(JSON.stringify(responses.shift()), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+  });
+
+  const intent = await provider.classifyIntent("How is the retrieval architecture composed?");
+  assert.equal(intent, "architecture_recall");
+
+  const answerability = await provider.assessAnswerability({
+    query: "How is the retrieval architecture composed?",
+    intent,
+    candidates: []
+  });
+  assert.equal(answerability, "needs_escalation");
+
+  const uncertainty = await provider.summarizeUncertainty("retrieval architecture", ["no local evidence"]);
+  assert.equal(
+    uncertainty,
+    "Escalate to the paid provider for authoritative synthesis."
+  );
+  assert.deepEqual(seenAuthorizations, [
+    "Bearer top-secret",
+    "Bearer top-secret",
+    "Bearer top-secret"
+  ]);
+});
+
 test("ollama reranker provider returns candidates in model-selected order", async () => {
   const provider = new infrastructure.OllamaRerankerProvider({
     baseUrl: "http://127.0.0.1:12434",

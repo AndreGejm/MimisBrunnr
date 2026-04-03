@@ -28,9 +28,9 @@ For rollout readiness and the MCP adoption path, see [`go-live-gates.md`](./go-l
 
 If the goal is to make Multi Agent Brain the default MCP tool across all workspaces, the next backlog order is:
 
-1. `BK-001` agent-scoped authentication and authorization
-2. `BK-007` temporal-validity refinement
-3. `BK-002` paid escalation provider wiring
+1. close the remaining shared-rollout hardening under `BK-001`
+2. close the remaining freshness-governance work under `BK-007`
+3. formalize the Git-centric release and versioning contract under `BK-006`
 
 The pilot and all-workspace go-live gates for this sequence are documented in [`go-live-gates.md`](./go-live-gates.md).
 
@@ -102,13 +102,13 @@ The pilot and all-workspace go-live gates for this sequence are documented in [`
 
 | ID | Work Item | Why It Is Still Here | Status |
 | --- | --- | --- | --- |
-| BK-001 | Implement agent-scoped authentication and authorization | Actor metadata exists, but there is no full auth layer or policy enforcement | partial |
-| BK-002 | Wire a real paid escalation provider behind the reserved `paid_escalation` role | The model role exists, but the provider path is not fully implemented | partial |
+| BK-001 | Implement agent-scoped authentication and authorization | Static actor-registry auth is now enforced across CLI, HTTP, MCP, and orchestrator command execution, but shared-rollout hardening still lacks centralized identity, rotation, and broader operator controls | partial |
+| BK-002 | Wire a real paid escalation provider behind the reserved `paid_escalation` role | A real OpenAI-compatible paid reasoning provider is now bound to the reserved role and can enrich escalation output when configured | done |
 | BK-003 | Expose context-packet assembly directly through transports | First-class packet assembly is now exposed through CLI, HTTP, and MCP | done |
 | BK-004 | Align `docker/compose.local.yml` with the live Docker Model Runner plus Qwen stack | Compose now mirrors the local Docker Model Runner plus Qwen role bindings | done |
 | BK-005 | Refresh repository documentation to match the current implementation | Core repo READMEs and planning docs are synchronized with the current implementation | done |
 | BK-006 | Define a formal Git-centric versioning contract | Promotion and audit exist, but Git is not yet part of the application contract | later |
-| BK-007 | Expand temporal-validity handling beyond current-state and staleness heuristics | Some temporal behavior exists, but not the full feature | partial |
+| BK-007 | Expand temporal-validity handling beyond current-state and staleness heuristics | Validity windows (`validFrom` / `validUntil`), validation, metadata persistence, and stale ranking are implemented, but broader freshness policy, expiry reporting, and lifecycle governance are still incomplete | partial |
 
 ## Optional Enhancement Backlog
 

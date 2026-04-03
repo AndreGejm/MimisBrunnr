@@ -14,6 +14,7 @@ import type {
   ValidateNoteRequest
 } from "@multi-agent-brain/contracts";
 import {
+  ActorAuthorizationError,
   buildServiceContainer,
   loadEnvironment,
   runRuntimeHealthChecks,
@@ -73,12 +74,9 @@ export function createBrainApiServer(
     try {
       await handleRequest(request, response, container);
     } catch (error) {
-      sendJson(response, 500, {
+      sendJson(response, mapUnhandledErrorToStatus(error), {
         ok: false,
-        error: {
-          code: "http_failed",
-          message: error instanceof Error ? error.message : String(error)
-        }
+        error: mapUnhandledError(error)
       });
     }
   });
@@ -266,7 +264,8 @@ function buildActorContext(
     source: firstHeader(headers["x-brain-source"]) ?? input.source ?? "brain-api",
     requestId: firstHeader(headers["x-request-id"]) ?? input.requestId ?? randomUUID(),
     initiatedAt: input.initiatedAt ?? now,
-    toolName: firstHeader(headers["x-brain-tool-name"]) ?? input.toolName ?? routeName
+    toolName: firstHeader(headers["x-brain-tool-name"]) ?? input.toolName ?? routeName,
+    authToken: firstHeader(headers["x-brain-actor-token"]) ?? input.authToken
   };
 }
 
@@ -279,6 +278,8 @@ function firstHeader(value: string | string[] | undefined): string | undefined {
 
 function mapServiceErrorToStatus(error: ServiceError): number {
   switch (error.code) {
+    case "unauthorized":
+      return 401;
     case "forbidden":
       return 403;
     case "not_found":
@@ -291,6 +292,25 @@ function mapServiceErrorToStatus(error: ServiceError): number {
     default:
       return 500;
   }
+}
+
+function mapUnhandledErrorToStatus(error: unknown): number {
+  if (error instanceof ActorAuthorizationError) {
+    return error.code === "unauthorized" ? 401 : 403;
+  }
+
+  return 500;
+}
+
+function mapUnhandledError(error: unknown): ServiceError {
+  if (error instanceof ActorAuthorizationError) {
+    return error.toServiceError();
+  }
+
+  return {
+    code: "http_failed",
+    message: error instanceof Error ? error.message : String(error)
+  };
 }
 
 function mapCodingStatusToStatusCode(

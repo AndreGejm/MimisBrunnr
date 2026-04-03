@@ -16,6 +16,8 @@ export interface NoteFrontmatter {
   scope: string;
   corpusId: CorpusId;
   currentState: boolean;
+  validFrom?: string;
+  validUntil?: string;
   supersedes?: NoteId[];
   supersededBy?: NoteId;
 }

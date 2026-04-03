@@ -35,6 +35,7 @@ export class RetrieveContextService {
     vectorIndex: VectorIndex;
     embeddingProvider?: EmbeddingProvider;
     localReasoningProvider?: LocalReasoningProvider;
+    paidEscalationProvider?: LocalReasoningProvider;
     rerankerProvider?: RerankerProvider;
     auditHistoryService?: AuditHistoryService;
   }) {
@@ -52,9 +53,11 @@ export class RetrieveContextService {
     this.contextPacketService = new ContextPacketService(input.metadataControlStore);
     this.auditHistoryService = input.auditHistoryService;
     this.rerankerProvider = input.rerankerProvider;
+    this.paidEscalationProvider = input.paidEscalationProvider;
   }
 
   private readonly auditHistoryService?: AuditHistoryService;
+  private readonly paidEscalationProvider?: LocalReasoningProvider;
   private readonly rerankerProvider?: RerankerProvider;
 
   async retrieveContext(
@@ -106,6 +109,21 @@ export class RetrieveContextService {
         answerability
       );
       const packet = packetResponse.packet;
+      const warnings: string[] = [];
+      const escalationSummary = await this.summarizeEscalationUncertainty(
+        request.query,
+        answerability,
+        rankedCandidates
+      );
+      if (escalationSummary) {
+        packet.uncertainties = mergeUncertainties(
+          packet.uncertainties,
+          escalationSummary
+        );
+        warnings.push("Paid escalation provider enriched the uncertainty summary.");
+      } else if (answerability === "needs_escalation" && !this.paidEscalationProvider) {
+        warnings.push("No paid escalation provider is configured for follow-up reasoning.");
+      }
 
       const auditResult = await this.auditHistoryService?.recordAction({
         actionType: "retrieve_context",
@@ -117,13 +135,17 @@ export class RetrieveContextService {
         outcome: answerability === "local_answer" ? "accepted" : "partial",
         affectedNoteIds: packet.evidence.map((source) => source.noteId),
         affectedChunkIds: packet.evidence.flatMap((source) => (source.chunkId ? [source.chunkId] : [])),
-        detail: {
-          query: request.query,
-          intent,
-          answerability,
-          budget,
-          candidateCounts: {
-            lexical: lexicalCandidates.length,
+          detail: {
+            query: request.query,
+            intent,
+            answerability,
+            paidEscalation: {
+              configured: Boolean(this.paidEscalationProvider),
+              used: Boolean(escalationSummary)
+            },
+            budget,
+            candidateCounts: {
+              lexical: lexicalCandidates.length,
             vector: vectorCandidates.length,
             reranked: rankedCandidates.length
           }
@@ -142,7 +164,10 @@ export class RetrieveContextService {
           },
           provenance: packet.evidence
         },
-        warnings: auditResult && !auditResult.ok ? [auditResult.error.message] : undefined
+        warnings: collectWarnings(
+          warnings,
+          auditResult && !auditResult.ok ? [auditResult.error.message] : []
+        )
       };
     } catch (error) {
       await this.auditHistoryService?.recordAction({
@@ -194,4 +219,33 @@ export class RetrieveContextService {
       return candidates.slice(0, limit);
     }
   }
+
+  private async summarizeEscalationUncertainty(
+    query: string,
+    answerability: RetrieveContextResponse["packet"]["answerability"],
+    candidates: ContextCandidate[]
+  ): Promise<string | undefined> {
+    if (!this.paidEscalationProvider || answerability === "local_answer") {
+      return undefined;
+    }
+
+    const evidence = candidates.slice(0, 4).map((candidate) =>
+      `${candidate.noteType} (${candidate.stalenessClass}, ${candidate.score.toFixed(2)}): ${candidate.summary}`
+    );
+
+    try {
+      return await this.paidEscalationProvider.summarizeUncertainty(query, evidence);
+    } catch {
+      return undefined;
+    }
+  }
+}
+
+function collectWarnings(...groups: Array<ReadonlyArray<string>>): string[] | undefined {
+  const warnings = [...new Set(groups.flat().map((warning) => warning.trim()).filter(Boolean))];
+  return warnings.length > 0 ? warnings : undefined;
+}
+
+function mergeUncertainties(existing: string[], summary: string): string[] {
+  return [...new Set([...existing, summary].map((value) => value.trim()).filter(Boolean))];
 }

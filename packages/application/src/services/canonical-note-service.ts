@@ -134,6 +134,8 @@ export class CanonicalNoteService {
       revision: persisted.revision,
       updatedAt: persisted.frontmatter.updated,
       currentState: persisted.frontmatter.currentState,
+      validFrom: persisted.frontmatter.validFrom,
+      validUntil: persisted.frontmatter.validUntil,
       summary: persisted.frontmatter.summary,
       scope: persisted.frontmatter.scope,
       tags: persisted.frontmatter.tags,
@@ -189,6 +191,8 @@ function buildCurrentStateSnapshot(note: CanonicalNoteRecord): CanonicalNoteReco
       scope: note.frontmatter.scope,
       corpusId: note.corpusId,
       currentState: false,
+      validFrom: note.frontmatter.validFrom,
+      validUntil: note.frontmatter.validUntil,
       supersedes: undefined,
       supersededBy: undefined
     },

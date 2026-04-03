@@ -1,6 +1,8 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
+  ActorAuthorizationMode,
+  ActorRegistryEntry,
   ModelRole,
   ModelRoleBinding
 } from "@multi-agent-brain/orchestration";
@@ -34,6 +36,7 @@ export interface AppEnvironment {
   providerEndpoints: {
     dockerOllamaBaseUrl: string;
     paidEscalationBaseUrl?: string;
+    paidEscalationApiKey?: string;
   };
   roleBindings: Record<ModelRole, ModelRoleBinding>;
   codingRuntimePythonExecutable: string;
@@ -43,6 +46,11 @@ export interface AppEnvironment {
   apiHost: string;
   apiPort: number;
   logLevel: "debug" | "info" | "warn" | "error";
+  auth: {
+    mode: ActorAuthorizationMode;
+    allowAnonymousInternal: boolean;
+    actorRegistry: ActorRegistryEntry[];
+  };
 }
 
 function parsePort(value: string | undefined, fallback: number): number {
@@ -57,6 +65,23 @@ function parseOptionalNumber(value: string | undefined): number | undefined {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseBoolean(value: string | undefined, fallback: boolean): boolean {
+  if (!value) {
+    return fallback;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+
+  return fallback;
 }
 
 function coalesceString(...values: Array<string | undefined>): string | undefined {
@@ -84,7 +109,8 @@ export function loadEnvironment(env: NodeJS.ProcessEnv = process.env): AppEnviro
         env.MAB_PROVIDER_DOCKER_OLLAMA_BASE_URL ??
         env.MAB_OLLAMA_BASE_URL ??
         "http://127.0.0.1:12434",
-      paidEscalationBaseUrl: env.MAB_PROVIDER_PAID_ESCALATION_BASE_URL
+      paidEscalationBaseUrl: env.MAB_PROVIDER_PAID_ESCALATION_BASE_URL,
+      paidEscalationApiKey: env.MAB_PROVIDER_PAID_ESCALATION_API_KEY
     },
     roleBindings: buildRoleBindingsFromProcessEnvironment(env),
     codingRuntimePythonExecutable:
@@ -98,7 +124,19 @@ export function loadEnvironment(env: NodeJS.ProcessEnv = process.env): AppEnviro
     codingRuntimeTimeoutMs: parsePort(env.MAB_CODING_RUNTIME_TIMEOUT_MS, 120000),
     apiHost: env.MAB_API_HOST ?? "127.0.0.1",
     apiPort: parsePort(env.MAB_API_PORT, 8080),
-    logLevel: (env.MAB_LOG_LEVEL as AppEnvironment["logLevel"]) ?? "info"
+    logLevel: (env.MAB_LOG_LEVEL as AppEnvironment["logLevel"]) ?? "info",
+    auth: {
+      mode:
+        (env.MAB_AUTH_MODE as ActorAuthorizationMode | undefined) ??
+        (env.MAB_NODE_ENV === "production" ? "enforced" : "permissive"),
+      allowAnonymousInternal: parseBoolean(
+        env.MAB_AUTH_ALLOW_ANONYMOUS_INTERNAL,
+        true
+      ),
+      actorRegistry: parseActorRegistry(
+        env.MAB_AUTH_ACTOR_REGISTRY_JSON
+      )
+    }
   });
 }
 
@@ -108,7 +146,8 @@ export function normalizeEnvironment(input: Partial<AppEnvironment>): AppEnviron
       input.providerEndpoints?.dockerOllamaBaseUrl ??
       input.ollamaBaseUrl ??
       "http://127.0.0.1:12434",
-    paidEscalationBaseUrl: input.providerEndpoints?.paidEscalationBaseUrl
+    paidEscalationBaseUrl: input.providerEndpoints?.paidEscalationBaseUrl,
+    paidEscalationApiKey: input.providerEndpoints?.paidEscalationApiKey
   };
 
   const baseEnvironment: AppEnvironment = {
@@ -143,7 +182,14 @@ export function normalizeEnvironment(input: Partial<AppEnvironment>): AppEnviron
     codingRuntimeTimeoutMs: input.codingRuntimeTimeoutMs ?? 120_000,
     apiHost: input.apiHost ?? "127.0.0.1",
     apiPort: input.apiPort ?? 8080,
-    logLevel: input.logLevel ?? "info"
+    logLevel: input.logLevel ?? "info",
+    auth: {
+      mode:
+        input.auth?.mode ??
+        (input.nodeEnv === "production" ? "enforced" : "permissive"),
+      allowAnonymousInternal: input.auth?.allowAnonymousInternal ?? true,
+      actorRegistry: input.auth?.actorRegistry ?? []
+    }
   };
 
   baseEnvironment.roleBindings = mergeRoleBindings(
@@ -163,6 +209,19 @@ export function normalizeEnvironment(input: Partial<AppEnvironment>): AppEnviron
   return baseEnvironment;
 }
 
+function parseActorRegistry(value: string | undefined): ActorRegistryEntry[] {
+  if (!value?.trim()) {
+    return [];
+  }
+
+  const parsed = JSON.parse(value) as unknown;
+  if (!Array.isArray(parsed)) {
+    throw new Error("MAB_AUTH_ACTOR_REGISTRY_JSON must be a JSON array.");
+  }
+
+  return parsed.map((entry, index) => normalizeActorRegistryEntry(entry, index));
+}
+
 function buildRoleBindingsFromProcessEnvironment(
   env: NodeJS.ProcessEnv
 ): Record<ModelRole, ModelRoleBinding> {
@@ -180,7 +239,8 @@ function buildRoleBindingsFromProcessEnvironment(
         env.MAB_PROVIDER_DOCKER_OLLAMA_BASE_URL ??
         env.MAB_OLLAMA_BASE_URL ??
         "http://127.0.0.1:12434",
-      paidEscalationBaseUrl: env.MAB_PROVIDER_PAID_ESCALATION_BASE_URL
+      paidEscalationBaseUrl: env.MAB_PROVIDER_PAID_ESCALATION_BASE_URL,
+      paidEscalationApiKey: env.MAB_PROVIDER_PAID_ESCALATION_API_KEY
     }
   }).roleBindings;
 
@@ -307,6 +367,40 @@ function buildRoleBindingsFromLegacy(
       temperature: 0,
       timeoutMs: 60_000
     }
+  };
+}
+
+function normalizeActorRegistryEntry(
+  value: unknown,
+  index: number
+): ActorRegistryEntry {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(
+      `MAB_AUTH_ACTOR_REGISTRY_JSON entry at index ${index} must be an object.`
+    );
+  }
+
+  const entry = value as Partial<ActorRegistryEntry>;
+  if (!entry.actorId?.trim()) {
+    throw new Error(
+      `MAB_AUTH_ACTOR_REGISTRY_JSON entry at index ${index} is missing actorId.`
+    );
+  }
+
+  if (!entry.actorRole) {
+    throw new Error(
+      `MAB_AUTH_ACTOR_REGISTRY_JSON entry '${entry.actorId}' is missing actorRole.`
+    );
+  }
+
+  return {
+    actorId: entry.actorId.trim(),
+    actorRole: entry.actorRole,
+    authToken: entry.authToken?.trim() || undefined,
+    source: entry.source?.trim() || undefined,
+    enabled: entry.enabled ?? true,
+    allowedTransports: entry.allowedTransports,
+    allowedCommands: entry.allowedCommands
   };
 }
 

@@ -15,7 +15,11 @@ import type {
   RetrieveContextRequest,
   ValidateNoteRequest
 } from "@multi-agent-brain/contracts";
-import { buildServiceContainer, loadEnvironment } from "@multi-agent-brain/infrastructure";
+import {
+  ActorAuthorizationError,
+  buildServiceContainer,
+  loadEnvironment
+} from "@multi-agent-brain/infrastructure";
 
 type CommandName =
   | "execute-coding-task"
@@ -86,13 +90,7 @@ async function main(): Promise<void> {
     process.exitCode = shouldFailProcess(result, parsed.command) ? 1 : 0;
   } catch (error) {
     writeJson(
-      {
-        ok: false,
-        error: {
-          code: "cli_failed",
-          message: error instanceof Error ? error.message : String(error)
-        }
-      },
+      mapCliError(error),
       parsed.options.pretty
     );
     process.exitCode = 1;
@@ -253,7 +251,8 @@ function buildActorContext(command: CommandName, actor: unknown): ActorContext {
     source: input.source ?? "brain-cli",
     requestId: input.requestId ?? randomUUID(),
     initiatedAt: input.initiatedAt ?? now,
-    toolName: input.toolName ?? command
+    toolName: input.toolName ?? command,
+    authToken: input.authToken
   };
 }
 
@@ -304,6 +303,23 @@ function shouldFailProcess(result: unknown, command: CommandName): boolean {
 function writeJson(value: unknown, pretty: boolean): void {
   const rendered = JSON.stringify(value, null, pretty ? 2 : 0);
   process.stdout.write(`${rendered}\n`);
+}
+
+function mapCliError(error: unknown): { ok: false; error: { code: string; message: string; details?: Record<string, unknown> } } {
+  if (error instanceof ActorAuthorizationError) {
+    return {
+      ok: false,
+      error: error.toServiceError()
+    };
+  }
+
+  return {
+    ok: false,
+    error: {
+      code: "cli_failed",
+      message: error instanceof Error ? error.message : String(error)
+    }
+  };
 }
 
 function printUsage(): void {

@@ -42,7 +42,13 @@ export class ChunkingService {
         qualifiers: extractQualifiers(seed.rawText),
         scope: note.frontmatter.scope,
         tags: note.frontmatter.tags,
-        stalenessClass: classifyStaleness(note.frontmatter.updated, note.frontmatter.status, note.frontmatter.currentState),
+        stalenessClass: classifyStaleness(
+          note.frontmatter.updated,
+          note.frontmatter.status,
+          note.frontmatter.currentState,
+          note.frontmatter.validFrom,
+          note.frontmatter.validUntil
+        ),
         tokenEstimate: estimateTokens(seed.rawText),
         updatedAt: note.frontmatter.updated
       } satisfies ChunkRecord;
@@ -217,13 +223,24 @@ function extractEntities(rawText: string): string[] {
 function classifyStaleness(
   updated: string,
   status: string,
-  currentState: boolean
+  currentState: boolean,
+  validFrom?: string,
+  validUntil?: string
 ): ChunkStalenessClass {
   if (status === "superseded") {
     return "superseded";
   }
 
   if (!currentState) {
+    return "stale";
+  }
+
+  const today = currentDateIso();
+  if (validFrom && today < validFrom) {
+    return "stale";
+  }
+
+  if (validUntil && today > validUntil) {
     return "stale";
   }
 
@@ -237,4 +254,8 @@ function classifyStaleness(
 
 function estimateTokens(rawText: string): number {
   return Math.max(1, Math.ceil(rawText.length / 4));
+}
+
+function currentDateIso(): string {
+  return new Date().toISOString().slice(0, 10);
 }

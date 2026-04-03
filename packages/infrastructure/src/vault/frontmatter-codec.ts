@@ -13,6 +13,8 @@ const FRONTMATTER_KEYS: (keyof NoteFrontmatter)[] = [
   "scope",
   "corpusId",
   "currentState",
+  "validFrom",
+  "validUntil",
   "supersedes",
   "supersededBy"
 ];
@@ -110,6 +112,8 @@ function parseFrontmatterBlock(block: string): NoteFrontmatter {
     scope: asString(values.get("scope")),
     corpusId: asString(values.get("corpusId")) as NoteFrontmatter["corpusId"],
     currentState: asBoolean(values.get("currentState")),
+    validFrom: optionalString(values.get("validFrom")),
+    validUntil: optionalString(values.get("validUntil")),
     supersedes: optionalStringArray(values.get("supersedes")),
     supersededBy: optionalString(values.get("supersededBy"))
   };

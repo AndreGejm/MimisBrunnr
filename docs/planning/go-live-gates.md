@@ -21,40 +21,38 @@ The repository is not yet at "enable by default for every workspace" readiness.
 
 The main remaining gaps are:
 
-- missing auth and authorization boundaries
-- temporal-validity handling is still limited
-- paid escalation is still not wired behind the reserved role
+- auth boundaries are registry-backed but not yet fully hardened for shared rollout
+- temporal-validity handling is still limited beyond the new validity-window baseline
+- release/versioning discipline is still implicit rather than part of the application contract
 
 ## Next Backlog Order
 
 These are the rollout-critical backlog items in the recommended implementation order.
 
-### 1. `BK-001` Agent-scoped authentication and authorization
+### 1. Remaining `BK-001` shared-rollout hardening
 
-Implement actor-aware authn and authz around transports and promotion-sensitive operations.
+Extend the current static actor-registry auth model into a more operationally complete shared-rollout boundary.
 
 Why first:
 
-- this is the most important control-plane safety gap before broad rollout
-- a shared MCP tool across all workspaces should not rely only on good behavior and local convention
+- broad multi-workspace rollout still needs stronger operator controls than a static token registry alone
 
-### 2. `BK-007` Temporal validity refinement
+### 2. Remaining `BK-007` temporal validity refinement
 
-Expand temporal-validity handling beyond current-state snapshots and staleness heuristics.
+Expand temporal-validity handling beyond current-state snapshots, validity windows, and staleness heuristics.
 
 Why second:
 
 - all-workspace use will increase note volume
-- stale guidance becomes a larger risk once more workspaces rely on the same brain
+- freshness governance becomes more important as more workspaces depend on shared memory
 
-### 3. `BK-002` Paid escalation provider
+### 3. `BK-006` Git-centric versioning contract
 
-Wire a real paid escalation provider behind the reserved role.
+Define the release and rollback contract that operators can rely on when the MCP tool is enabled across all workspaces.
 
 Why third:
 
-- useful for resilience and quality escalation
-- not a blocker for local-first pilot rollout if the system stays local-only
+- broader rollout benefits from explicit release boundaries, rollback points, and operator guidance
 
 ## Pilot Gate
 
@@ -94,13 +92,12 @@ The system should become the default MCP tool across all workspaces only after t
 
 ### Required backlog closure
 
-These items should be closed before all-workspace default rollout:
+These items should be closed or materially complete before all-workspace default rollout:
 
-- `BK-001`
+- the remaining shared-rollout hardening under `BK-001`
+- the remaining freshness-governance work under `BK-007`
 
-`BK-007` should be at least materially progressed, even if not fully complete.
-
-`BK-002` is recommended, but not strictly required for local-only rollout.
+`BK-006` is recommended so rollout and rollback are operationally explicit.
 
 ### Operational checklist
 
@@ -139,5 +136,5 @@ If those conditions are not met, rollout should remain opt-in rather than defaul
 Use this decision rule for rollout:
 
 - if pilot is clean and required backlog items are closed, go live broadly
-- if pilot is clean but auth is still incomplete, keep rollout opt-in
+- if pilot is clean but shared-rollout auth hardening is still incomplete, keep rollout opt-in
 - if pilot reveals write-boundary or retrieval-boundary regressions, stop expansion and treat rollout as blocked

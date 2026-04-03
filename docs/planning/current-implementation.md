@@ -41,6 +41,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - canonical Markdown note repository on disk
 - staging note repository on disk
 - structured frontmatter and note validation
+- temporal-validity windows via `validFrom` and `validUntil`
 - controlled tag vocabulary enforcement
 - corpus separation for `context_brain` and `general_notes`
 - SQLite metadata authority
@@ -53,6 +54,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - SQLite FTS lexical retrieval
 - Qdrant vector retrieval
 - ranking fusion with staleness-aware behavior
+- temporal-validity-aware stale classification for expired or not-yet-valid notes
 - bounded context packet assembly
 - direct context-packet transport exposure
 - decision-summary generation
@@ -63,6 +65,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - deterministic promotion gate
 - duplicate detection
 - supersede and current-state logic
+- actor-registry-backed authn/authz across CLI, HTTP, MCP, and orchestrator command dispatch
 - promotion event recording
 - audit-history queries
 
@@ -71,6 +74,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - Docker Model Runner local integration
 - Qwen-based local model stack
 - model-role and provider abstraction layer
+- OpenAI-compatible paid escalation reasoning path when configured
 - vendored Python coding runtime integrated through the orchestrator
 - bounded coding task execution with repo-root constraints
 
@@ -129,10 +133,9 @@ The running architecture is a local-first monorepo with clear boundaries:
 
 These areas have enabling structure but are not fully complete:
 
-- agent-scoped authentication
-- paid escalation provider wiring
+- shared-rollout auth hardening beyond the static actor registry and token model
 - formal Git-centric versioning contract
-- richer temporal-validity support beyond current-state and staleness handling
+- richer temporal-validity governance beyond validity windows and stale ranking
 
 See [`backlog.md`](./backlog.md) for the linked backlog items.
 

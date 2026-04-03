@@ -29,6 +29,7 @@ import {
   StagingDraftService as ConcreteStagingDraftService
 } from "@multi-agent-brain/application";
 import {
+  ActorAuthorizationPolicy,
   BrainDomainController,
   BrainMemoryController,
   BrainRetrievalController,
@@ -45,6 +46,7 @@ import { SqliteFtsIndex } from "../fts/sqlite-fts-index.js";
 import { HashEmbeddingProvider } from "../providers/hash-embedding-provider.js";
 import { HeuristicLocalReasoningProvider } from "../providers/heuristic-local-reasoning-provider.js";
 import { HeuristicRerankerProvider } from "../providers/heuristic-reranker-provider.js";
+import { OpenAiCompatibleLocalReasoningProvider } from "../providers/openai-compatible-local-reasoning-provider.js";
 import { OllamaDraftingProvider } from "../providers/ollama-drafting-provider.js";
 import { OllamaEmbeddingProvider } from "../providers/ollama-embedding-provider.js";
 import { OllamaLocalReasoningProvider } from "../providers/ollama-local-reasoning-provider.js";
@@ -116,6 +118,10 @@ export function buildServiceContainer(
       brain_primary: createReasoningProvider(
         modelRoleRegistry.resolve("brain_primary"),
         env
+      ),
+      paid_escalation: createReasoningProvider(
+        modelRoleRegistry.resolve("paid_escalation"),
+        env
       )
     },
     draftingProviders: {
@@ -136,6 +142,8 @@ export function buildServiceContainer(
     roleProviderRegistry.getEmbeddingProvider("embedding_primary");
   const localReasoningProvider =
     roleProviderRegistry.getReasoningProvider("brain_primary");
+  const paidEscalationProvider =
+    roleProviderRegistry.getReasoningProvider("paid_escalation");
   const draftingProvider =
     roleProviderRegistry.getDraftingProvider("brain_primary");
   const rerankerProvider =
@@ -171,6 +179,7 @@ export function buildServiceContainer(
     vectorIndex,
     embeddingProvider,
     localReasoningProvider,
+    paidEscalationProvider,
     rerankerProvider,
     auditHistoryService
   });
@@ -208,6 +217,11 @@ export function buildServiceContainer(
     new TaskFamilyRouter(),
     brainDomainController,
     codingDomainController,
+    new ActorAuthorizationPolicy({
+      mode: env.auth.mode,
+      allowAnonymousInternal: env.auth.allowAnonymousInternal,
+      registry: env.auth.actorRegistry
+    }),
     modelRoleRegistry,
     roleProviderRegistry
   );
@@ -281,6 +295,21 @@ function createReasoningProvider(
       return new OllamaLocalReasoningProvider({
         baseUrl: env.providerEndpoints.dockerOllamaBaseUrl,
         model: binding.modelId ?? env.ollamaReasoningModel,
+        temperature: binding.temperature,
+        seed: binding.seed,
+        maxOutputTokens: binding.maxOutputTokens,
+        timeoutMs: binding.timeoutMs,
+        fallback: new HeuristicLocalReasoningProvider()
+      });
+    case "paid_openai_compat":
+      if (!env.providerEndpoints.paidEscalationBaseUrl || !binding.modelId) {
+        return undefined;
+      }
+
+      return new OpenAiCompatibleLocalReasoningProvider({
+        baseUrl: env.providerEndpoints.paidEscalationBaseUrl,
+        apiKey: env.providerEndpoints.paidEscalationApiKey,
+        model: binding.modelId,
         temperature: binding.temperature,
         seed: binding.seed,
         maxOutputTokens: binding.maxOutputTokens,

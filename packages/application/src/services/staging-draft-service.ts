@@ -100,6 +100,8 @@ export class StagingDraftService {
         revision: persisted.revision,
         updatedAt: persisted.frontmatter.updated,
         currentState: persisted.frontmatter.currentState,
+        validFrom: persisted.frontmatter.validFrom,
+        validUntil: persisted.frontmatter.validUntil,
         summary: persisted.frontmatter.summary,
         scope: persisted.frontmatter.scope,
         tags: persisted.frontmatter.tags
@@ -232,6 +234,8 @@ function buildDraftFrontmatter(request: DraftNoteRequest, noteId: NoteId): NoteF
     currentState: request.targetCorpus === "general_notes"
       ? false
       : (request.frontmatterOverrides?.currentState ?? false),
+    validFrom: request.frontmatterOverrides?.validFrom,
+    validUntil: request.frontmatterOverrides?.validUntil,
     supersedes: request.frontmatterOverrides?.supersedes,
     supersededBy: request.targetCorpus === "general_notes"
       ? undefined

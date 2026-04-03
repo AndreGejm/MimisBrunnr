@@ -281,6 +281,151 @@ test("brain-api exposes direct context-packet assembly over HTTP", async (t) => 
   assert.equal(payload.packet.evidence[0].noteId, "note-http-1");
 });
 
+test("brain-api enforces registered actor tokens when auth mode is enforced", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-auth-"));
+  const { createBrainApiServer } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+    ).href
+  );
+
+  const api = createBrainApiServer({
+    nodeEnv: "test",
+    vaultRoot: path.join(root, "vault", "canonical"),
+    stagingRoot: path.join(root, "vault", "staging"),
+    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    qdrantUrl: "http://127.0.0.1:6333",
+    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    embeddingProvider: "hash",
+    reasoningProvider: "heuristic",
+    draftingProvider: "disabled",
+    rerankerProvider: "local",
+    apiHost: "127.0.0.1",
+    apiPort: 18184,
+    logLevel: "error",
+    auth: {
+      mode: "enforced",
+      allowAnonymousInternal: true,
+      actorRegistry: [
+        {
+          actorId: "validate-note-http",
+          actorRole: "orchestrator",
+          authToken: "http-secret",
+          source: "brain-api",
+          allowedTransports: ["http"],
+          allowedCommands: ["validate_note"]
+        }
+      ]
+    }
+  });
+
+  t.after(async () => {
+    await api.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await api.listen();
+
+  const unauthenticated = await fetch("http://127.0.0.1:18184/v1/notes/validate", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      targetCorpus: "context_brain",
+      notePath: "context_brain/decision/auth-note.md",
+      validationMode: "promotion",
+      frontmatter: {
+        noteId: randomUUID(),
+        title: "Auth Note",
+        project: "multi-agent-brain",
+        type: "decision",
+        status: "promoted",
+        updated: currentDateIso(),
+        summary: "Should require a token.",
+        tags: ["project/multi-agent-brain", "domain/orchestration", "status/promoted"],
+        scope: "auth",
+        corpusId: "context_brain",
+        currentState: false
+      },
+      body: [
+        "## Context",
+        "",
+        "Auth context.",
+        "",
+        "## Decision",
+        "",
+        "Auth decision.",
+        "",
+        "## Rationale",
+        "",
+        "Auth rationale.",
+        "",
+        "## Consequences",
+        "",
+        "Auth consequences."
+      ].join("\n")
+    })
+  });
+
+  assert.equal(unauthenticated.status, 401);
+  const unauthenticatedPayload = await unauthenticated.json();
+  assert.equal(unauthenticatedPayload.error.code, "unauthorized");
+
+  const authenticated = await fetch("http://127.0.0.1:18184/v1/notes/validate", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-brain-actor-token": "http-secret"
+    },
+    body: JSON.stringify({
+      actor: {
+        actorId: "validate-note-http",
+        actorRole: "orchestrator",
+        source: "brain-api",
+        authToken: "http-secret"
+      },
+      targetCorpus: "context_brain",
+      notePath: "context_brain/decision/auth-note.md",
+      validationMode: "promotion",
+      frontmatter: {
+        noteId: randomUUID(),
+        title: "Auth Note",
+        project: "multi-agent-brain",
+        type: "decision",
+        status: "promoted",
+        updated: currentDateIso(),
+        summary: "Should validate once authenticated.",
+        tags: ["project/multi-agent-brain", "domain/orchestration", "status/promoted"],
+        scope: "auth",
+        corpusId: "context_brain",
+        currentState: false
+      },
+      body: [
+        "## Context",
+        "",
+        "Auth context.",
+        "",
+        "## Decision",
+        "",
+        "Auth decision.",
+        "",
+        "## Rationale",
+        "",
+        "Auth rationale.",
+        "",
+        "## Consequences",
+        "",
+        "Auth consequences."
+      ].join("\n")
+    })
+  });
+
+  assert.equal(authenticated.status, 200);
+  const authenticatedPayload = await authenticated.json();
+  assert.equal(authenticatedPayload.valid, true);
+});
+
 test("brain-api exposes coding execution through the root orchestrator", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-coding-"));
   const repoRoot = path.join(root, "repo");

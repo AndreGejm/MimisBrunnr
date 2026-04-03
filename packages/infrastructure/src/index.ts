@@ -1,11 +1,13 @@
 export * from "./bootstrap/build-service-container.js";
 export * from "./coding/python-coding-controller-bridge.js";
 export * from "./config/env.js";
+export { ActorAuthorizationError } from "@multi-agent-brain/orchestration";
 export * from "./fts/sqlite-fts-index.js";
 export * from "./health/runtime-health.js";
 export * from "./providers/hash-embedding-provider.js";
 export * from "./providers/heuristic-local-reasoning-provider.js";
 export * from "./providers/heuristic-reranker-provider.js";
+export * from "./providers/openai-compatible-local-reasoning-provider.js";
 export * from "./providers/ollama-client.js";
 export * from "./providers/ollama-drafting-provider.js";
 export * from "./providers/ollama-embedding-provider.js";

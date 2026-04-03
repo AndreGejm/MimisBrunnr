@@ -100,6 +100,7 @@ export class NoteValidationService {
       request.notePath,
       violations
     );
+    this.validateTemporalValidity(normalizedFrontmatter, violations);
     this.validateSupersedeState(normalizedFrontmatter, violations);
     this.validateLifecycleMode(
       normalizedFrontmatter.status,
@@ -129,6 +130,16 @@ export class NoteValidationService {
     const summary = normalizeRequiredString(input.summary, "frontmatter.summary", violations);
     const scope = normalizeRequiredString(input.scope, "frontmatter.scope", violations);
     const updated = normalizeDateString(input.updated, "frontmatter.updated", violations);
+    const validFrom = normalizeOptionalDateString(
+      input.validFrom,
+      "frontmatter.validFrom",
+      violations
+    );
+    const validUntil = normalizeOptionalDateString(
+      input.validUntil,
+      "frontmatter.validUntil",
+      violations
+    );
     const tags = this.normalizeTags(input.tags, violations);
 
     if (input.corpusId !== targetCorpus) {
@@ -145,6 +156,8 @@ export class NoteValidationService {
       updated,
       corpusId: input.corpusId,
       tags,
+      validFrom,
+      validUntil,
       supersedes: dedupeStrings(input.supersedes ?? []),
       supersededBy: normalizeOptionalString(input.supersededBy)
     };
@@ -244,6 +257,25 @@ export class NoteValidationService {
     }
   }
 
+  private validateTemporalValidity(
+    frontmatter: NoteFrontmatter,
+    violations: NoteValidationIssue[]
+  ): void {
+    if (
+      frontmatter.validFrom &&
+      frontmatter.validUntil &&
+      frontmatter.validFrom > frontmatter.validUntil
+    ) {
+      violations.push(
+        issue(
+          "frontmatter.validUntil",
+          "validUntil must be on or after validFrom.",
+          "error"
+        )
+      );
+    }
+  }
+
   private validateLifecycleMode(
     lifecycleState: NoteFrontmatter["status"],
     validationMode: ValidateNoteRequest["validationMode"],
@@ -290,6 +322,23 @@ function normalizeDateString(
   const normalized = normalizeRequiredString(value, field, violations);
   if (!normalized) {
     return "";
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    violations.push(issue(field, "Dates must use YYYY-MM-DD format.", "error"));
+  }
+
+  return normalized;
+}
+
+function normalizeOptionalDateString(
+  value: string | undefined,
+  field: string,
+  violations: NoteValidationIssue[]
+): string | undefined {
+  const normalized = normalizeOptionalString(value);
+  if (!normalized) {
+    return undefined;
   }
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {

@@ -4,6 +4,7 @@ import { mkdir as fsMkdir, mkdtemp, rm, writeFile as fsWriteFile } from "node:fs
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import * as application from "../../packages/application/dist/index.js";
 import { buildServiceContainer } from "../../packages/infrastructure/dist/index.js";
 
 test("retrieval actors cannot create staging drafts", async (t) => {
@@ -185,6 +186,36 @@ test("chunking preserves code fences, heading hierarchy, and adjacency", async (
   assert.equal(chunks[1].prevChunkId, chunks[0].chunkId);
 });
 
+test("chunking marks expired current-state notes as stale when a validity window has elapsed", async (t) => {
+  const { container } = await createHarness(t);
+  const noteId = randomUUID();
+  const chunks = container.services.chunkingService.chunkCanonicalNote({
+    noteId,
+    corpusId: "context_brain",
+    notePath: "context_brain/reference/expired-validity-window.md",
+    revision: "",
+    frontmatter: {
+      noteId,
+      title: "Expired Validity Window",
+      project: "multi-agent-brain",
+      type: "reference",
+      status: "promoted",
+      updated: "2026-04-01",
+      summary: "Expired guidance should not remain current forever.",
+      tags: ["project/multi-agent-brain", "status/promoted", "risk/stale-context"],
+      scope: "temporal-validity",
+      corpusId: "context_brain",
+      currentState: true,
+      validFrom: "2026-03-01",
+      validUntil: "2026-03-31"
+    },
+    body: "## Summary\n\nExpired.\n\n## Details\n\nExpired.\n\n## Sources\n\n- none"
+  });
+
+  assert.ok(chunks.length >= 1);
+  assert.equal(chunks[0].stalenessClass, "stale");
+});
+
 test("retrieval packets stay within explicit source and raw-excerpt budgets", async (t) => {
   const { container } = await createHarness(t);
 
@@ -239,6 +270,59 @@ test("retrieval packets stay within explicit source and raw-excerpt budgets", as
   assert.ok(result.data.packet.evidence.length <= 2);
   assert.ok((result.data.packet.rawExcerpts?.length ?? 0) <= 1);
   assert.ok(result.data.packet.budgetUsage.sourceCount <= 2);
+});
+
+test("retrieve context uses the paid escalation provider to enrich uncertainty when local evidence is insufficient", async (t) => {
+  const { container } = await createHarness(t);
+
+  const retrieveContextService = new application.RetrieveContextService({
+    lexicalIndex: container.ports.lexicalIndex,
+    metadataControlStore: container.ports.metadataControlStore,
+    vectorIndex: container.ports.vectorIndex,
+    embeddingProvider: container.ports.embeddingProvider,
+    localReasoningProvider: container.ports.localReasoningProvider,
+    paidEscalationProvider: {
+      providerId: "paid-escalation-test",
+      async classifyIntent() {
+        return "fact_lookup";
+      },
+      async assessAnswerability() {
+        return "needs_escalation";
+      },
+      async summarizeUncertainty(query, evidence) {
+        assert.equal(query, "unmapped query with no local evidence");
+        assert.deepEqual(evidence, []);
+        return "Escalate to the paid provider for authoritative synthesis.";
+      }
+    },
+    rerankerProvider: container.ports.rerankerProvider
+  });
+
+  const result = await retrieveContextService.retrieveContext({
+    actor: actor("retrieval"),
+    query: "unmapped query with no local evidence",
+    budget: {
+      maxTokens: 320,
+      maxSources: 2,
+      maxRawExcerpts: 1,
+      maxSummarySentences: 2
+    },
+    corpusIds: ["context_brain"],
+    requireEvidence: false
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.data.packet.answerability, "needs_escalation");
+  assert.ok(
+    result.data.packet.uncertainties.includes(
+      "Escalate to the paid provider for authoritative synthesis."
+    )
+  );
+  assert.ok(
+    result.warnings?.includes(
+      "Paid escalation provider enriched the uncertainty summary."
+    )
+  );
 });
 
 test("root orchestrator exposes direct context-packet assembly for ranked candidates", async (t) => {
@@ -359,6 +443,41 @@ test("schema validation blocks missing required sections", async (t) => {
 
   assert.equal(validation.valid, false);
   assert.ok(validation.violations.some((issue) => issue.field === "body.sections"));
+});
+
+test("schema validation blocks inverted temporal validity windows", async (t) => {
+  const { container } = await createHarness(t);
+  const noteId = randomUUID();
+
+  const validation = container.services.noteValidationService.validate({
+    actor: actor("orchestrator"),
+    targetCorpus: "context_brain",
+    notePath: "context_brain/reference/invalid-validity-window.md",
+    validationMode: "promotion",
+    frontmatter: {
+      noteId,
+      title: "Invalid Validity Window",
+      project: "multi-agent-brain",
+      type: "reference",
+      status: "promoted",
+      updated: currentDateIso(),
+      summary: "Temporal windows must be ordered.",
+      tags: ["project/multi-agent-brain", "domain/metadata", "status/promoted"],
+      scope: "validation",
+      corpusId: "context_brain",
+      currentState: false,
+      validFrom: "2026-04-10",
+      validUntil: "2026-04-01"
+    },
+    body: "## Summary\n\nWindow.\n\n## Details\n\nWindow.\n\n## Sources\n\n- none"
+  });
+
+  assert.equal(validation.valid, false);
+  assert.ok(
+    validation.violations.some(
+      (issue) => issue.field === "frontmatter.validUntil"
+    )
+  );
 });
 
 test("root orchestrator routes coding tasks through the vendored runtime bridge", async (t) => {

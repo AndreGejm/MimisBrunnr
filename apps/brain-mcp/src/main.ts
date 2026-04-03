@@ -13,7 +13,11 @@ import type {
   RetrieveContextRequest,
   ValidateNoteRequest
 } from "@multi-agent-brain/contracts";
-import { buildServiceContainer, loadEnvironment } from "@multi-agent-brain/infrastructure";
+import {
+  ActorAuthorizationError,
+  buildServiceContainer,
+  loadEnvironment
+} from "@multi-agent-brain/infrastructure";
 import { MCP_TOOL_DEFINITIONS, getToolDefinition } from "./tool-definitions.js";
 
 type JsonRpcId = string | number | null;
@@ -205,18 +209,42 @@ async function callTool(name: string, args: JsonRecord): Promise<unknown> {
     actor: buildActorContext(tool.name, tool.defaultActorRole, args.actor)
   };
 
-  const result = await runTool(name, request);
+  try {
+    const result = await runTool(name, request);
 
-  return {
-    content: [
-      {
-        type: "text",
-        text: JSON.stringify(result, null, 2)
-      }
-    ],
-    structuredContent: result,
-    isError: isToolError(result)
-  };
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(result, null, 2)
+        }
+      ],
+      structuredContent: result,
+      isError: isToolError(result)
+    };
+  } catch (error) {
+    const serviceError =
+      error instanceof ActorAuthorizationError
+        ? error.toServiceError()
+        : {
+            code: "tool_failed",
+            message: error instanceof Error ? error.message : String(error)
+          };
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ ok: false, error: serviceError }, null, 2)
+        }
+      ],
+      structuredContent: {
+        ok: false,
+        error: serviceError
+      },
+      isError: true
+    };
+  }
 }
 
 async function runTool(name: string, request: JsonRecord): Promise<unknown> {
@@ -279,7 +307,8 @@ function buildActorContext(
     source: input.source ?? "brain-mcp",
     requestId: input.requestId ?? randomUUID(),
     initiatedAt: input.initiatedAt ?? now,
-    toolName: input.toolName ?? toolName
+    toolName: input.toolName ?? toolName,
+    authToken: input.authToken
   };
 }
 
