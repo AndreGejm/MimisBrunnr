@@ -3,6 +3,7 @@ dist/
 .env
 .pnpm-store/
 coverage/
+*.tsbuildinfo
 *.db
 *.sqlite
 *.sqlite-journal
