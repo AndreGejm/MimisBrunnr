@@ -687,6 +687,62 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
     };
   }
 
+  async getTemporalValidityCandidate(
+    noteId: NoteId,
+    input: {
+      asOf?: string;
+      expiringWithinDays?: number;
+      corpusId?: MetadataNoteRecord["corpusId"];
+    } = {}
+  ): Promise<TemporalValidityCandidate | null> {
+    const asOf = input.asOf ?? currentDateIso();
+    const expiringWithinDays = Math.max(1, input.expiringWithinDays ?? 14);
+    const expiryWindowEnd = addDaysIso(asOf, expiringWithinDays);
+    const corpusClause = input.corpusId ? "AND corpus_id = :corpusId" : "";
+    const row = this.database.prepare(`
+      SELECT
+        note_id,
+        corpus_id,
+        note_path,
+        note_type,
+        lifecycle_state,
+        revision,
+        updated_at,
+        current_state,
+        valid_from,
+        valid_until,
+        summary,
+        scope,
+        content_hash,
+        semantic_signature
+      FROM notes
+      WHERE note_id = :noteId
+        AND current_state = 1
+        AND lifecycle_state = 'promoted'
+        ${corpusClause}
+    `).get(
+      input.corpusId
+        ? {
+            noteId,
+            corpusId: input.corpusId
+          }
+        : {
+            noteId
+          }
+    ) as SqliteNoteRow | undefined;
+
+    if (!row) {
+      return null;
+    }
+
+    const state = deriveTemporalValidityCandidateState(row, asOf, expiryWindowEnd);
+    if (!state) {
+      return null;
+    }
+
+    return this.mapTemporalValidityCandidate(row, state, asOf);
+  }
+
   async queryHistory(request: QueryHistoryRequest): Promise<QueryHistoryResponse> {
     const limit = Math.max(1, request.limit);
     const rows = this.database.prepare(`
@@ -1124,6 +1180,30 @@ function diffDaysIso(leftIso: string, rightIso: string): number {
   const left = new Date(`${leftIso}T00:00:00Z`);
   const right = new Date(`${rightIso}T00:00:00Z`);
   return Math.round((left.getTime() - right.getTime()) / 86_400_000);
+}
+
+function deriveTemporalValidityCandidateState(
+  row: Pick<SqliteNoteRow, "valid_from" | "valid_until">,
+  asOf: string,
+  expiryWindowEnd: string
+): TemporalValidityCandidateState | null {
+  if (row.valid_until && row.valid_until < asOf) {
+    return "expired";
+  }
+
+  if (row.valid_from && row.valid_from > asOf) {
+    return "future_dated";
+  }
+
+  if (
+    row.valid_until &&
+    row.valid_until >= asOf &&
+    row.valid_until <= expiryWindowEnd
+  ) {
+    return "expiring_soon";
+  }
+
+  return null;
 }
 
 function ensureColumnExists(

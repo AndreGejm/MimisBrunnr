@@ -35,6 +35,26 @@ export class CanonicalNoteService {
     };
   }
 
+  async getCanonicalNoteByPath(
+    notePath: string
+  ): Promise<ServiceResult<CanonicalNoteRecord, CanonicalNoteErrorCode>> {
+    const note = await this.canonicalNoteRepository.getByPath(notePath);
+    if (!note) {
+      return {
+        ok: false,
+        error: {
+          code: "not_found",
+          message: `Canonical note '${notePath}' was not found.`
+        }
+      };
+    }
+
+    return {
+      ok: true,
+      data: note
+    };
+  }
+
   async listCanonicalNotes(
     corpusId: CorpusId
   ): Promise<ServiceResult<CanonicalNoteRecord[], CanonicalNoteErrorCode>> {

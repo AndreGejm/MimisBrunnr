@@ -14,6 +14,7 @@ import type {
   RetrieveContextService,
   RerankerProvider,
   StagingDraftService,
+  TemporalRefreshService,
   StagingNoteRepository,
   VectorIndex
 } from "@multi-agent-brain/application";
@@ -26,7 +27,8 @@ import {
   NoteValidationService as ConcreteNoteValidationService,
   PromotionOrchestratorService as ConcretePromotionOrchestratorService,
   RetrieveContextService as ConcreteRetrieveContextService,
-  StagingDraftService as ConcreteStagingDraftService
+  StagingDraftService as ConcreteStagingDraftService,
+  TemporalRefreshService as ConcreteTemporalRefreshService
 } from "@multi-agent-brain/application";
 import {
   ActorAuthorizationPolicy,
@@ -82,6 +84,7 @@ export interface ServiceRegistry {
   retrieveContextService: RetrieveContextService;
   contextPacketService: ConcreteContextPacketService;
   decisionSummaryService: ConcreteDecisionSummaryService;
+  temporalRefreshService: TemporalRefreshService;
 }
 
 export interface ServiceContainer {
@@ -189,6 +192,12 @@ export function buildServiceContainer(
     retrieveContextService,
     auditHistoryService
   );
+  const temporalRefreshService = new ConcreteTemporalRefreshService(
+    metadataControlStore,
+    canonicalNoteService,
+    stagingDraftService,
+    auditHistoryService
+  );
 
   const authPolicy = new ActorAuthorizationPolicy({
     mode: env.auth.mode,
@@ -208,7 +217,8 @@ export function buildServiceContainer(
       stagingDraftService,
       noteValidationService,
       promotionOrchestratorService,
-      auditHistoryService
+      auditHistoryService,
+      temporalRefreshService
     )
   );
   const codingDomainController = new CodingDomainController(
@@ -257,7 +267,8 @@ export function buildServiceContainer(
       promotionOrchestratorService,
       retrieveContextService,
       contextPacketService,
-      decisionSummaryService
+      decisionSummaryService,
+      temporalRefreshService
     },
     orchestrator,
     dispose() {

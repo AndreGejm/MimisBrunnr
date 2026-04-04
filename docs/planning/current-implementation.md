@@ -59,6 +59,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - ranking fusion with staleness-aware behavior
 - temporal-validity-aware stale classification for expired or not-yet-valid notes
 - runtime freshness reporting and operator-visible refresh candidates for expired and expiring current-state notes
+- governed refresh-draft creation for expired, future-dated, or expiring-soon current-state notes
 - retrieval warnings when bounded evidence includes expired, expiring-soon, or not-yet-valid notes
 - bounded context packet assembly
 - hard token-budget and summary-sentence enforcement during packet assembly
@@ -113,12 +114,14 @@ The running architecture is a local-first monorepo with clear boundaries:
 
 - `version`
 - `auth-status`
+- `freshness-status`
 - `issue-auth-token`
 - `execute-coding-task`
 - `search-context`
 - `get-context-packet`
 - `fetch-decision-summary`
 - `draft-note`
+- `create-refresh-draft`
 - `validate-note`
 - `promote-note`
 - `query-history`
@@ -128,12 +131,14 @@ The running architecture is a local-first monorepo with clear boundaries:
 - `GET /health/live`
 - `GET /health/ready`
 - `GET /v1/system/auth`
+- `GET /v1/system/freshness`
 - `GET /v1/system/version`
 - `POST /v1/coding/execute`
 - `POST /v1/context/search`
 - `POST /v1/context/packet`
 - `POST /v1/context/decision-summary`
 - `POST /v1/notes/drafts`
+- `POST /v1/system/freshness/refresh-draft`
 - `POST /v1/notes/validate`
 - `POST /v1/notes/promote`
 - `POST /v1/history/query`
@@ -145,6 +150,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - `get_context_packet`
 - `fetch_decision_summary`
 - `draft_note`
+- `create_refresh_draft`
 - `validate_note`
 - `promote_note`
 - `query_history`
@@ -154,7 +160,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 These areas have enabling structure but are not fully complete:
 
 - shared-rollout auth hardening beyond the file-backed actor registry, rotated credentials, issued tokens, and local operator status surfaces
-- richer temporal-validity governance beyond validity windows, refresh-candidate reporting, freshness warnings, and stale ranking
+- richer temporal-validity governance beyond validity windows, refresh-candidate reporting, explicit refresh-draft creation, freshness warnings, and stale ranking
 
 See [`backlog.md`](./backlog.md) for the linked backlog items.
 

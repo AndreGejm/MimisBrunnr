@@ -129,6 +129,14 @@ export function validateTransportRequest(
         frontmatterOverrides: optionalFrontmatterOverrides(payload.frontmatterOverrides, "frontmatterOverrides"),
         bodyHints: optionalStringArray(payload.bodyHints, "bodyHints")
       };
+    case "create-refresh-draft":
+      return {
+        actor,
+        noteId: requireString(payload.noteId, "noteId"),
+        asOf: optionalString(payload.asOf, "asOf"),
+        expiringWithinDays: optionalInteger(payload.expiringWithinDays, "expiringWithinDays", { min: 1 }),
+        bodyHints: optionalStringArray(payload.bodyHints, "bodyHints")
+      };
     case "validate-note":
       return {
         actor,
@@ -347,6 +355,18 @@ function requireInteger(
   }
 
   return numberValue;
+}
+
+function optionalInteger(
+  value: unknown,
+  field: string,
+  options: { min?: number } = {}
+): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  return requireInteger(value, field, options);
 }
 
 function requireEnum<T extends string>(

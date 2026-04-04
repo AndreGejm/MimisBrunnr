@@ -151,6 +151,24 @@ export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
     }
   },
   {
+    name: "create_refresh_draft",
+    title: "Create Refresh Draft",
+    description: "Create a governed staging refresh draft for an expired or expiring current-state canonical note.",
+    defaultActorRole: "operator",
+    inputSchema: {
+      type: "object",
+      required: ["noteId"],
+      additionalProperties: true,
+      properties: {
+        actor: { type: "object" },
+        noteId: { type: "string" },
+        asOf: { type: "string" },
+        expiringWithinDays: { type: "number" },
+        bodyHints: { type: "array", items: { type: "string" } }
+      }
+    }
+  },
+  {
     name: "draft_note",
     title: "Draft Note",
     description: "Create a staging draft through the writer-only drafting service.",

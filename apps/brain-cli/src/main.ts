@@ -7,6 +7,7 @@ import type {
   ActorContext,
   ActorRole,
   AssembleContextPacketRequest,
+  CreateRefreshDraftRequest,
   DraftNoteRequest,
   ExecuteCodingTaskRequest,
   GetDecisionSummaryRequest,
@@ -36,6 +37,7 @@ type CommandName =
   | "get-context-packet"
   | "fetch-decision-summary"
   | "draft-note"
+  | "create-refresh-draft"
   | "validate-note"
   | "promote-note"
   | "query-history";
@@ -68,6 +70,7 @@ const COMMANDS: ReadonlyArray<CommandName> = [
   "get-context-packet",
   "fetch-decision-summary",
   "draft-note",
+  "create-refresh-draft",
   "validate-note",
   "promote-note",
   "query-history"
@@ -79,6 +82,7 @@ const DEFAULT_ACTOR_ROLE: Record<RoutedCommandName, ActorRole> = {
   "get-context-packet": "retrieval",
   "fetch-decision-summary": "retrieval",
   "draft-note": "writer",
+  "create-refresh-draft": "operator",
   "validate-note": "orchestrator",
   "promote-note": "orchestrator",
   "query-history": "operator"
@@ -103,6 +107,7 @@ const COMMAND_NAMES: ReadonlyArray<string> = [
   "get_context_packet",
   "fetch_decision_summary",
   "draft_note",
+  "create_refresh_draft",
   "validate_note",
   "promote_note",
   "query_history"
@@ -261,6 +266,10 @@ async function runCommand(
     case "draft-note":
       return container.orchestrator.draftNote(
         request as unknown as DraftNoteRequest
+      );
+    case "create-refresh-draft":
+      return container.orchestrator.createRefreshDraft(
+        request as unknown as CreateRefreshDraftRequest
       );
     case "validate-note":
       return container.orchestrator.validateNote(
@@ -510,6 +519,7 @@ Commands:
   get-context-packet  Assemble a bounded packet directly from ranked candidates
   fetch-decision-summary  Retrieve a bounded decision-focused packet
   draft-note       Create a staging draft through stagingDraftService
+  create-refresh-draft  Create a governed refresh draft for an existing current-state note
   validate-note    Run deterministic schema validation
   promote-note     Promote a staging draft through the orchestrator
   query-history    Query bounded audit history
@@ -517,6 +527,7 @@ Commands:
 Notes:
   - version, --version, and auth-status do not require an input payload.
   - freshness-status accepts optional JSON input with asOf, expiringWithinDays, corpusId, and limitPerCategory.
+  - create-refresh-draft expects JSON input with noteId and optional asOf, expiringWithinDays, or bodyHints.
   - issue-auth-token expects JSON input with actorId, actorRole, and optional source, allowedTransports, allowedCommands, validFrom, validUntil, or ttlMinutes.
   - Input payloads are JSON objects shaped like the existing service contracts.
   - Actor context is optional in the payload; the CLI injects command-safe defaults.
@@ -540,6 +551,7 @@ function validateIssuedTokenRequest(payload: JsonRecord): {
     | "get_context_packet"
     | "fetch_decision_summary"
     | "draft_note"
+    | "create_refresh_draft"
     | "validate_note"
     | "promote_note"
     | "query_history"
@@ -565,6 +577,7 @@ function validateIssuedTokenRequest(payload: JsonRecord): {
     | "get_context_packet"
     | "fetch_decision_summary"
     | "draft_note"
+    | "create_refresh_draft"
     | "validate_note"
     | "promote_note"
     | "query_history"

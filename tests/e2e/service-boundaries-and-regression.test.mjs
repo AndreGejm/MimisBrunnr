@@ -398,6 +398,62 @@ test("metadata control store reports actionable temporal refresh candidates", as
   assert.ok(report.expiringSoonCurrentState[0].daysUntilExpiry >= 0);
 });
 
+test("temporal refresh service creates a governed staging draft for expired current-state notes", async (t) => {
+  const { container } = await createHarness(t);
+  const today = currentDateIso();
+
+  const promoted = await createAndPromote(container, {
+    title: "Expired Refresh Workflow Guidance",
+    noteType: "reference",
+    bodyHints: [
+      "Expired current-state notes should generate governed refresh drafts.",
+      "Refresh drafts should supersede the stale source note and re-enter staging."
+    ],
+    scope: "temporal-refresh-workflow",
+    promoteAsCurrentState: true,
+    frontmatterOverrides: {
+      validFrom: addDaysIso(today, -21),
+      validUntil: addDaysIso(today, -1)
+    }
+  });
+
+  const refreshed = await container.orchestrator.createRefreshDraft({
+    actor: actor("operator"),
+    noteId: promoted.promotedNoteId,
+    bodyHints: ["Confirm the validity window and update outdated claims."]
+  });
+
+  assert.equal(refreshed.ok, true);
+  assert.equal(refreshed.data.sourceNoteId, promoted.promotedNoteId);
+  assert.equal(refreshed.data.sourceState, "expired");
+  assert.equal(refreshed.data.frontmatter.currentState, false);
+  assert.deepEqual(refreshed.data.frontmatter.supersedes, [promoted.promotedNoteId]);
+  assert.ok(refreshed.data.frontmatter.tags.includes("risk/stale-context"));
+  assert.ok(refreshed.data.body.length > 0);
+
+  const staged = await container.ports.stagingNoteRepository.getById(
+    refreshed.data.draftNoteId
+  );
+  assert.ok(staged);
+  assert.equal(staged.lifecycleState, "draft");
+  assert.deepEqual(staged.frontmatter.supersedes, [promoted.promotedNoteId]);
+
+  const history = await container.services.auditHistoryService.queryHistory({
+    actor: actor("operator"),
+    limit: 20
+  });
+
+  assert.equal(history.ok, true);
+  assert.ok(
+    history.data.entries.some(
+      (entry) =>
+        entry.actionType === "create_refresh_draft" &&
+        entry.affectedNoteIds.includes(promoted.promotedNoteId) &&
+        entry.affectedNoteIds.includes(refreshed.data.draftNoteId)
+    )
+  );
+});
+
 test("retrieval packets stay within explicit source and raw-excerpt budgets", async (t) => {
   const { container } = await createHarness(t);
 

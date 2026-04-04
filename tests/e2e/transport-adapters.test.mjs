@@ -92,6 +92,39 @@ test("brain-cli exposes temporal freshness status and refresh candidates for ope
   assert.equal(payload.freshness.expiredCurrentState[0].state, "expired");
 });
 
+test("brain-cli creates governed refresh drafts for expired current-state notes", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-refresh-draft-"));
+  const seeded = await seedCanonicalTemporalNote(root, {
+    title: "CLI Refresh Workflow",
+    scope: "cli-refresh-workflow",
+    validFrom: addDaysIso(currentDateIso(), -14),
+    validUntil: addDaysIso(currentDateIso(), -1)
+  });
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const result = await runNodeCommand(
+    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    [
+      "create-refresh-draft",
+      "--json",
+      JSON.stringify({
+        noteId: seeded.noteId,
+        bodyHints: ["Refresh the expired CLI guidance."]
+      })
+    ],
+    cliEnvironment(root)
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.data.sourceNoteId, seeded.noteId);
+  assert.equal(payload.data.sourceState, "expired");
+  assert.deepEqual(payload.data.frontmatter.supersedes, [seeded.noteId]);
+});
+
 test("brain-cli can mint issued actor access tokens when the issuer secret is configured", async () => {
   const result = await runNodeCommand(
     path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
@@ -520,6 +553,66 @@ test("brain-api exposes temporal freshness reports through the system freshness 
     "expiring-api-freshness-note"
   );
   assert.equal(payload.freshness.expiringSoonCurrentState[0].state, "expiring_soon");
+});
+
+test("brain-api creates governed refresh drafts through the temporal freshness route", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-refresh-draft-"));
+  const seeded = await seedCanonicalTemporalNote(root, {
+    title: "API Refresh Workflow",
+    scope: "api-refresh-workflow",
+    validFrom: addDaysIso(currentDateIso(), -30),
+    validUntil: addDaysIso(currentDateIso(), -1)
+  });
+
+  const { createBrainApiServer } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+    ).href
+  );
+
+  const api = createBrainApiServer({
+    nodeEnv: "test",
+    vaultRoot: path.join(root, "vault", "canonical"),
+    stagingRoot: path.join(root, "vault", "staging"),
+    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    qdrantUrl: "http://127.0.0.1:6333",
+    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    embeddingProvider: "hash",
+    reasoningProvider: "heuristic",
+    draftingProvider: "disabled",
+    rerankerProvider: "local",
+    apiHost: "127.0.0.1",
+    apiPort: 18191,
+    logLevel: "error"
+  });
+
+  t.after(async () => {
+    await api.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await api.listen();
+
+  const response = await fetch(
+    "http://127.0.0.1:18191/v1/system/freshness/refresh-draft",
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        noteId: seeded.noteId,
+        bodyHints: ["Refresh the expired API guidance."]
+      })
+    }
+  );
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.ok, true);
+  assert.equal(payload.data.sourceNoteId, seeded.noteId);
+  assert.equal(payload.data.sourceState, "expired");
+  assert.deepEqual(payload.data.frontmatter.supersedes, [seeded.noteId]);
 });
 
 test("brain-api exposes direct context-packet assembly over HTTP", async (t) => {
@@ -1224,4 +1317,71 @@ async function seedTemporalValidityNote(sqlitePath, input) {
   } finally {
     store.close();
   }
+}
+
+async function seedCanonicalTemporalNote(root, input) {
+  const { buildServiceContainer } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "packages", "infrastructure", "dist", "index.js")
+    ).href
+  );
+
+  const container = buildServiceContainer({
+    nodeEnv: "test",
+    vaultRoot: path.join(root, "vault", "canonical"),
+    stagingRoot: path.join(root, "vault", "staging"),
+    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    qdrantUrl: "http://127.0.0.1:6333",
+    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    embeddingProvider: "hash",
+    reasoningProvider: "heuristic",
+    draftingProvider: "disabled",
+    rerankerProvider: "local",
+    logLevel: "error"
+  });
+  try {
+    const draft = await container.services.stagingDraftService.createDraft({
+      actor: testActor("writer"),
+      targetCorpus: "context_brain",
+      noteType: "reference",
+      title: input.title,
+      sourcePrompt: `Refresh seed for ${input.title}`,
+      supportingSources: [],
+      bodyHints: [
+        "This canonical note exists only to exercise the refresh workflow.",
+        "It should become a governed staging refresh draft when its validity expires."
+      ],
+      frontmatterOverrides: {
+        scope: input.scope,
+        validFrom: input.validFrom,
+        validUntil: input.validUntil
+      }
+    });
+
+    assert.equal(draft.ok, true);
+
+    const promoted = await container.services.promotionOrchestratorService.promoteDraft({
+      actor: testActor("orchestrator"),
+      draftNoteId: draft.data.draftNoteId,
+      targetCorpus: "context_brain",
+      promoteAsCurrentState: true
+    });
+
+    assert.equal(promoted.ok, true);
+    return { noteId: promoted.data.promotedNoteId };
+  } finally {
+    container.dispose();
+  }
+}
+
+function testActor(role) {
+  return {
+    actorId: `${role}-actor`,
+    actorRole: role,
+    transport: "internal",
+    source: "transport-test-seed",
+    requestId: randomUUID(),
+    initiatedAt: new Date().toISOString(),
+    toolName: "seed"
+  };
 }

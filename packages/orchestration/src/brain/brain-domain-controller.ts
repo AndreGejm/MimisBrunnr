@@ -1,6 +1,7 @@
 import type {
   AssembleContextPacketRequest,
   AssembleContextPacketResponse,
+  CreateRefreshDraftRequest,
   DraftNoteRequest,
   GetDecisionSummaryRequest,
   PromoteNoteRequest,
@@ -40,6 +41,12 @@ export class BrainDomainController {
     request: DraftNoteRequest
   ) {
     return this.memoryController.draftNote(request);
+  }
+
+  async createRefreshDraft(
+    request: CreateRefreshDraftRequest
+  ) {
+    return this.memoryController.createRefreshDraft(request);
   }
 
   validateNote(request: ValidateNoteRequest): ValidateNoteResponse {

@@ -138,5 +138,10 @@ export interface MetadataControlStore {
     corpusId?: CorpusId;
     limitPerCategory?: number;
   }): Promise<TemporalValidityReport>;
+  getTemporalValidityCandidate(noteId: NoteId, input?: {
+    asOf?: string;
+    expiringWithinDays?: number;
+    corpusId?: CorpusId;
+  }): Promise<TemporalValidityCandidate | null>;
   queryHistory(request: QueryHistoryRequest): Promise<QueryHistoryResponse>;
 }

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import process from "node:process";
 import type {
   ActorContext,
+  CreateRefreshDraftRequest,
   GetContextPacketToolRequest,
   DraftNoteRequest,
   ExecuteCodingTaskRequest,
@@ -268,6 +269,10 @@ async function runTool(name: string, request: JsonRecord): Promise<unknown> {
     case "draft_note":
       return container.orchestrator.draftNote(
         request as unknown as DraftNoteRequest
+      );
+    case "create_refresh_draft":
+      return container.orchestrator.createRefreshDraft(
+        request as unknown as CreateRefreshDraftRequest
       );
     case "fetch_decision_summary":
       return container.orchestrator.fetchDecisionSummary(

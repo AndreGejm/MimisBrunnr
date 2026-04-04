@@ -6,6 +6,7 @@ import path from "node:path";
 import process from "node:process";
 import test from "node:test";
 import { spawn } from "node:child_process";
+import { pathToFileURL } from "node:url";
 
 test("brain-mcp serves initialize, tools/list, get_context_packet, and validate_note over stdio MCP framing", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "mab-mcp-"));
@@ -78,6 +79,7 @@ test("brain-mcp serves initialize, tools/list, get_context_packet, and validate_
   const listResponse = await transport.next();
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "validate_note"));
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "get_context_packet"));
+  assert.ok(listResponse.result.tools.some((tool) => tool.name === "create_refresh_draft"));
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "execute_coding_task"));
 
   writeMcpMessage(child.stdin, {
@@ -181,6 +183,85 @@ test("brain-mcp serves initialize, tools/list, get_context_packet, and validate_
   assert.doesNotMatch(
     codingResponse.result.structuredContent.reason,
     /allowed_patch_root|LOCAL_EXPERT_REPO_ROOT/i
+  );
+});
+
+test("brain-mcp creates governed refresh drafts for expired current-state notes", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-mcp-refresh-"));
+  const seeded = await seedCanonicalTemporalNote(root, {
+    title: "MCP Refresh Workflow",
+    scope: "mcp-refresh-workflow",
+    validFrom: addDaysIso(currentDateIso(), -14),
+    validUntil: addDaysIso(currentDateIso(), -1)
+  });
+
+  const child = spawn(
+    process.execPath,
+    [path.join(process.cwd(), "apps", "brain-mcp", "dist", "main.js")],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        MAB_NODE_ENV: "test",
+        MAB_VAULT_ROOT: path.join(root, "vault", "canonical"),
+        MAB_STAGING_ROOT: path.join(root, "vault", "staging"),
+        MAB_SQLITE_PATH: path.join(root, "state", "multi-agent-brain.sqlite"),
+        MAB_QDRANT_URL: "http://127.0.0.1:6333",
+        MAB_QDRANT_COLLECTION: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+        MAB_EMBEDDING_PROVIDER: "hash",
+        MAB_REASONING_PROVIDER: "heuristic",
+        MAB_DRAFTING_PROVIDER: "disabled",
+        MAB_RERANKER_PROVIDER: "local",
+        MAB_PROVIDER_DOCKER_OLLAMA_BASE_URL: "http://127.0.0.1:1",
+        MAB_OLLAMA_BASE_URL: "http://127.0.0.1:1",
+        MAB_LOG_LEVEL: "error"
+      },
+      stdio: ["pipe", "pipe", "pipe"]
+    }
+  );
+
+  t.after(async () => {
+    child.kill("SIGTERM");
+    await new Promise((resolve) => {
+      child.once("close", resolve);
+    });
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const transport = createMessageCollector(child.stdout);
+
+  writeMcpMessage(child.stdin, {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2024-11-05",
+      capabilities: {}
+    }
+  });
+  await transport.next();
+
+  writeMcpMessage(child.stdin, {
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/call",
+    params: {
+      name: "create_refresh_draft",
+      arguments: {
+        noteId: seeded.noteId,
+        bodyHints: ["Refresh the expired MCP guidance."]
+      }
+    }
+  });
+
+  const refreshResponse = await transport.next();
+  assert.equal(refreshResponse.result.isError, false);
+  assert.equal(refreshResponse.result.structuredContent.ok, true);
+  assert.equal(refreshResponse.result.structuredContent.data.sourceNoteId, seeded.noteId);
+  assert.equal(refreshResponse.result.structuredContent.data.sourceState, "expired");
+  assert.deepEqual(
+    refreshResponse.result.structuredContent.data.frontmatter.supersedes,
+    [seeded.noteId]
   );
 });
 
@@ -634,4 +715,78 @@ function createMessageCollector(stream) {
 
 function currentDateIso() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function addDaysIso(dateIso, days) {
+  const date = new Date(`${dateIso}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+async function seedCanonicalTemporalNote(root, input) {
+  const { buildServiceContainer } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "packages", "infrastructure", "dist", "index.js")
+    ).href
+  );
+
+  const container = buildServiceContainer({
+    nodeEnv: "test",
+    vaultRoot: path.join(root, "vault", "canonical"),
+    stagingRoot: path.join(root, "vault", "staging"),
+    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    qdrantUrl: "http://127.0.0.1:6333",
+    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    embeddingProvider: "hash",
+    reasoningProvider: "heuristic",
+    draftingProvider: "disabled",
+    rerankerProvider: "local",
+    logLevel: "error"
+  });
+
+  try {
+    const draft = await container.services.stagingDraftService.createDraft({
+      actor: testActor("writer"),
+      targetCorpus: "context_brain",
+      noteType: "reference",
+      title: input.title,
+      sourcePrompt: `Refresh seed for ${input.title}`,
+      supportingSources: [],
+      bodyHints: [
+        "This canonical note exists only to exercise the refresh workflow.",
+        "It should become a governed staging refresh draft when its validity expires."
+      ],
+      frontmatterOverrides: {
+        scope: input.scope,
+        validFrom: input.validFrom,
+        validUntil: input.validUntil
+      }
+    });
+
+    assert.equal(draft.ok, true);
+
+    const promoted = await container.services.promotionOrchestratorService.promoteDraft({
+      actor: testActor("orchestrator"),
+      draftNoteId: draft.data.draftNoteId,
+      targetCorpus: "context_brain",
+      promoteAsCurrentState: true
+    });
+
+    assert.equal(promoted.ok, true);
+    return { noteId: promoted.data.promotedNoteId };
+  } finally {
+    container.dispose();
+  }
+}
+
+function testActor(role) {
+  return {
+    actorId: `${role}-actor`,
+    actorRole: role,
+    transport: "internal",
+    source: "mcp-test-seed",
+    requestId: randomUUID(),
+    initiatedAt: new Date().toISOString(),
+    toolName: "seed"
+  };
 }

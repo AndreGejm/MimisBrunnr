@@ -6,6 +6,7 @@ export type AuditActionType =
   | "get_context_packet"
   | "retrieve_context"
   | "draft_note"
+  | "create_refresh_draft"
   | "validate_note"
   | "promote_note"
   | "query_history"
