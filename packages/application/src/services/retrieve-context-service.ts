@@ -115,10 +115,17 @@ export class RetrieveContextService {
       );
       const packet = packetResponse.packet;
       const warnings: string[] = [];
+      const selectedCandidates = selectDeliveredCandidates(
+        rankedCandidates,
+        packet.evidence
+      );
       const vectorHealth = this.vectorIndex.getHealthSnapshot?.();
       if (vectorHealth?.status === "degraded") {
         warnings.push("Vector retrieval is degraded; lexical retrieval remains active.");
       }
+      warnings.push(
+        ...buildFreshnessWarnings(selectedCandidates)
+      );
       const escalationSummary = await this.summarizeEscalationUncertainty(
         request.query,
         answerability,
@@ -153,6 +160,7 @@ export class RetrieveContextService {
               used: Boolean(escalationSummary)
             },
             vectorHealth,
+            freshness: summarizeFreshness(selectedCandidates),
             budget,
             candidateCounts: {
               lexical: lexicalCandidates.length,
@@ -258,4 +266,77 @@ function collectWarnings(...groups: Array<ReadonlyArray<string>>): string[] | un
 
 function mergeUncertainties(existing: string[], summary: string): string[] {
   return [...new Set([...existing, summary].map((value) => value.trim()).filter(Boolean))];
+}
+
+function selectDeliveredCandidates(
+  candidates: readonly ContextCandidate[],
+  evidence: RetrieveContextResponse["packet"]["evidence"]
+): ContextCandidate[] {
+  const evidenceChunkIds = new Set(
+    evidence.map((item) => item.chunkId).filter(Boolean)
+  );
+  const evidenceNoteIds = new Set(evidence.map((item) => item.noteId));
+
+  return candidates.filter((candidate) => {
+    if (
+      candidate.provenance.chunkId &&
+      evidenceChunkIds.has(candidate.provenance.chunkId)
+    ) {
+      return true;
+    }
+
+    return evidenceNoteIds.has(candidate.provenance.noteId);
+  });
+}
+
+function buildFreshnessWarnings(candidates: readonly ContextCandidate[]): string[] {
+  const today = currentDateIso();
+  const expired = [...new Set(
+    candidates
+      .filter((candidate) => Boolean(candidate.validUntil && candidate.validUntil < today))
+      .map((candidate) => candidate.provenance.noteId)
+  )];
+  const futureDated = [...new Set(
+    candidates
+      .filter((candidate) => Boolean(candidate.validFrom && candidate.validFrom > today))
+      .map((candidate) => candidate.provenance.noteId)
+  )];
+
+  const warnings: string[] = [];
+  if (expired.length > 0) {
+    warnings.push(
+      `Retrieved evidence includes ${expired.length} expired note(s): ${expired.join(", ")}.`
+    );
+  }
+
+  if (futureDated.length > 0) {
+    warnings.push(
+      `Retrieved evidence includes ${futureDated.length} not-yet-valid note(s): ${futureDated.join(", ")}.`
+    );
+  }
+
+  return warnings;
+}
+
+function summarizeFreshness(candidates: readonly ContextCandidate[]): {
+  expiredNoteIds: string[];
+  futureDatedNoteIds: string[];
+} {
+  const today = currentDateIso();
+  return {
+    expiredNoteIds: [...new Set(
+      candidates
+        .filter((candidate) => Boolean(candidate.validUntil && candidate.validUntil < today))
+        .map((candidate) => candidate.provenance.noteId)
+    )],
+    futureDatedNoteIds: [...new Set(
+      candidates
+        .filter((candidate) => Boolean(candidate.validFrom && candidate.validFrom > today))
+        .map((candidate) => candidate.provenance.noteId)
+    )]
+  };
+}
+
+function currentDateIso(): string {
+  return new Date().toISOString().slice(0, 10);
 }

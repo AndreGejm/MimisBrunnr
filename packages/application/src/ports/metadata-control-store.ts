@@ -65,6 +65,14 @@ export interface PromotionOutboxRecord {
   payload: PromotionOutboxPayload;
 }
 
+export interface TemporalValiditySummary {
+  asOf: string;
+  expiringWithinDays: number;
+  expiredCurrentStateNotes: number;
+  futureDatedCurrentStateNotes: number;
+  expiringSoonCurrentStateNotes: number;
+}
+
 export interface MetadataControlStore {
   upsertNote(note: MetadataNoteRecord): Promise<void>;
   upsertChunks(chunks: ChunkRecord[]): Promise<void>;
@@ -89,5 +97,10 @@ export interface MetadataControlStore {
   completePromotionOutboxEntry(outboxId: string): Promise<void>;
   failPromotionOutboxEntry(outboxId: string, lastError: string): Promise<void>;
   recordPromotion(decision: PromotionDecisionRecord): Promise<void>;
+  getTemporalValiditySummary(input?: {
+    asOf?: string;
+    expiringWithinDays?: number;
+    corpusId?: CorpusId;
+  }): Promise<TemporalValiditySummary>;
   queryHistory(request: QueryHistoryRequest): Promise<QueryHistoryResponse>;
 }

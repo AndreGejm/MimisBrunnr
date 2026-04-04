@@ -22,7 +22,7 @@ The repository is not yet at "enable by default for every workspace" readiness.
 The main remaining gaps are:
 
 - auth boundaries are registry-backed with file-based loading, rotated credentials, and validity windows, but not yet fully hardened for shared rollout
-- temporal-validity handling is still limited beyond the new validity-window baseline
+- temporal-validity handling is stronger with runtime freshness reporting and retrieval warnings, but still limited beyond the new validity-window baseline
 - release/versioning discipline is still implicit rather than part of the application contract
 
 ## Next Backlog Order

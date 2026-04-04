@@ -6,7 +6,8 @@ import type {
   PromotionDecisionRecord,
   PromotionOutboxPayload,
   PromotionOutboxRecord,
-  PromotionOutboxState
+  PromotionOutboxState,
+  TemporalValiditySummary
 } from "@multi-agent-brain/application";
 import type { QueryHistoryRequest, QueryHistoryResponse } from "@multi-agent-brain/contracts";
 import type { AuditEntry, ChunkId, ChunkRecord, NoteId } from "@multi-agent-brain/domain";
@@ -143,6 +144,8 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
         qualifiers_json,
         scope,
         staleness_class,
+        valid_from,
+        valid_until,
         token_estimate,
         updated_at
       ) VALUES (
@@ -161,6 +164,8 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
         :qualifiersJson,
         :scope,
         :stalenessClass,
+        :validFrom,
+        :validUntil,
         :tokenEstimate,
         :updatedAt
       )
@@ -179,6 +184,8 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
         qualifiers_json = excluded.qualifiers_json,
         scope = excluded.scope,
         staleness_class = excluded.staleness_class,
+        valid_from = excluded.valid_from,
+        valid_until = excluded.valid_until,
         token_estimate = excluded.token_estimate,
         updated_at = excluded.updated_at
     `);
@@ -208,6 +215,8 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
           qualifiersJson: JSON.stringify(chunk.qualifiers),
           scope: chunk.scope,
           stalenessClass: chunk.stalenessClass,
+          validFrom: chunk.validFrom ?? null,
+          validUntil: chunk.validUntil ?? null,
           tokenEstimate: chunk.tokenEstimate,
           updatedAt: chunk.updatedAt
         });
@@ -270,6 +279,8 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
         qualifiers_json,
         scope,
         staleness_class,
+        valid_from,
+        valid_until,
         token_estimate,
         updated_at
       FROM chunks
@@ -553,6 +564,76 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
     );
   }
 
+  async getTemporalValiditySummary(input: {
+    asOf?: string;
+    expiringWithinDays?: number;
+    corpusId?: MetadataNoteRecord["corpusId"];
+  } = {}): Promise<TemporalValiditySummary> {
+    const asOf = input.asOf ?? currentDateIso();
+    const expiringWithinDays = Math.max(1, input.expiringWithinDays ?? 14);
+    const expiryWindowEnd = addDaysIso(asOf, expiringWithinDays);
+    const corpusClause = input.corpusId ? "AND corpus_id = :corpusId" : "";
+
+    const statement = this.database.prepare(`
+      SELECT
+        SUM(
+          CASE
+            WHEN current_state = 1
+              AND lifecycle_state = 'promoted'
+              AND valid_until IS NOT NULL
+              AND valid_until < :asOf
+            THEN 1 ELSE 0
+          END
+        ) AS expired_current_state_notes,
+        SUM(
+          CASE
+            WHEN current_state = 1
+              AND lifecycle_state = 'promoted'
+              AND valid_from IS NOT NULL
+              AND valid_from > :asOf
+            THEN 1 ELSE 0
+          END
+        ) AS future_dated_current_state_notes,
+        SUM(
+          CASE
+            WHEN current_state = 1
+              AND lifecycle_state = 'promoted'
+              AND valid_until IS NOT NULL
+              AND valid_until >= :asOf
+              AND valid_until <= :expiryWindowEnd
+            THEN 1 ELSE 0
+          END
+        ) AS expiring_soon_current_state_notes
+      FROM notes
+      WHERE 1 = 1
+        ${corpusClause}
+    `);
+    const counts = (
+      input.corpusId
+        ? statement.get({
+            asOf,
+            expiryWindowEnd,
+            corpusId: input.corpusId
+          })
+        : statement.get({
+            asOf,
+            expiryWindowEnd
+          })
+    ) as {
+      expired_current_state_notes: number | null;
+      future_dated_current_state_notes: number | null;
+      expiring_soon_current_state_notes: number | null;
+    };
+
+    return {
+      asOf,
+      expiringWithinDays,
+      expiredCurrentStateNotes: counts.expired_current_state_notes ?? 0,
+      futureDatedCurrentStateNotes: counts.future_dated_current_state_notes ?? 0,
+      expiringSoonCurrentStateNotes: counts.expiring_soon_current_state_notes ?? 0
+    };
+  }
+
   async queryHistory(request: QueryHistoryRequest): Promise<QueryHistoryResponse> {
     const limit = Math.max(1, request.limit);
     const rows = this.database.prepare(`
@@ -667,6 +748,8 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
         qualifiers_json TEXT NOT NULL,
         scope TEXT NOT NULL,
         staleness_class TEXT NOT NULL,
+        valid_from TEXT,
+        valid_until TEXT,
         token_estimate INTEGER NOT NULL,
         updated_at TEXT NOT NULL,
         FOREIGN KEY (note_id) REFERENCES notes(note_id) ON DELETE CASCADE
@@ -735,6 +818,8 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
 
     ensureColumnExists(this.database, "notes", "valid_from", "TEXT");
     ensureColumnExists(this.database, "notes", "valid_until", "TEXT");
+    ensureColumnExists(this.database, "chunks", "valid_from", "TEXT");
+    ensureColumnExists(this.database, "chunks", "valid_until", "TEXT");
   }
 
   private mapNoteRow(row: SqliteNoteRow): MetadataNoteRecord {
@@ -789,6 +874,8 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
       scope: row.scope,
       tags: tags.map((tag) => tag.tag),
       stalenessClass: row.staleness_class,
+      validFrom: row.valid_from ?? undefined,
+      validUntil: row.valid_until ?? undefined,
       tokenEstimate: row.token_estimate,
       updatedAt: row.updated_at
     };
@@ -852,6 +939,8 @@ interface SqliteChunkRow {
   qualifiers_json: string;
   scope: string;
   staleness_class: ChunkRecord["stalenessClass"];
+  valid_from: string | null;
+  valid_until: string | null;
   token_estimate: number;
   updated_at: string;
 }
@@ -868,6 +957,16 @@ interface SqlitePromotionOutboxRow {
 
 function currentTimestampIso(): string {
   return new Date().toISOString();
+}
+
+function currentDateIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function addDaysIso(dateIso: string, days: number): string {
+  const date = new Date(`${dateIso}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 function ensureColumnExists(

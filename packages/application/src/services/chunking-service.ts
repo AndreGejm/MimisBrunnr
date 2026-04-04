@@ -49,6 +49,8 @@ export class ChunkingService {
           note.frontmatter.validFrom,
           note.frontmatter.validUntil
         ),
+        validFrom: note.frontmatter.validFrom,
+        validUntil: note.frontmatter.validUntil,
         tokenEstimate: estimateTokens(seed.rawText),
         updatedAt: note.frontmatter.updated
       } satisfies ChunkRecord;

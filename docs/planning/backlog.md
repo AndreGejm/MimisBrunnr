@@ -128,7 +128,7 @@ The next implementation order returns to the broader rollout backlog:
 | BK-004 | Align `docker/compose.local.yml` with the live Docker Model Runner plus Qwen stack | Compose now mirrors the local Docker Model Runner plus Qwen role bindings | done |
 | BK-005 | Refresh repository documentation to match the current implementation | Core repo READMEs and planning docs are synchronized with the current implementation | done |
 | BK-006 | Define a formal Git-centric versioning contract | Promotion and audit exist, but Git is not yet part of the application contract | later |
-| BK-007 | Expand temporal-validity handling beyond current-state and staleness heuristics | Validity windows (`validFrom` / `validUntil`), validation, metadata persistence, and stale ranking are implemented, but broader freshness policy, expiry reporting, and lifecycle governance are still incomplete | partial |
+| BK-007 | Expand temporal-validity handling beyond current-state and staleness heuristics | Validity windows (`validFrom` / `validUntil`), validation, metadata persistence, stale ranking, expired-note retrieval warnings, and runtime freshness reporting are implemented, but broader lifecycle governance and refresh workflows are still incomplete | partial |
 
 ## Optional Enhancement Backlog
 

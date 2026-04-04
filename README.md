@@ -14,6 +14,7 @@ Implemented today:
 - canonical Markdown storage plus a separate staging write plane
 - SQLite as the metadata and audit authority
 - SQLite FTS lexical retrieval and Qdrant vector retrieval
+- runtime freshness reporting plus retrieval warnings for expired or not-yet-valid evidence
 - bounded context packet assembly and decision-summary generation
 - deterministic validation and promotion for staged notes
 - actor-registry authn/authz with file-backed registry loading, rotated credentials, and validity windows

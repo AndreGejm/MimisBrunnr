@@ -2,6 +2,7 @@ import { mkdir, open } from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { VectorIndexHealthSnapshot } from "@multi-agent-brain/application";
+import type { TemporalValiditySummary } from "@multi-agent-brain/application";
 import type { AppEnvironment } from "../config/env.js";
 
 export type HealthStatus = "pass" | "warn" | "fail";
@@ -25,12 +26,14 @@ export async function runRuntimeHealthChecks(
   mode: "live" | "ready",
   options: {
     vectorHealth?: VectorIndexHealthSnapshot;
+    temporalValidity?: TemporalValiditySummary;
   } = {}
 ): Promise<RuntimeHealthReport> {
   const checks: HealthCheckResult[] = [
     await ensureDirectoryCheck("canonical_vault", env.vaultRoot),
     await ensureDirectoryCheck("staging_vault", env.stagingRoot),
     await sqliteCheck(env.sqlitePath),
+    temporalValidityCheck(options.temporalValidity),
     await qdrantCheck(env.qdrantUrl, env.qdrantCollection, mode, options.vectorHealth)
   ];
 
@@ -39,6 +42,48 @@ export async function runRuntimeHealthChecks(
     status: deriveOverallStatus(checks),
     checkedAt: new Date().toISOString(),
     checks
+  };
+}
+
+function temporalValidityCheck(
+  summary: TemporalValiditySummary | undefined
+): HealthCheckResult {
+  if (!summary) {
+    return {
+      name: "temporal_validity",
+      status: "pass",
+      message: "Temporal validity metrics are unavailable for this runtime check."
+    };
+  }
+
+  if (
+    summary.expiredCurrentStateNotes > 0 ||
+    summary.futureDatedCurrentStateNotes > 0
+  ) {
+    return {
+      name: "temporal_validity",
+      status: "warn",
+      message:
+        "Current-state notes include expired or not-yet-valid entries and should be reviewed.",
+      details: { ...summary }
+    };
+  }
+
+  if (summary.expiringSoonCurrentStateNotes > 0) {
+    return {
+      name: "temporal_validity",
+      status: "warn",
+      message:
+        "Current-state notes are approaching their validity window and should be refreshed soon.",
+      details: { ...summary }
+    };
+  }
+
+  return {
+    name: "temporal_validity",
+    status: "pass",
+    message: "Current-state note validity windows look healthy.",
+    details: { ...summary }
   };
 }
 

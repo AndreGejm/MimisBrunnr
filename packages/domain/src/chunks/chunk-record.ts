@@ -23,6 +23,8 @@ export interface ChunkRecord {
   scope: string;
   tags: ControlledTag[];
   stalenessClass: ChunkStalenessClass;
+  validFrom?: string;
+  validUntil?: string;
   tokenEstimate: number;
   updatedAt: string;
 }

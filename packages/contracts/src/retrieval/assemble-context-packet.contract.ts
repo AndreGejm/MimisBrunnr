@@ -17,6 +17,8 @@ export interface ContextCandidate {
   qualifiers: string[];
   tags: ControlledTag[];
   stalenessClass: "current" | "stale" | "superseded";
+  validFrom?: string;
+  validUntil?: string;
   provenance: ProvenanceRef;
 }
 

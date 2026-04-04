@@ -56,6 +56,8 @@ The running architecture is a local-first monorepo with clear boundaries:
 - Qdrant vector retrieval
 - ranking fusion with staleness-aware behavior
 - temporal-validity-aware stale classification for expired or not-yet-valid notes
+- runtime freshness reporting for expired and expiring current-state notes
+- retrieval warnings when bounded evidence includes expired or not-yet-valid notes
 - bounded context packet assembly
 - hard token-budget and summary-sentence enforcement during packet assembly
 - `tagFilters` enforced across lexical retrieval, vector retrieval, and fusion
@@ -142,7 +144,7 @@ These areas have enabling structure but are not fully complete:
 
 - shared-rollout auth hardening beyond the file-backed actor registry, rotated credentials, and validity-window model
 - formal Git-centric versioning contract
-- richer temporal-validity governance beyond validity windows and stale ranking
+- richer temporal-validity governance beyond validity windows, freshness reporting, and stale ranking
 
 See [`backlog.md`](./backlog.md) for the linked backlog items.
 

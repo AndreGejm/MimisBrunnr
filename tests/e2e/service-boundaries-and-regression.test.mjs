@@ -302,6 +302,52 @@ test("chunking marks expired current-state notes as stale when a validity window
   assert.equal(chunks[0].stalenessClass, "stale");
 });
 
+test("metadata control store summarizes expired and expiring current-state notes", async (t) => {
+  const { container } = await createHarness(t);
+  const today = currentDateIso();
+  const expiredDate = addDaysIso(today, -1);
+  const upcomingDate = addDaysIso(today, 5);
+
+  await createAndPromote(container, {
+    title: "Expired Current Guidance",
+    noteType: "reference",
+    bodyHints: [
+      "Expired current guidance should surface in temporal validity reporting."
+    ],
+    scope: "temporal-validity-expired",
+    promoteAsCurrentState: true,
+    frontmatterOverrides: {
+      validFrom: addDaysIso(today, -30),
+      validUntil: expiredDate
+    }
+  });
+
+  await createAndPromote(container, {
+    title: "Expiring Soon Guidance",
+    noteType: "reference",
+    bodyHints: [
+      "Soon-to-expire guidance should surface before it becomes stale."
+    ],
+    scope: "temporal-validity-expiring",
+    promoteAsCurrentState: true,
+    frontmatterOverrides: {
+      validFrom: addDaysIso(today, -5),
+      validUntil: upcomingDate
+    }
+  });
+
+  const summary = await container.ports.metadataControlStore.getTemporalValiditySummary({
+    asOf: today,
+    expiringWithinDays: 7,
+    corpusId: "context_brain"
+  });
+
+  assert.equal(summary.asOf, today);
+  assert.equal(summary.expiredCurrentStateNotes, 1);
+  assert.equal(summary.expiringSoonCurrentStateNotes, 1);
+  assert.equal(summary.futureDatedCurrentStateNotes, 0);
+});
+
 test("retrieval packets stay within explicit source and raw-excerpt budgets", async (t) => {
   const { container } = await createHarness(t);
 
@@ -479,6 +525,45 @@ test("retrieve context honors tagFilters across the retrieval pipeline", async (
   );
 });
 
+test("retrieve context warns when bounded evidence includes expired notes", async (t) => {
+  const { container } = await createHarness(t);
+  const today = currentDateIso();
+
+  await createAndPromote(container, {
+    title: "Expired Retrieval Guidance",
+    noteType: "architecture",
+    bodyHints: [
+      "Expired retrieval guidance should still be visible as expired when selected.",
+      "Freshness warnings should call this out explicitly."
+    ],
+    scope: "expired-retrieval-guidance",
+    promoteAsCurrentState: true,
+    frontmatterOverrides: {
+      validFrom: addDaysIso(today, -14),
+      validUntil: addDaysIso(today, -1)
+    }
+  });
+
+  const result = await container.services.retrieveContextService.retrieveContext({
+    actor: actor("retrieval"),
+    query: "freshness warnings should call this out explicitly",
+    budget: {
+      maxTokens: 320,
+      maxSources: 2,
+      maxRawExcerpts: 1,
+      maxSummarySentences: 2
+    },
+    corpusIds: ["context_brain"],
+    requireEvidence: false
+  });
+
+  assert.equal(result.ok, true);
+  assert.ok(result.data.packet.evidence.length >= 1);
+  assert.ok(
+    result.warnings?.some((warning) => /expired note/i.test(warning))
+  );
+});
+
 test("retrieve context uses the paid escalation provider to enrich uncertainty when local evidence is insufficient", async (t) => {
   const { container } = await createHarness(t);
 
@@ -619,6 +704,26 @@ test("runtime health reports degraded vector state explicitly", async (t) => {
   assert.ok(qdrantCheck);
   assert.equal(qdrantCheck.status, "warn");
   assert.equal(qdrantCheck.details?.vectorHealth?.status, "degraded");
+});
+
+test("runtime health reports expired temporal validity state explicitly", async (t) => {
+  const { env } = await createHarness(t);
+
+  const report = await runRuntimeHealthChecks(env, "live", {
+    temporalValidity: {
+      asOf: currentDateIso(),
+      expiringWithinDays: 14,
+      expiredCurrentStateNotes: 2,
+      futureDatedCurrentStateNotes: 0,
+      expiringSoonCurrentStateNotes: 1
+    }
+  });
+
+  assert.equal(report.status, "degraded");
+  const temporalCheck = report.checks.find((check) => check.name === "temporal_validity");
+  assert.ok(temporalCheck);
+  assert.equal(temporalCheck.status, "warn");
+  assert.equal(temporalCheck.details?.expiredCurrentStateNotes, 2);
 });
 
 test("sqlite-backed adapters share a reference-counted connection lifecycle", async (t) => {
@@ -974,6 +1079,12 @@ function testEnvironment(root = path.join(os.tmpdir(), `mab-standalone-${randomU
 
 function currentDateIso() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function addDaysIso(dateIso, days) {
+  const date = new Date(`${dateIso}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 function countSummarySentences(value) {

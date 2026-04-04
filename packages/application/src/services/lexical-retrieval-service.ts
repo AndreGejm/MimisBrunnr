@@ -54,6 +54,8 @@ export class LexicalRetrievalService {
         qualifiers: chunk.qualifiers,
         tags: chunk.tags,
         stalenessClass: chunk.stalenessClass,
+        validFrom: chunk.validFrom,
+        validUntil: chunk.validUntil,
         provenance: {
           noteId: chunk.noteId,
           chunkId: chunk.chunkId,

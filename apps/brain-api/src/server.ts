@@ -142,7 +142,9 @@ async function handleRequest(
 
   if (route.healthMode) {
     const report = await runRuntimeHealthChecks(container.env, route.healthMode, {
-      vectorHealth: container.ports.vectorIndex?.getHealthSnapshot?.()
+      vectorHealth: container.ports.vectorIndex?.getHealthSnapshot?.(),
+      temporalValidity:
+        await container.ports.metadataControlStore.getTemporalValiditySummary()
     });
     const statusCode =
       route.healthMode === "live"
