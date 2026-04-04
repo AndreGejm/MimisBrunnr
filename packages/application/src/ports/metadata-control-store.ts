@@ -7,7 +7,13 @@ import type {
   ControlledTag,
   NoteType
 } from "@multi-agent-brain/domain";
-import type { QueryHistoryRequest, QueryHistoryResponse } from "@multi-agent-brain/contracts";
+import type {
+  ActorContext,
+  QueryHistoryRequest,
+  QueryHistoryResponse
+} from "@multi-agent-brain/contracts";
+import type { CanonicalNoteRecord } from "./canonical-note-repository.js";
+import type { StagingDraftRecord } from "./staging-note-repository.js";
 
 export interface MetadataNoteRecord {
   noteId: NoteId;
@@ -28,10 +34,35 @@ export interface MetadataNoteRecord {
 }
 
 export interface PromotionDecisionRecord {
+  promotionEventId?: string;
   draftNoteId: NoteId;
   canonicalNoteId: NoteId;
   supersededNoteIds: NoteId[];
   promotedAt: string;
+}
+
+export type PromotionOutboxState =
+  | "pending"
+  | "processing"
+  | "completed"
+  | "failed";
+
+export interface PromotionOutboxPayload {
+  actor: ActorContext;
+  targetCorpus: CorpusId;
+  canonicalWrites: CanonicalNoteRecord[];
+  draftUpdate: StagingDraftRecord;
+  promotionDecision: PromotionDecisionRecord;
+}
+
+export interface PromotionOutboxRecord {
+  outboxId: string;
+  state: PromotionOutboxState;
+  attempts: number;
+  lastError?: string;
+  createdAt: string;
+  updatedAt: string;
+  payload: PromotionOutboxPayload;
 }
 
 export interface MetadataControlStore {
@@ -45,6 +76,18 @@ export interface MetadataControlStore {
     contentHash?: string;
     semanticSignature?: string;
   }): Promise<MetadataNoteRecord[]>;
+  enqueuePromotionOutbox(input: {
+    outboxId: string;
+    payload: PromotionOutboxPayload;
+  }): Promise<PromotionOutboxRecord>;
+  getPromotionOutboxEntry(outboxId: string): Promise<PromotionOutboxRecord | null>;
+  listPromotionOutboxEntries(input?: {
+    states?: PromotionOutboxState[];
+    limit?: number;
+  }): Promise<PromotionOutboxRecord[]>;
+  claimPromotionOutboxEntry(outboxId: string): Promise<PromotionOutboxRecord | null>;
+  completePromotionOutboxEntry(outboxId: string): Promise<void>;
+  failPromotionOutboxEntry(outboxId: string, lastError: string): Promise<void>;
   recordPromotion(decision: PromotionDecisionRecord): Promise<void>;
   queryHistory(request: QueryHistoryRequest): Promise<QueryHistoryResponse>;
 }

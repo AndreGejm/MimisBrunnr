@@ -5,7 +5,10 @@ import { DatabaseSync } from "node:sqlite";
 import type {
   MetadataControlStore,
   MetadataNoteRecord,
-  PromotionDecisionRecord
+  PromotionDecisionRecord,
+  PromotionOutboxPayload,
+  PromotionOutboxRecord,
+  PromotionOutboxState
 } from "@multi-agent-brain/application";
 import type { QueryHistoryRequest, QueryHistoryResponse } from "@multi-agent-brain/contracts";
 import type { AuditEntry, ChunkId, ChunkRecord, NoteId } from "@multi-agent-brain/domain";
@@ -354,6 +357,176 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
     return rows.map((row) => this.mapNoteRow(row));
   }
 
+  async enqueuePromotionOutbox(input: {
+    outboxId: string;
+    payload: PromotionOutboxPayload;
+  }): Promise<PromotionOutboxRecord> {
+    const timestamp = currentTimestampIso();
+    const record: PromotionOutboxRecord = {
+      outboxId: input.outboxId,
+      state: "pending",
+      attempts: 0,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      payload: input.payload
+    };
+
+    this.database.prepare(`
+      INSERT INTO promotion_outbox (
+        outbox_id,
+        state,
+        attempts,
+        last_error,
+        created_at,
+        updated_at,
+        payload_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(outbox_id) DO UPDATE SET
+        state = excluded.state,
+        attempts = excluded.attempts,
+        last_error = excluded.last_error,
+        created_at = excluded.created_at,
+        updated_at = excluded.updated_at,
+        payload_json = excluded.payload_json
+    `).run(
+      record.outboxId,
+      record.state,
+      record.attempts,
+      null,
+      record.createdAt,
+      record.updatedAt,
+      JSON.stringify(record.payload)
+    );
+
+    return record;
+  }
+
+  async getPromotionOutboxEntry(outboxId: string): Promise<PromotionOutboxRecord | null> {
+    const row = this.database.prepare(`
+      SELECT
+        outbox_id,
+        state,
+        attempts,
+        last_error,
+        created_at,
+        updated_at,
+        payload_json
+      FROM promotion_outbox
+      WHERE outbox_id = ?
+    `).get(outboxId) as SqlitePromotionOutboxRow | undefined;
+
+    return row ? this.mapPromotionOutboxRow(row) : null;
+  }
+
+  async listPromotionOutboxEntries(input: {
+    states?: PromotionOutboxState[];
+    limit?: number;
+  } = {}): Promise<PromotionOutboxRecord[]> {
+    const limit = Math.max(1, input.limit ?? 50);
+    const states = input.states?.length ? input.states : null;
+    const placeholders = states ? states.map(() => "?").join(", ") : "";
+    const query = states
+      ? `
+        SELECT
+          outbox_id,
+          state,
+          attempts,
+          last_error,
+          created_at,
+          updated_at,
+          payload_json
+        FROM promotion_outbox
+        WHERE state IN (${placeholders})
+        ORDER BY created_at ASC
+        LIMIT ?
+      `
+      : `
+        SELECT
+          outbox_id,
+          state,
+          attempts,
+          last_error,
+          created_at,
+          updated_at,
+          payload_json
+        FROM promotion_outbox
+        ORDER BY created_at ASC
+        LIMIT ?
+      `;
+    const statement = this.database.prepare(query);
+    const rows = (states
+      ? statement.all(...states, limit)
+      : statement.all(limit)) as unknown as SqlitePromotionOutboxRow[];
+
+    return rows.map((row) => this.mapPromotionOutboxRow(row));
+  }
+
+  async claimPromotionOutboxEntry(outboxId: string): Promise<PromotionOutboxRecord | null> {
+    this.database.exec("BEGIN");
+    try {
+      const row = this.database.prepare(`
+        SELECT
+          outbox_id,
+          state,
+          attempts,
+          last_error,
+          created_at,
+          updated_at,
+          payload_json
+        FROM promotion_outbox
+        WHERE outbox_id = ?
+      `).get(outboxId) as SqlitePromotionOutboxRow | undefined;
+
+      if (!row || row.state === "completed") {
+        this.database.exec("COMMIT");
+        return null;
+      }
+
+      const attempts = row.attempts + 1;
+      const updatedAt = currentTimestampIso();
+      this.database.prepare(`
+        UPDATE promotion_outbox
+        SET state = ?,
+            attempts = ?,
+            last_error = NULL,
+            updated_at = ?
+        WHERE outbox_id = ?
+      `).run("processing", attempts, updatedAt, outboxId);
+      this.database.exec("COMMIT");
+
+      return this.mapPromotionOutboxRow({
+        ...row,
+        state: "processing",
+        attempts,
+        last_error: null,
+        updated_at: updatedAt
+      });
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  async completePromotionOutboxEntry(outboxId: string): Promise<void> {
+    this.database.prepare(`
+      UPDATE promotion_outbox
+      SET state = ?,
+          last_error = NULL,
+          updated_at = ?
+      WHERE outbox_id = ?
+    `).run("completed", currentTimestampIso(), outboxId);
+  }
+
+  async failPromotionOutboxEntry(outboxId: string, lastError: string): Promise<void> {
+    this.database.prepare(`
+      UPDATE promotion_outbox
+      SET state = ?,
+          last_error = ?,
+          updated_at = ?
+      WHERE outbox_id = ?
+    `).run("failed", lastError, currentTimestampIso(), outboxId);
+  }
+
   async recordPromotion(decision: PromotionDecisionRecord): Promise<void> {
     this.database.prepare(`
       INSERT INTO promotion_events (
@@ -363,8 +536,13 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
         superseded_note_ids_json,
         promoted_at
       ) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(promotion_event_id) DO UPDATE SET
+        draft_note_id = excluded.draft_note_id,
+        canonical_note_id = excluded.canonical_note_id,
+        superseded_note_ids_json = excluded.superseded_note_ids_json,
+        promoted_at = excluded.promoted_at
     `).run(
-      randomUUID(),
+      decision.promotionEventId ?? randomUUID(),
       decision.draftNoteId,
       decision.canonicalNoteId,
       JSON.stringify(decision.supersededNoteIds),
@@ -508,6 +686,16 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
         promoted_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS promotion_outbox (
+        outbox_id TEXT PRIMARY KEY,
+        state TEXT NOT NULL,
+        attempts INTEGER NOT NULL,
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS audit_entries (
         audit_entry_id TEXT PRIMARY KEY,
         action_type TEXT NOT NULL,
@@ -540,6 +728,7 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
       CREATE INDEX IF NOT EXISTS idx_chunks_note_id ON chunks(note_id);
       CREATE INDEX IF NOT EXISTS idx_chunks_corpus_id ON chunks(corpus_id);
       CREATE INDEX IF NOT EXISTS idx_promotion_events_promoted_at ON promotion_events(promoted_at);
+      CREATE INDEX IF NOT EXISTS idx_promotion_outbox_state_created_at ON promotion_outbox(state, created_at);
       CREATE INDEX IF NOT EXISTS idx_audit_entries_occurred_at ON audit_entries(occurred_at);
     `);
 
@@ -603,6 +792,18 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
       updatedAt: row.updated_at
     };
   }
+
+  private mapPromotionOutboxRow(row: SqlitePromotionOutboxRow): PromotionOutboxRecord {
+    return {
+      outboxId: row.outbox_id,
+      state: row.state,
+      attempts: row.attempts,
+      lastError: row.last_error ?? undefined,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      payload: JSON.parse(row.payload_json) as PromotionOutboxPayload
+    };
+  }
 }
 
 interface SqliteNoteRow {
@@ -652,6 +853,20 @@ interface SqliteChunkRow {
   staleness_class: ChunkRecord["stalenessClass"];
   token_estimate: number;
   updated_at: string;
+}
+
+interface SqlitePromotionOutboxRow {
+  outbox_id: string;
+  state: PromotionOutboxState;
+  attempts: number;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+  payload_json: string;
+}
+
+function currentTimestampIso(): string {
+  return new Date().toISOString();
 }
 
 function ensureColumnExists(

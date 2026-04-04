@@ -16,7 +16,9 @@ import type {
 import {
   ActorAuthorizationError,
   buildServiceContainer,
-  loadEnvironment
+  loadEnvironment,
+  TransportValidationError,
+  validateTransportRequest
 } from "@multi-agent-brain/infrastructure";
 import { MCP_TOOL_DEFINITIONS, getToolDefinition } from "./tool-definitions.js";
 
@@ -204,12 +206,12 @@ async function callTool(name: string, args: JsonRecord): Promise<unknown> {
     };
   }
 
-  const request = {
-    ...args,
-    actor: buildActorContext(tool.name, tool.defaultActorRole, args.actor)
-  };
-
   try {
+    const validatedArgs = validateTransportRequest(tool.name, args);
+    const request = {
+      ...validatedArgs,
+      actor: buildActorContext(tool.name, tool.defaultActorRole, validatedArgs.actor)
+    };
     const result = await runTool(name, request);
 
     return {
@@ -224,12 +226,14 @@ async function callTool(name: string, args: JsonRecord): Promise<unknown> {
     };
   } catch (error) {
     const serviceError =
-      error instanceof ActorAuthorizationError
+      error instanceof TransportValidationError
         ? error.toServiceError()
-        : {
-            code: "tool_failed",
-            message: error instanceof Error ? error.message : String(error)
-          };
+        : error instanceof ActorAuthorizationError
+          ? error.toServiceError()
+          : {
+              code: "tool_failed",
+              message: error instanceof Error ? error.message : String(error)
+            };
 
     return {
       content: [

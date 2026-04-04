@@ -18,6 +18,8 @@ import {
   buildServiceContainer,
   loadEnvironment,
   runRuntimeHealthChecks,
+  TransportValidationError,
+  validateTransportRequest,
   type AppEnvironment
 } from "@multi-agent-brain/infrastructure";
 
@@ -160,8 +162,9 @@ async function handleRequest(
   }
 
   const body = await readJsonBody(request);
-  const actor = buildActorContext(route.name, body.actor, request.headers);
-  const normalizedRequest = { ...body, actor };
+  const validatedBody = validateTransportRequest(route.name, body);
+  const actor = buildActorContext(route.name, validatedBody.actor, request.headers);
+  const normalizedRequest = { ...validatedBody, actor };
 
   switch (route.name) {
     case "execute-coding-task": {
@@ -295,6 +298,10 @@ function mapServiceErrorToStatus(error: ServiceError): number {
 }
 
 function mapUnhandledErrorToStatus(error: unknown): number {
+  if (error instanceof TransportValidationError) {
+    return 400;
+  }
+
   if (error instanceof ActorAuthorizationError) {
     return error.code === "unauthorized" ? 401 : 403;
   }
@@ -303,6 +310,10 @@ function mapUnhandledErrorToStatus(error: unknown): number {
 }
 
 function mapUnhandledError(error: unknown): ServiceError {
+  if (error instanceof TransportValidationError) {
+    return error.toServiceError();
+  }
+
   if (error instanceof ActorAuthorizationError) {
     return error.toServiceError();
   }

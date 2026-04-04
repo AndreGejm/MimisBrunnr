@@ -19,40 +19,41 @@ export class ContextPacketService {
     request: AssembleContextPacketRequest,
     answerability: AnswerabilityDisposition
   ): Promise<AssembleContextPacketResponse> {
-    const selected = selectCandidates(request.candidates, request.budget.maxSources);
-    const expanded = await this.expandNeighborhood(selected, request.budget.maxSources);
-    const sources = dedupeSources(expanded);
-    const rawExcerpts = shouldIncludeRawExcerpts(
+    const candidateWindowSize = Math.max(
+      8,
+      request.budget.maxSources * 3,
+      request.budget.maxRawExcerpts * 3,
+      request.budget.maxSummarySentences * 3
+    );
+    const selected = selectCandidates(request.candidates);
+    const expanded = await this.expandNeighborhood(selected, candidateWindowSize);
+    const includeRawExcerpts = shouldIncludeRawExcerpts(
       request.includeRawExcerpts,
       answerability
-    )
-      ? expanded
-          .slice(0, request.budget.maxRawExcerpts)
-          .map((candidate) => excerptText(candidate.rawText ?? "", 320))
-          .filter(Boolean)
-      : undefined;
-
-    const summary = summarizeCandidates(expanded, request.intent);
-    const constraints = dedupeStrings(
-      expanded.flatMap((candidate) => candidate.qualifiers).slice(0, 8)
     );
-    const confidence = determineConfidence(answerability, expanded);
-    const uncertainties = buildUncertainties(answerability, expanded);
+    const budgetedPacket = enforceContextBudget({
+      candidates: expanded,
+      intent: request.intent,
+      answerability,
+      budget: request.budget,
+      includeRawExcerpts
+    });
+    const confidence = determineConfidence(answerability, budgetedPacket.selectedCandidates);
 
     const packet: ContextPacket = {
       packetType: packetTypeForIntent(request.intent),
       intent: request.intent,
       confidence,
       answerability,
-      summary,
-      constraints,
-      evidence: sources,
-      rawExcerpts,
-      uncertainties,
+      summary: budgetedPacket.summary,
+      constraints: budgetedPacket.constraints,
+      evidence: budgetedPacket.sources,
+      rawExcerpts: budgetedPacket.rawExcerpts,
+      uncertainties: budgetedPacket.uncertainties,
       budgetUsage: {
-        tokenEstimate: expanded.reduce((total, candidate) => total + estimateTokens(candidate.rawText ?? candidate.summary), 0),
-        sourceCount: sources.length,
-        rawExcerptCount: rawExcerpts?.length ?? 0
+        tokenEstimate: budgetedPacket.tokenEstimate,
+        sourceCount: budgetedPacket.sources.length,
+        rawExcerptCount: budgetedPacket.rawExcerpts?.length ?? 0
       }
     };
 
@@ -61,7 +62,7 @@ export class ContextPacketService {
 
   private async expandNeighborhood(
     candidates: ContextCandidate[],
-    maxSources: number
+    maxCandidates: number
   ): Promise<ContextCandidate[]> {
     const output: ContextCandidate[] = [];
     const seen = new Set<string>();
@@ -70,7 +71,7 @@ export class ContextPacketService {
       const chunkId = candidate.provenance.chunkId;
       if (!chunkId || seen.has(chunkId)) {
         const fallbackKey = chunkId ?? candidate.provenance.noteId;
-        if (!seen.has(fallbackKey) && output.length < maxSources) {
+        if (!seen.has(fallbackKey) && output.length < maxCandidates) {
           seen.add(fallbackKey);
           output.push(candidate);
         }
@@ -83,7 +84,7 @@ export class ContextPacketService {
       );
 
       if (neighborhood.length === 0) {
-        if (output.length < maxSources) {
+        if (output.length < maxCandidates) {
           seen.add(chunkId);
           output.push(candidate);
         }
@@ -91,7 +92,7 @@ export class ContextPacketService {
       }
 
       for (const chunk of neighborhood) {
-        if (seen.has(chunk.chunkId) || output.length >= maxSources) {
+        if (seen.has(chunk.chunkId) || output.length >= maxCandidates) {
           continue;
         }
 
@@ -115,13 +116,12 @@ export class ContextPacketService {
       }
     }
 
-    return output.slice(0, maxSources);
+    return output.slice(0, maxCandidates);
   }
 }
 
 function selectCandidates(
-  candidates: ContextCandidate[],
-  maxSources: number
+  candidates: ContextCandidate[]
 ): ContextCandidate[] {
   const deduped = new Map<string, ContextCandidate>();
 
@@ -132,7 +132,7 @@ function selectCandidates(
     }
   }
 
-  return [...deduped.values()].slice(0, maxSources);
+  return [...deduped.values()];
 }
 
 function dedupeSources(candidates: ContextCandidate[]) {
@@ -150,15 +150,16 @@ function dedupeSources(candidates: ContextCandidate[]) {
 
 function summarizeCandidates(
   candidates: ContextCandidate[],
-  intent: QueryIntent
+  intent: QueryIntent,
+  maxSummarySentences: number
 ): string {
-  const summaries = dedupeStrings(
-    candidates.map((candidate) => candidate.summary).filter(Boolean)
-  ).slice(0, 4);
   const prefix = summaryPrefix(intent);
+  const sentences = dedupeStrings(
+    candidates.flatMap((candidate) => splitSummarySentences(candidate.summary))
+  ).slice(0, Math.max(0, maxSummarySentences));
 
-  return summaries.length > 0
-    ? `${prefix} ${summaries.join(" ")}`
+  return sentences.length > 0
+    ? `${prefix} ${sentences.join(" ")}`
     : `${prefix} No high-confidence local context was found.`;
 }
 
@@ -238,4 +239,161 @@ function buildUncertainties(
 
 function dedupeStrings(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function splitSummarySentences(value: string): string[] {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return [];
+  }
+
+  return normalized
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
+function estimateProvenanceTokens(
+  sources: ReturnType<typeof dedupeSources>
+): number {
+  return sources.reduce((total, source) => {
+    const headingPath = source.headingPath.join(" > ");
+    return total + estimateTokens(
+      [source.noteId, source.notePath, headingPath].filter(Boolean).join("\n")
+    );
+  }, 0);
+}
+
+function estimatePacketTokens(input: {
+  summary: string;
+  constraints: string[];
+  uncertainties: string[];
+  sources: ReturnType<typeof dedupeSources>;
+  rawExcerpts?: string[];
+}): number {
+  return (
+    estimateTokens(input.summary) +
+    estimateTokens(input.constraints.join("\n")) +
+    estimateTokens(input.uncertainties.join("\n")) +
+    estimateProvenanceTokens(input.sources) +
+    (input.rawExcerpts ?? []).reduce(
+      (total, rawExcerpt) => total + estimateTokens(rawExcerpt),
+      0
+    )
+  );
+}
+
+function enforceContextBudget(input: {
+  candidates: ContextCandidate[];
+  intent: QueryIntent;
+  answerability: AnswerabilityDisposition;
+  budget: AssembleContextPacketRequest["budget"];
+  includeRawExcerpts: boolean;
+}): {
+  selectedCandidates: ContextCandidate[];
+  summary: string;
+  constraints: string[];
+  uncertainties: string[];
+  sources: ReturnType<typeof dedupeSources>;
+  rawExcerpts?: string[];
+  tokenEstimate: number;
+} {
+  let sourceLimit = Math.min(input.budget.maxSources, input.candidates.length);
+  let rawExcerptLimit = input.includeRawExcerpts
+    ? Math.min(input.budget.maxRawExcerpts, input.candidates.length)
+    : 0;
+  let summarySentenceLimit = Math.max(0, input.budget.maxSummarySentences);
+  let constraintLimit = 8;
+  let includeUncertainties = true;
+
+  while (true) {
+    const selectedCandidates = input.candidates.slice(0, Math.max(0, sourceLimit));
+    const sources = dedupeSources(selectedCandidates);
+    const rawExcerpts =
+      rawExcerptLimit > 0
+        ? selectedCandidates
+            .slice(0, rawExcerptLimit)
+            .map((candidate) => excerptText(candidate.rawText ?? "", 320))
+            .filter(Boolean)
+        : undefined;
+    const constraints = dedupeStrings(
+      selectedCandidates.flatMap((candidate) => candidate.qualifiers)
+    ).slice(0, Math.max(0, constraintLimit));
+    const uncertainties = includeUncertainties
+      ? buildUncertainties(input.answerability, selectedCandidates)
+      : [];
+    const summary = summarizeCandidates(
+      selectedCandidates,
+      input.intent,
+      summarySentenceLimit
+    );
+    const tokenEstimate = estimatePacketTokens({
+      summary,
+      constraints,
+      uncertainties,
+      sources,
+      rawExcerpts
+    });
+
+    if (tokenEstimate <= input.budget.maxTokens) {
+      return {
+        selectedCandidates,
+        summary,
+        constraints,
+        uncertainties,
+        sources,
+        rawExcerpts,
+        tokenEstimate
+      };
+    }
+
+    if (rawExcerptLimit > 0) {
+      rawExcerptLimit -= 1;
+      continue;
+    }
+
+    if (summarySentenceLimit > 0) {
+      summarySentenceLimit -= 1;
+      continue;
+    }
+
+    if (sourceLimit > 1) {
+      sourceLimit -= 1;
+      continue;
+    }
+
+    if (constraintLimit > 0) {
+      constraintLimit -= 1;
+      continue;
+    }
+
+    if (includeUncertainties) {
+      includeUncertainties = false;
+      continue;
+    }
+
+    const clippedSummary = clipTextToTokenBudget(summary, input.budget.maxTokens);
+    const clippedTokenEstimate = estimatePacketTokens({
+      summary: clippedSummary,
+      constraints: [],
+      uncertainties: [],
+      sources: [],
+      rawExcerpts: []
+    });
+
+    return {
+      selectedCandidates: [],
+      summary: clippedSummary,
+      constraints: [],
+      uncertainties: [],
+      sources: [],
+      rawExcerpts: undefined,
+      tokenEstimate: Math.min(clippedTokenEstimate, input.budget.maxTokens)
+    };
+  }
+}
+
+function clipTextToTokenBudget(value: string, maxTokens: number): string {
+  const maxLength = Math.max(1, maxTokens * 4);
+  return excerptText(value, maxLength);
 }

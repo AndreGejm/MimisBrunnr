@@ -56,13 +56,17 @@ The running architecture is a local-first monorepo with clear boundaries:
 - ranking fusion with staleness-aware behavior
 - temporal-validity-aware stale classification for expired or not-yet-valid notes
 - bounded context packet assembly
+- hard token-budget and summary-sentence enforcement during packet assembly
+- `tagFilters` enforced across lexical retrieval, vector retrieval, and fusion
 - direct context-packet transport exposure
 - decision-summary generation
+- runtime schema validation at CLI, HTTP, and MCP ingress
 
 ### Governance
 
 - staging-only drafting flow
 - deterministic promotion gate
+- durable promotion outbox with replayable canonical, metadata, FTS, and vector sync processing
 - duplicate detection
 - supersede and current-state logic
 - actor-registry-backed authn/authz across CLI, HTTP, MCP, and orchestrator command dispatch

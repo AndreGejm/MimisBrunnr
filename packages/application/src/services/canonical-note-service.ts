@@ -81,6 +81,34 @@ export class CanonicalNoteService {
   async writeCurrentStateSnapshot(
     note: CanonicalNoteRecord
   ): Promise<ServiceResult<CanonicalNoteRecord, CanonicalNoteErrorCode>> {
+    const preparedSnapshot = this.prepareCurrentStateSnapshot(note);
+    if (!preparedSnapshot.ok) {
+      return preparedSnapshot;
+    }
+
+    try {
+      const persisted = await this.persistCanonicalNote(preparedSnapshot.data);
+      return {
+        ok: true,
+        data: persisted
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: {
+          code: "write_failed",
+          message: "Failed to persist current-state snapshot note.",
+          details: {
+            reason: error instanceof Error ? error.message : String(error)
+          }
+        }
+      };
+    }
+  }
+
+  prepareCurrentStateSnapshot(
+    note: CanonicalNoteRecord
+  ): ServiceResult<CanonicalNoteRecord, CanonicalNoteErrorCode> {
     if (note.corpusId !== "context_brain" || !note.frontmatter.currentState) {
       return {
         ok: false,
@@ -101,25 +129,32 @@ export class CanonicalNoteService {
       };
     }
 
-    try {
-      const snapshotNote = buildCurrentStateSnapshot(note);
-      const persisted = await this.persistCanonicalNote(snapshotNote);
-      return {
-        ok: true,
-        data: persisted
-      };
-    } catch (error) {
-      return {
-        ok: false,
-        error: {
-          code: "write_failed",
-          message: "Failed to persist current-state snapshot note.",
-          details: {
-            reason: error instanceof Error ? error.message : String(error)
-          }
-        }
-      };
+    return {
+      ok: true,
+      data: buildCurrentStateSnapshot(note)
+    };
+  }
+
+  async writeCanonicalNotes(
+    notes: CanonicalNoteRecord[]
+  ): Promise<ServiceResult<CanonicalNoteRecord[], CanonicalNoteErrorCode>> {
+    const persistedNotes: CanonicalNoteRecord[] = [];
+    for (const note of notes) {
+      const persisted = await this.writeCanonicalNote(note);
+      if (!persisted.ok) {
+        return {
+          ok: false,
+          error: persisted.error
+        };
+      }
+
+      persistedNotes.push(persisted.data);
     }
+
+    return {
+      ok: true,
+      data: persistedNotes
+    };
   }
 
   private async persistCanonicalNote(note: CanonicalNoteRecord): Promise<CanonicalNoteRecord> {

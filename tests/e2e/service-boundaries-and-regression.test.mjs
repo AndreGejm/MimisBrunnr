@@ -138,6 +138,86 @@ test("promotion of a current-state context note creates a deterministic snapshot
   assert.ok(snapshot.frontmatter.tags.includes("topic/current-state-snapshot"));
 });
 
+test("promotion outbox replays failed cross-store sync work after a transient index failure", async (t) => {
+  const { container } = await createHarness(t);
+  assert.ok(container.ports.lexicalIndex, "expected lexical index to be available");
+
+  const draft = await createDraft(container, {
+    actorRole: "writer",
+    targetCorpus: "context_brain",
+    noteType: "decision",
+    title: "Replayable Promotion",
+    sourcePrompt: "Draft a promotion that should survive a transient indexing fault.",
+    bodyHints: [
+      "The promotion outbox should make canonical writes replayable.",
+      "Chunk and index sync can be retried safely."
+    ],
+    frontmatterOverrides: {
+      scope: "promotion-outbox"
+    }
+  });
+
+  let failLexicalUpsertOnce = true;
+  const failOnceLexicalIndex = {
+    async removeByNoteId(noteId) {
+      return container.ports.lexicalIndex.removeByNoteId(noteId);
+    },
+    async upsertChunks(chunks) {
+      if (failLexicalUpsertOnce) {
+        failLexicalUpsertOnce = false;
+        throw new Error("Injected lexical sync failure");
+      }
+
+      return container.ports.lexicalIndex.upsertChunks(chunks);
+    }
+  };
+  const promotionService = new application.PromotionOrchestratorService(
+    container.ports.stagingNoteRepository,
+    container.services.canonicalNoteService,
+    container.services.noteValidationService,
+    container.ports.metadataControlStore,
+    container.services.chunkingService,
+    container.services.auditHistoryService,
+    failOnceLexicalIndex,
+    container.ports.vectorIndex,
+    container.ports.embeddingProvider
+  );
+
+  const initialPromotion = await promotionService.promoteDraft({
+    actor: actor("orchestrator"),
+    draftNoteId: draft.draftNoteId,
+    targetCorpus: "context_brain",
+    promoteAsCurrentState: false
+  });
+
+  assert.equal(initialPromotion.ok, false);
+  assert.equal(initialPromotion.error.code, "write_failed");
+  assert.equal(typeof initialPromotion.error.details?.outboxId, "string");
+
+  const outboxId = initialPromotion.error.details.outboxId;
+  const failedOutbox = await container.ports.metadataControlStore.getPromotionOutboxEntry(outboxId);
+  assert.ok(failedOutbox);
+  assert.equal(failedOutbox.state, "failed");
+
+  const replay = await promotionService.replayPendingPromotions();
+  assert.ok(replay.processedOutboxIds.includes(outboxId));
+  assert.ok(!replay.failedOutboxIds.includes(outboxId));
+
+  const completedOutbox = await container.ports.metadataControlStore.getPromotionOutboxEntry(outboxId);
+  assert.ok(completedOutbox);
+  assert.equal(completedOutbox.state, "completed");
+
+  const notes = await container.services.canonicalNoteService.listCanonicalNotes("context_brain");
+  assert.equal(notes.ok, true);
+  assert.ok(
+    notes.data.some((note) => note.frontmatter.title === "Replayable Promotion")
+  );
+
+  const promotedDraft = await container.ports.stagingNoteRepository.getById(draft.draftNoteId);
+  assert.ok(promotedDraft);
+  assert.equal(promotedDraft.lifecycleState, "promoted");
+});
+
 test("chunking preserves code fences, heading hierarchy, and adjacency", async (t) => {
   const { container } = await createHarness(t);
   const noteId = randomUUID();
@@ -270,6 +350,127 @@ test("retrieval packets stay within explicit source and raw-excerpt budgets", as
   assert.ok(result.data.packet.evidence.length <= 2);
   assert.ok((result.data.packet.rawExcerpts?.length ?? 0) <= 1);
   assert.ok(result.data.packet.budgetUsage.sourceCount <= 2);
+});
+
+test("context packet assembly hard-enforces token and summary-sentence budgets", async (t) => {
+  const { container } = await createHarness(t);
+
+  const packetResponse = await container.services.contextPacketService.assemblePacket(
+    {
+      actor: actor("retrieval"),
+      intent: "architecture_recall",
+      budget: {
+        maxTokens: 80,
+        maxSources: 3,
+        maxRawExcerpts: 2,
+        maxSummarySentences: 1
+      },
+      includeRawExcerpts: true,
+      candidates: [
+        {
+          noteType: "architecture",
+          score: 0.92,
+          summary: "Primary architecture guidance explains the packet contract. It also describes the retry loop in detail.",
+          rawText: "Primary architecture guidance explains the packet contract in a very long paragraph. ".repeat(12),
+          scope: "packet-budget",
+          qualifiers: ["bounded context", "packet budget", "retry loop"],
+          tags: ["project/multi-agent-brain", "domain/retrieval"],
+          stalenessClass: "current",
+          provenance: {
+            noteId: "packet-budget-1",
+            notePath: "context_brain/architecture/packet-budget-1.md",
+            headingPath: ["Summary"]
+          }
+        },
+        {
+          noteType: "decision",
+          score: 0.81,
+          summary: "Secondary decision context keeps packets compact. It should be reduced when budgets tighten.",
+          rawText: "Secondary decision context keeps packets compact while preserving provenance. ".repeat(10),
+          scope: "packet-budget",
+          qualifiers: ["compact packets", "provenance"],
+          tags: ["project/multi-agent-brain", "domain/retrieval"],
+          stalenessClass: "current",
+          provenance: {
+            noteId: "packet-budget-2",
+            notePath: "context_brain/decision/packet-budget-2.md",
+            headingPath: ["Decision"]
+          }
+        },
+        {
+          noteType: "reference",
+          score: 0.74,
+          summary: "Reference material should only survive if room remains in the explicit budget.",
+          rawText: "Reference material should only survive if room remains in the explicit budget. ".repeat(8),
+          scope: "packet-budget",
+          qualifiers: ["budget", "reference"],
+          tags: ["project/multi-agent-brain", "domain/retrieval"],
+          stalenessClass: "current",
+          provenance: {
+            noteId: "packet-budget-3",
+            notePath: "context_brain/reference/packet-budget-3.md",
+            headingPath: ["Reference"]
+          }
+        }
+      ]
+    },
+    "needs_escalation"
+  );
+
+  assert.ok(packetResponse.packet.budgetUsage.tokenEstimate <= 80);
+  assert.ok(countSummarySentences(packetResponse.packet.summary) <= 1);
+  assert.ok(packetResponse.packet.budgetUsage.sourceCount <= 3);
+  assert.ok(packetResponse.packet.budgetUsage.rawExcerptCount <= 2);
+});
+
+test("retrieve context honors tagFilters across the retrieval pipeline", async (t) => {
+  const { container } = await createHarness(t);
+
+  const alpha = await createAndPromote(container, {
+    title: "Tag Filter Alpha",
+    noteType: "architecture",
+    bodyHints: [
+      "Shared retrieval query context should match this alpha note.",
+      "Tag filters must allow only alpha-tagged context through."
+    ],
+    scope: "tag-filter-alpha",
+    frontmatterOverrides: {
+      tags: ["topic/mcp"]
+    }
+  });
+  await createAndPromote(container, {
+    title: "Tag Filter Beta",
+    noteType: "architecture",
+    bodyHints: [
+      "Shared retrieval query context should also match this beta note.",
+      "Tag filters must exclude beta-tagged context when alpha is requested."
+    ],
+    scope: "tag-filter-beta",
+    frontmatterOverrides: {
+      tags: ["topic/docker"]
+    }
+  });
+
+  const result = await container.services.retrieveContextService.retrieveContext({
+    actor: actor("retrieval"),
+    query: "shared retrieval query context",
+    budget: {
+      maxTokens: 320,
+      maxSources: 3,
+      maxRawExcerpts: 1,
+      maxSummarySentences: 2
+    },
+    corpusIds: ["context_brain"],
+    tagFilters: ["topic/mcp"],
+    requireEvidence: false
+  });
+
+  assert.equal(result.ok, true);
+  assert.ok(result.data.candidateCounts.lexical > 0);
+  assert.ok(result.data.packet.evidence.length >= 1);
+  assert.ok(
+    result.data.packet.evidence.every((source) => source.noteId === alpha.promotedNoteId)
+  );
 });
 
 test("retrieve context uses the paid escalation provider to enrich uncertainty when local evidence is insufficient", async (t) => {
@@ -561,7 +762,8 @@ async function createAndPromote(container, input) {
     sourcePrompt: `Draft ${input.title}`,
     bodyHints: input.bodyHints,
     frontmatterOverrides: {
-      scope: input.scope
+      scope: input.scope,
+      ...input.frontmatterOverrides
     }
   });
 
@@ -609,4 +811,12 @@ function testEnvironment(root = path.join(os.tmpdir(), `mab-standalone-${randomU
 
 function currentDateIso() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function countSummarySentences(value) {
+  return value
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean)
+    .length;
 }

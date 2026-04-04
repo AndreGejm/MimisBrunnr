@@ -1,4 +1,4 @@
-import type { NoteType, QueryIntent } from "@multi-agent-brain/domain";
+import type { ControlledTag, NoteType, QueryIntent } from "@multi-agent-brain/domain";
 import type { ScoredChunkCandidate } from "./retrieval-candidate.js";
 
 const DEFAULT_FINAL_LIMIT = 8;
@@ -23,6 +23,7 @@ export class RankingFusionService {
     vectorCandidates: ScoredChunkCandidate[];
     finalLimit?: number;
     noteTypePriority?: NoteType[];
+    tagFilters?: ControlledTag[];
   }): ScoredChunkCandidate[] {
     const noteTypePriority = input.noteTypePriority ?? this.getNoteTypePriority(input.intent);
     const merged = new Map<string, ScoredChunkCandidate>();
@@ -49,6 +50,7 @@ export class RankingFusionService {
     });
 
     return [...merged.values()]
+      .filter((candidate) => matchesTagFilters(candidate.tags, input.tagFilters))
       .map((candidate) => ({
         ...candidate,
         score:
@@ -65,6 +67,17 @@ export class RankingFusionService {
       .sort((left, right) => right.score - left.score)
       .slice(0, input.finalLimit ?? DEFAULT_FINAL_LIMIT);
   }
+}
+
+function matchesTagFilters(
+  tags: readonly ControlledTag[],
+  tagFilters: readonly ControlledTag[] | undefined
+): boolean {
+  if (!tagFilters || tagFilters.length === 0) {
+    return true;
+  }
+
+  return tagFilters.every((tagFilter) => tags.includes(tagFilter));
 }
 
 function reciprocalRankScore(index: number, constant: number): number {

@@ -99,6 +99,41 @@ test("brain-cli exposes direct context-packet assembly as a thin transport comma
   assert.equal(payload.packet.evidence[0].noteId, "note-1");
 });
 
+test("brain-cli rejects malformed request payloads at ingress", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-invalid-"));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const requestPath = path.join(root, "invalid-context-packet.json");
+  await writeFile(
+    requestPath,
+    JSON.stringify({
+      intent: "architecture_recall",
+      budget: {
+        maxTokens: "320",
+        maxSources: 2,
+        maxRawExcerpts: 1,
+        maxSummarySentences: 2
+      },
+      includeRawExcerpts: true,
+      candidates: []
+    }),
+    "utf8"
+  );
+
+  const result = await runNodeCommand(
+    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    ["get-context-packet", "--input", requestPath],
+    cliEnvironment(root)
+  );
+
+  assert.equal(result.exitCode, 1);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, "validation_failed");
+});
+
 test("brain-cli executes coding tasks through the vendored runtime bridge", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-coding-"));
   const repoRoot = path.join(root, "repo");
@@ -279,6 +314,60 @@ test("brain-api exposes direct context-packet assembly over HTTP", async (t) => 
   const payload = await response.json();
   assert.equal(payload.packet.packetType, "implementation");
   assert.equal(payload.packet.evidence[0].noteId, "note-http-1");
+});
+
+test("brain-api rejects malformed request payloads at ingress", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-invalid-"));
+  const { createBrainApiServer } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+    ).href
+  );
+
+  const api = createBrainApiServer({
+    nodeEnv: "test",
+    vaultRoot: path.join(root, "vault", "canonical"),
+    stagingRoot: path.join(root, "vault", "staging"),
+    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    qdrantUrl: "http://127.0.0.1:6333",
+    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    embeddingProvider: "hash",
+    reasoningProvider: "heuristic",
+    draftingProvider: "disabled",
+    rerankerProvider: "local",
+    apiHost: "127.0.0.1",
+    apiPort: 18185,
+    logLevel: "error"
+  });
+
+  t.after(async () => {
+    await api.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await api.listen();
+
+  const response = await fetch("http://127.0.0.1:18185/v1/context/search", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      query: "invalid budget",
+      corpusIds: ["context_brain"],
+      budget: {
+        maxTokens: "320",
+        maxSources: 2,
+        maxRawExcerpts: 1,
+        maxSummarySentences: 2
+      }
+    })
+  });
+
+  assert.equal(response.status, 400);
+  const payload = await response.json();
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error.code, "validation_failed");
 });
 
 test("brain-api enforces registered actor tokens when auth mode is enforced", async (t) => {

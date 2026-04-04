@@ -18,7 +18,9 @@ import type {
 import {
   ActorAuthorizationError,
   buildServiceContainer,
-  loadEnvironment
+  loadEnvironment,
+  TransportValidationError,
+  validateTransportRequest
 } from "@multi-agent-brain/infrastructure";
 
 type CommandName =
@@ -78,9 +80,10 @@ async function main(): Promise<void> {
   const container = buildServiceContainer(loadEnvironment());
   try {
   const request = await loadCommandPayload(parsed.options);
-  const actor = buildActorContext(parsed.command, request.actor);
+  const validatedRequest = validateTransportRequest(parsed.command, request);
+  const actor = buildActorContext(parsed.command, validatedRequest.actor);
   const normalizedRequest = normalizeCommandRequest(parsed.command, {
-    ...request,
+    ...validatedRequest,
     actor
   });
 
@@ -307,6 +310,13 @@ function writeJson(value: unknown, pretty: boolean): void {
 
 function mapCliError(error: unknown): { ok: false; error: { code: string; message: string; details?: Record<string, unknown> } } {
   if (error instanceof ActorAuthorizationError) {
+    return {
+      ok: false,
+      error: error.toServiceError()
+    };
+  }
+
+  if (error instanceof TransportValidationError) {
     return {
       ok: false,
       error: error.toServiceError()

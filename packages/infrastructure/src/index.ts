@@ -15,6 +15,7 @@ export * from "./providers/ollama-local-reasoning-provider.js";
 export * from "./providers/ollama-reranker-provider.js";
 export * from "./sqlite/sqlite-audit-log.js";
 export * from "./sqlite/sqlite-metadata-control-store.js";
+export * from "./transport/request-validation.js";
 export * from "./vector/qdrant-vector-index.js";
 export * from "./vault/file-system-canonical-note-repository.js";
 export * from "./vault/file-system-staging-note-repository.js";

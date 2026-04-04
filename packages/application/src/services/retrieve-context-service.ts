@@ -71,7 +71,9 @@ export class RetrieveContextService {
       );
       const noteTypePriority =
         request.noteTypePriority ?? this.rankingFusionService.getNoteTypePriority(intent);
-      const stageOneLimit = Math.max(20, budget.maxSources * 10);
+      const stageOneLimit = request.tagFilters?.length
+        ? Math.max(40, budget.maxSources * 20)
+        : Math.max(20, budget.maxSources * 10);
 
       const [lexicalCandidates, vectorCandidates] = await Promise.all([
         this.lexicalRetrievalService.search(request, noteTypePriority, stageOneLimit),
@@ -83,7 +85,8 @@ export class RetrieveContextService {
         lexicalCandidates,
         vectorCandidates,
         noteTypePriority,
-        finalLimit: Math.max(8, budget.maxSources * 3)
+        finalLimit: Math.max(8, budget.maxSources * 3),
+        tagFilters: request.tagFilters
       });
       const rankedCandidates = await this.rerankCandidates(
         request.query,

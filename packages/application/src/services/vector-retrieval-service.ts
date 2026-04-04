@@ -45,6 +45,10 @@ export class VectorRetrievalService {
         return [];
       }
 
+      if (!matchesTagFilters(chunk.tags, request.tagFilters)) {
+        return [];
+      }
+
       return [{
         chunk,
         noteType: chunk.noteType,
@@ -66,4 +70,15 @@ export class VectorRetrievalService {
       }];
     });
   }
+}
+
+function matchesTagFilters(
+  tags: readonly string[],
+  tagFilters: readonly string[] | undefined
+): boolean {
+  if (!tagFilters || tagFilters.length === 0) {
+    return true;
+  }
+
+  return tagFilters.every((tagFilter) => tags.includes(tagFilter));
 }

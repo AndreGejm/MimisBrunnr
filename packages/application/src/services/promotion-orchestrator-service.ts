@@ -3,7 +3,10 @@ import type { CanonicalNoteRecord } from "../ports/canonical-note-repository.js"
 import type { EmbeddingProvider } from "../ports/embedding-provider.js";
 import type { LexicalIndex } from "../ports/lexical-index.js";
 import type { MetadataControlStore } from "../ports/metadata-control-store.js";
-import type { StagingNoteRepository } from "../ports/staging-note-repository.js";
+import type {
+  StagingDraftRecord,
+  StagingNoteRepository
+} from "../ports/staging-note-repository.js";
 import type { VectorIndex } from "../ports/vector-index.js";
 import { AuditHistoryService } from "./audit-history-service.js";
 import { CanonicalNoteService } from "./canonical-note-service.js";
@@ -21,6 +24,18 @@ type PromoteNoteErrorCode =
   | "write_failed";
 
 const PROMOTION_ROLES = new Set(["orchestrator", "operator", "system"]);
+
+interface ProcessedPromotionResult {
+  outboxId: string;
+  promotedNoteId: NoteId;
+  canonicalPath: string;
+  supersededNoteIds: NoteId[];
+  chunkCount: number;
+  promotedChunks: ChunkRecord[];
+  snapshotChunks: ChunkRecord[];
+  affectedNoteIds: NoteId[];
+  snapshotNotePath?: string;
+}
 
 export class PromotionOrchestratorService {
   constructor(
@@ -160,6 +175,8 @@ export class PromotionOrchestratorService {
       };
     }
 
+    const nowDate = currentDateIso();
+    const nowTimestamp = currentTimestampIso();
     const supersededRecords = request.promoteAsCurrentState
       ? await this.findSupersededRecords(request.targetCorpus, draft.frontmatter)
       : [];
@@ -180,104 +197,85 @@ export class PromotionOrchestratorService {
       frontmatter: normalizedFrontmatter,
       body: draft.body
     };
-
-    for (const supersededRecord of supersededRecords) {
-      const supersededWrite = await this.canonicalNoteService.writeCanonicalNote({
-        ...supersededRecord,
-        frontmatter: {
-          ...supersededRecord.frontmatter,
-          status: "superseded",
-          currentState: false,
-          supersededBy: promotedNoteId,
-          updated: currentDateIso(),
-          tags: normalizeSupersededTags(
-            supersededRecord.frontmatter.tags.filter((tag) => tag !== "status/current")
-          )
-        }
-      });
-
-      if (!supersededWrite.ok) {
-        await this.recordAuditForRejection(
-          request,
-          [draft.noteId, supersededRecord.noteId],
-          [],
-          "Failed while superseding an existing canonical note.",
-          supersededWrite.error.details
-        );
-        return {
-          ok: false,
-          error: {
-            code: "write_failed",
-            message: "Failed to supersede an existing canonical note.",
-            details: supersededWrite.error.details
-          }
-        };
+    const supersededWrites: CanonicalNoteRecord[] = supersededRecords.map((supersededRecord): CanonicalNoteRecord => ({
+      ...supersededRecord,
+      frontmatter: {
+        ...supersededRecord.frontmatter,
+        status: "superseded",
+        currentState: false,
+        supersededBy: promotedNoteId,
+        updated: nowDate,
+        tags: normalizeSupersededTags(
+          supersededRecord.frontmatter.tags.filter((tag) => tag !== "status/current")
+        )
       }
-
-      const supersededChunks = this.chunkingService.chunkCanonicalNote(supersededWrite.data);
-      await this.syncChunkState(supersededRecord.noteId, supersededChunks);
-    }
-
-    const canonicalWrite = await this.canonicalNoteService.writeCanonicalNote(canonicalNote);
-    if (!canonicalWrite.ok) {
+    }));
+    const snapshotResult = request.promoteAsCurrentState
+      ? this.canonicalNoteService.prepareCurrentStateSnapshot(canonicalNote)
+      : undefined;
+    if (snapshotResult && !snapshotResult.ok) {
       await this.recordAuditForRejection(
         request,
         [draft.noteId],
         [],
-        "Failed to persist canonical note state.",
-        canonicalWrite.error.details
+        "Failed to prepare the current-state snapshot note.",
+        snapshotResult.error.details
       );
       return {
         ok: false,
         error: {
           code: "write_failed",
-          message: canonicalWrite.error.message,
-          details: canonicalWrite.error.details
+          message: snapshotResult.error.message,
+          details: snapshotResult.error.details
         }
       };
     }
 
-    const promotedChunks = this.chunkingService.chunkCanonicalNote(canonicalWrite.data);
-    await this.syncChunkState(promotedNoteId, promotedChunks);
-
-    let snapshotChunks: ChunkRecord[] = [];
-    const snapshotWrite = request.promoteAsCurrentState
-      ? await this.canonicalNoteService.writeCurrentStateSnapshot(canonicalWrite.data)
-      : undefined;
-    if (snapshotWrite?.ok) {
-      snapshotChunks = this.chunkingService.chunkCanonicalNote(snapshotWrite.data);
-      await this.syncChunkState(snapshotWrite.data.noteId, snapshotChunks);
-    }
-    await this.metadataControlStore.recordPromotion({
-      draftNoteId: draft.noteId,
-      canonicalNoteId: promotedNoteId,
-      supersededNoteIds,
-      promotedAt: currentTimestampIso()
-    });
-
-    const promotedDraft = await this.stagingNoteRepository.updateDraft({
+    const promotedDraftPlan: StagingDraftRecord = {
       ...draft,
       lifecycleState: "promoted",
       frontmatter: {
         ...draft.frontmatter,
         status: "promoted",
-        updated: currentDateIso(),
+        updated: nowDate,
         currentState: false
       }
+    };
+    const outboxId = randomUUID();
+    const queuedPromotion = await this.metadataControlStore.enqueuePromotionOutbox({
+      outboxId,
+      payload: {
+        actor: request.actor,
+        targetCorpus: request.targetCorpus,
+        canonicalWrites: [
+          ...supersededWrites,
+          canonicalNote,
+          ...(snapshotResult?.ok ? [snapshotResult.data] : [])
+        ],
+        draftUpdate: promotedDraftPlan,
+        promotionDecision: {
+          promotionEventId: outboxId,
+          draftNoteId: draft.noteId,
+          canonicalNoteId: promotedNoteId,
+          supersededNoteIds,
+          promotedAt: nowTimestamp
+        }
+      }
     });
-    await this.metadataControlStore.upsertNote({
-      noteId: promotedDraft.noteId,
-      corpusId: promotedDraft.corpusId,
-      notePath: promotedDraft.draftPath,
-      noteType: promotedDraft.frontmatter.type,
-      lifecycleState: promotedDraft.lifecycleState,
-      revision: promotedDraft.revision,
-      updatedAt: promotedDraft.frontmatter.updated,
-      currentState: promotedDraft.frontmatter.currentState,
-      summary: promotedDraft.frontmatter.summary,
-      scope: promotedDraft.frontmatter.scope,
-      tags: promotedDraft.frontmatter.tags
-    });
+    const processedPromotion = await this.processPromotionOutboxEntry(queuedPromotion.outboxId);
+    if (!processedPromotion.ok) {
+      return {
+        ok: false,
+        error: {
+          code: "write_failed",
+          message: processedPromotion.error.message,
+          details: {
+            ...processedPromotion.error.details,
+            outboxId: queuedPromotion.outboxId
+          }
+        }
+      };
+    }
 
     const auditEntry = await this.auditHistoryService.recordAction({
       actionType: "promote_note",
@@ -287,38 +285,157 @@ export class PromotionOrchestratorService {
       toolName: request.actor.toolName,
       occurredAt: currentTimestampIso(),
       outcome: "accepted",
-      affectedNoteIds: [
-        draft.noteId,
-        promotedNoteId,
-        ...supersededNoteIds,
-        ...(snapshotWrite?.ok ? [snapshotWrite.data.noteId] : [])
-      ],
+      affectedNoteIds: processedPromotion.data.affectedNoteIds,
       affectedChunkIds: [
-        ...promotedChunks.map((chunk) => chunk.chunkId),
-        ...snapshotChunks.map((chunk) => chunk.chunkId)
+        ...processedPromotion.data.promotedChunks.map((chunk) => chunk.chunkId),
+        ...processedPromotion.data.snapshotChunks.map((chunk) => chunk.chunkId)
       ],
       detail: {
         targetCorpus: request.targetCorpus,
-        canonicalPath: canonicalWrite.data.notePath,
-        supersededNoteIds,
-        snapshotNotePath: snapshotWrite?.ok ? snapshotWrite.data.notePath : undefined
+        canonicalPath: processedPromotion.data.canonicalPath,
+        supersededNoteIds: processedPromotion.data.supersededNoteIds,
+        snapshotNotePath: processedPromotion.data.snapshotNotePath,
+        outboxId: processedPromotion.data.outboxId
       }
     });
 
     return {
       ok: true,
       data: {
-        promotedNoteId,
-        canonicalPath: canonicalWrite.data.notePath,
-        supersededNoteIds,
-        chunkCount: promotedChunks.length,
+        promotedNoteId: processedPromotion.data.promotedNoteId,
+        canonicalPath: processedPromotion.data.canonicalPath,
+        supersededNoteIds: processedPromotion.data.supersededNoteIds,
+        chunkCount: processedPromotion.data.chunkCount,
         auditEntryId: auditEntry.ok ? auditEntry.data.auditEntryId : ""
       },
-      warnings: [
-        ...(auditEntry.ok ? [] : [auditEntry.error.message]),
-        ...(snapshotWrite && !snapshotWrite.ok ? [snapshotWrite.error.message] : [])
-      ].filter(Boolean)
+      warnings: [...(auditEntry.ok ? [] : [auditEntry.error.message])].filter(Boolean)
     };
+  }
+
+  async replayPendingPromotions(limit = 25): Promise<{
+    processedOutboxIds: string[];
+    failedOutboxIds: string[];
+  }> {
+    const queuedPromotions = await this.metadataControlStore.listPromotionOutboxEntries({
+      states: ["pending", "failed", "processing"],
+      limit
+    });
+    const processedOutboxIds: string[] = [];
+    const failedOutboxIds: string[] = [];
+
+    for (const queuedPromotion of queuedPromotions) {
+      const result = await this.processPromotionOutboxEntry(queuedPromotion.outboxId);
+      if (result.ok) {
+        processedOutboxIds.push(queuedPromotion.outboxId);
+      } else {
+        failedOutboxIds.push(queuedPromotion.outboxId);
+      }
+    }
+
+    return {
+      processedOutboxIds,
+      failedOutboxIds
+    };
+  }
+
+  private async processPromotionOutboxEntry(
+    outboxId: string
+  ): Promise<ServiceResult<ProcessedPromotionResult, "write_failed">> {
+    const queuedPromotion = await this.metadataControlStore.claimPromotionOutboxEntry(outboxId);
+    if (!queuedPromotion) {
+      return {
+        ok: false,
+        error: {
+          code: "write_failed",
+          message: `Promotion outbox entry '${outboxId}' could not be claimed.`,
+          details: {
+            outboxId
+          }
+        }
+      };
+    }
+
+    const canonicalPath =
+      queuedPromotion.payload.canonicalWrites.find(
+        (note) => note.noteId === queuedPromotion.payload.promotionDecision.canonicalNoteId
+      )?.notePath ?? "";
+
+    try {
+      let promotedChunks: ChunkRecord[] = [];
+      let snapshotChunks: ChunkRecord[] = [];
+      let snapshotNotePath: string | undefined;
+
+      for (const canonicalWrite of queuedPromotion.payload.canonicalWrites) {
+        const persisted = await this.canonicalNoteService.writeCanonicalNote(canonicalWrite);
+        if (!persisted.ok) {
+          throw new Error(
+            `${persisted.error.message}${persisted.error.details ? ` ${JSON.stringify(persisted.error.details)}` : ""}`
+          );
+        }
+
+        const chunks = this.chunkingService.chunkCanonicalNote(persisted.data);
+        await this.syncChunkState(persisted.data.noteId, chunks);
+
+        if (persisted.data.noteId === queuedPromotion.payload.promotionDecision.canonicalNoteId) {
+          promotedChunks = chunks;
+        }
+
+        if (persisted.data.frontmatter.tags.includes("topic/current-state-snapshot")) {
+          snapshotChunks = chunks;
+          snapshotNotePath = persisted.data.notePath;
+        }
+      }
+
+      await this.metadataControlStore.recordPromotion(
+        queuedPromotion.payload.promotionDecision
+      );
+
+      const promotedDraft = await this.stagingNoteRepository.updateDraft(
+        queuedPromotion.payload.draftUpdate
+      );
+      await this.metadataControlStore.upsertNote(
+        mapDraftMetadataRecord(promotedDraft)
+      );
+      await this.metadataControlStore.completePromotionOutboxEntry(outboxId);
+
+      return {
+        ok: true,
+        data: {
+          outboxId,
+          promotedNoteId: queuedPromotion.payload.promotionDecision.canonicalNoteId,
+          canonicalPath,
+          supersededNoteIds: queuedPromotion.payload.promotionDecision.supersededNoteIds,
+          chunkCount: promotedChunks.length,
+          promotedChunks,
+          snapshotChunks,
+          affectedNoteIds: [
+            queuedPromotion.payload.promotionDecision.draftNoteId,
+            queuedPromotion.payload.promotionDecision.canonicalNoteId,
+            ...queuedPromotion.payload.promotionDecision.supersededNoteIds,
+            ...(snapshotNotePath
+              ? queuedPromotion.payload.canonicalWrites
+                  .filter((note) => note.notePath === snapshotNotePath)
+                  .map((note) => note.noteId)
+              : [])
+          ],
+          snapshotNotePath
+        }
+      };
+    } catch (error) {
+      const lastError = error instanceof Error ? error.message : String(error);
+      await this.metadataControlStore.failPromotionOutboxEntry(outboxId, lastError);
+      return {
+        ok: false,
+        error: {
+          code: "write_failed",
+          message: "Failed while processing the promotion outbox entry.",
+          details: {
+            outboxId,
+            reason: lastError
+          }
+        }
+      };
+    }
   }
 
   private async syncChunkState(
@@ -410,6 +527,26 @@ export class PromotionOrchestratorService {
       }
     });
   }
+}
+
+function mapDraftMetadataRecord(
+  draft: Awaited<ReturnType<StagingNoteRepository["updateDraft"]>>
+) {
+  return {
+    noteId: draft.noteId,
+    corpusId: draft.corpusId,
+    notePath: draft.draftPath,
+    noteType: draft.frontmatter.type,
+    lifecycleState: draft.lifecycleState,
+    revision: draft.revision,
+    updatedAt: draft.frontmatter.updated,
+    currentState: draft.frontmatter.currentState,
+    validFrom: draft.frontmatter.validFrom,
+    validUntil: draft.frontmatter.validUntil,
+    summary: draft.frontmatter.summary,
+    scope: draft.frontmatter.scope,
+    tags: draft.frontmatter.tags
+  };
 }
 
 function normalizePromotedTags(

@@ -320,6 +320,79 @@ test("brain-mcp enforces registered actor tokens when auth mode is enforced", as
   assert.equal(authorized.result.structuredContent.packet.evidence[0].noteId, "note-mcp-auth-2");
 });
 
+test("brain-mcp rejects malformed tool arguments at ingress", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-mcp-invalid-"));
+  const child = spawn(
+    process.execPath,
+    [path.join(process.cwd(), "apps", "brain-mcp", "dist", "main.js")],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        MAB_NODE_ENV: "test",
+        MAB_VAULT_ROOT: path.join(root, "vault", "canonical"),
+        MAB_STAGING_ROOT: path.join(root, "vault", "staging"),
+        MAB_SQLITE_PATH: path.join(root, "state", "multi-agent-brain.sqlite"),
+        MAB_QDRANT_URL: "http://127.0.0.1:6333",
+        MAB_QDRANT_COLLECTION: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+        MAB_EMBEDDING_PROVIDER: "hash",
+        MAB_REASONING_PROVIDER: "heuristic",
+        MAB_DRAFTING_PROVIDER: "disabled",
+        MAB_RERANKER_PROVIDER: "local",
+        MAB_PROVIDER_DOCKER_OLLAMA_BASE_URL: "http://127.0.0.1:1",
+        MAB_OLLAMA_BASE_URL: "http://127.0.0.1:1",
+        MAB_LOG_LEVEL: "error"
+      },
+      stdio: ["pipe", "pipe", "pipe"]
+    }
+  );
+
+  t.after(async () => {
+    child.kill("SIGTERM");
+    await new Promise((resolve) => {
+      child.once("close", resolve);
+    });
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const transport = createMessageCollector(child.stdout);
+
+  writeMcpMessage(child.stdin, {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2024-11-05",
+      capabilities: {}
+    }
+  });
+  await transport.next();
+
+  writeMcpMessage(child.stdin, {
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/call",
+    params: {
+      name: "get_context_packet",
+      arguments: {
+        intent: "architecture_recall",
+        budget: {
+          maxTokens: "320",
+          maxSources: 2,
+          maxRawExcerpts: 1,
+          maxSummarySentences: 2
+        },
+        includeRawExcerpts: false,
+        candidates: []
+      }
+    }
+  });
+
+  const invalid = await transport.next();
+  assert.equal(invalid.result.isError, true);
+  assert.equal(invalid.result.structuredContent.error.code, "validation_failed");
+});
+
 function writeMcpMessage(stream, message) {
   const body = Buffer.from(JSON.stringify(message), "utf8");
   const header = Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, "utf8");
