@@ -5,6 +5,10 @@ import type {
   TransportKind
 } from "@multi-agent-brain/contracts";
 import type { OrchestratorCommand } from "../routing/task-family-router.js";
+import {
+  verifyActorAccessToken,
+  type IssuedActorTokenClaims
+} from "./issued-actor-token.js";
 
 export type ActorAuthorizationMode = "permissive" | "enforced";
 
@@ -32,6 +36,46 @@ export interface ActorAuthorizationOptions {
   mode?: ActorAuthorizationMode;
   allowAnonymousInternal?: boolean;
   registry?: ReadonlyArray<ActorRegistryEntry>;
+  issuerSecret?: string;
+  issuedTokenRequireRegistryMatch?: boolean;
+}
+
+export interface ActorRegistryEntryStatus {
+  actorId: string;
+  actorRole: ActorRole;
+  source?: string;
+  enabled: boolean;
+  lifecycleStatus: "active" | "future" | "expired" | "disabled";
+  allowedTransports?: TransportKind[];
+  allowedCommands?: OrchestratorCommand[];
+  staticCredentialCount: number;
+  activeCredentialCount: number;
+  futureCredentialCount: number;
+  expiredCredentialCount: number;
+}
+
+export interface ActorRegistrySummary {
+  mode: ActorAuthorizationMode;
+  allowAnonymousInternal: boolean;
+  issuedTokenSupport: {
+    enabled: boolean;
+    requireRegistryMatch: boolean;
+  };
+  actorCounts: {
+    total: number;
+    enabled: number;
+    disabled: number;
+    active: number;
+    future: number;
+    expired: number;
+  };
+  credentialCounts: {
+    static: number;
+    active: number;
+    future: number;
+    expired: number;
+  };
+  actors: ActorRegistryEntryStatus[];
 }
 
 type AuthorizationErrorCode = "unauthorized" | "forbidden";
@@ -89,10 +133,15 @@ export class ActorAuthorizationPolicy {
   private readonly mode: ActorAuthorizationMode;
   private readonly allowAnonymousInternal: boolean;
   private readonly registry: ReadonlyMap<string, NormalizedActorRegistryEntry>;
+  private readonly issuerSecret?: string;
+  private readonly issuedTokenRequireRegistryMatch: boolean;
 
   constructor(options: ActorAuthorizationOptions = {}) {
     this.mode = options.mode ?? "permissive";
     this.allowAnonymousInternal = options.allowAnonymousInternal ?? true;
+    this.issuerSecret = options.issuerSecret?.trim() || undefined;
+    this.issuedTokenRequireRegistryMatch =
+      options.issuedTokenRequireRegistryMatch ?? true;
     this.registry = new Map(
       (options.registry ?? []).map((entry) => [entry.actorId, normalizeEntry(entry)])
     );
@@ -105,6 +154,10 @@ export class ActorAuthorizationPolicy {
 
     const registeredActor = this.registry.get(actor.actorId);
     if (!registeredActor) {
+      if (this.tryAuthorizeIssuedToken(command, actor, evaluationTimeMs)) {
+        return;
+      }
+
       if (this.mode === "enforced" && !this.isAnonymousInternalAllowed(actor)) {
         throw new ActorAuthorizationError(
           "unauthorized",
@@ -209,6 +262,10 @@ export class ActorAuthorizationPolicy {
       );
     }
 
+    if (this.tryAuthorizeIssuedToken(command, actor, evaluationTimeMs, registeredActor)) {
+      return;
+    }
+
     if ((registeredActor.authTokens?.length ?? 0) > 0) {
       const suppliedToken = actor.authToken?.trim();
       if (!suppliedToken) {
@@ -300,6 +357,93 @@ export class ActorAuthorizationPolicy {
   private isAnonymousInternalAllowed(actor: ActorContext): boolean {
     return this.allowAnonymousInternal && actor.transport === "internal";
   }
+
+  getRegistrySummary(asOf: string = new Date().toISOString()): ActorRegistrySummary {
+    const evaluationTimeMs = normalizeEvaluationTime(asOf);
+    const actors = [...this.registry.values()].map((entry) =>
+      summarizeEntry(entry, evaluationTimeMs)
+    );
+
+    return {
+      mode: this.mode,
+      allowAnonymousInternal: this.allowAnonymousInternal,
+      issuedTokenSupport: {
+        enabled: Boolean(this.issuerSecret),
+        requireRegistryMatch: this.issuedTokenRequireRegistryMatch
+      },
+      actorCounts: {
+        total: actors.length,
+        enabled: actors.filter((actor) => actor.enabled).length,
+        disabled: actors.filter((actor) => !actor.enabled).length,
+        active: actors.filter((actor) => actor.lifecycleStatus === "active").length,
+        future: actors.filter((actor) => actor.lifecycleStatus === "future").length,
+        expired: actors.filter((actor) => actor.lifecycleStatus === "expired").length
+      },
+      credentialCounts: {
+        static: actors.reduce((total, actor) => total + actor.staticCredentialCount, 0),
+        active: actors.reduce((total, actor) => total + actor.activeCredentialCount, 0),
+        future: actors.reduce((total, actor) => total + actor.futureCredentialCount, 0),
+        expired: actors.reduce((total, actor) => total + actor.expiredCredentialCount, 0)
+      },
+      actors
+    };
+  }
+
+  private tryAuthorizeIssuedToken(
+    command: OrchestratorCommand,
+    actor: ActorContext,
+    evaluationTimeMs: number,
+    registeredActor?: NormalizedActorRegistryEntry
+  ): boolean {
+    const suppliedToken = actor.authToken?.trim();
+    if (!this.issuerSecret || !suppliedToken) {
+      return false;
+    }
+
+    if (this.issuedTokenRequireRegistryMatch && !registeredActor) {
+      return false;
+    }
+
+    let claims: IssuedActorTokenClaims;
+    try {
+      claims = verifyActorAccessToken(suppliedToken, this.issuerSecret);
+      if (
+        !isWithinValidityWindow(
+          evaluationTimeMs,
+          parseValidityInstant(claims.validFrom, "issued token validFrom"),
+          parseValidityInstant(claims.validUntil, "issued token validUntil")
+        )
+      ) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+
+    if (claims.actorId !== actor.actorId || claims.actorRole !== actor.actorRole) {
+      return false;
+    }
+
+    if (claims.source && claims.source !== actor.source) {
+      return false;
+    }
+
+    if (
+      claims.allowedTransports?.length &&
+      !claims.allowedTransports.includes(actor.transport)
+    ) {
+      return false;
+    }
+
+    if (
+      claims.allowedCommands?.length &&
+      !claims.allowedCommands.includes(command)
+    ) {
+      return false;
+    }
+
+    return true;
+  }
 }
 
 function normalizeEntry(entry: ActorRegistryEntry): NormalizedActorRegistryEntry {
@@ -382,6 +526,63 @@ function parseValidityInstant(
   }
 
   return parsed;
+}
+
+function summarizeEntry(
+  entry: NormalizedActorRegistryEntry,
+  evaluationTimeMs: number
+): ActorRegistryEntryStatus {
+  const credentials = entry.authTokens ?? [];
+  const activeCredentialCount = credentials.filter((credential) =>
+    isWithinValidityWindow(
+      evaluationTimeMs,
+      credential.validFromMs,
+      credential.validUntilMs
+    )
+  ).length;
+  const futureCredentialCount = credentials.filter(
+    (credential) =>
+      credential.validFromMs !== undefined && evaluationTimeMs < credential.validFromMs
+  ).length;
+  const expiredCredentialCount = credentials.filter(
+    (credential) =>
+      credential.validUntilMs !== undefined && evaluationTimeMs > credential.validUntilMs
+  ).length;
+
+  return {
+    actorId: entry.actorId,
+    actorRole: entry.actorRole,
+    source: entry.source,
+    enabled: entry.enabled,
+    lifecycleStatus: deriveActorLifecycleStatus(entry, evaluationTimeMs),
+    allowedTransports: entry.allowedTransports
+      ? [...entry.allowedTransports]
+      : undefined,
+    allowedCommands: entry.allowedCommands ? [...entry.allowedCommands] : undefined,
+    staticCredentialCount: credentials.length,
+    activeCredentialCount,
+    futureCredentialCount,
+    expiredCredentialCount
+  };
+}
+
+function deriveActorLifecycleStatus(
+  entry: NormalizedActorRegistryEntry,
+  evaluationTimeMs: number
+): ActorRegistryEntryStatus["lifecycleStatus"] {
+  if (!entry.enabled) {
+    return "disabled";
+  }
+
+  if (entry.validFromMs !== undefined && evaluationTimeMs < entry.validFromMs) {
+    return "future";
+  }
+
+  if (entry.validUntilMs !== undefined && evaluationTimeMs > entry.validUntilMs) {
+    return "expired";
+  }
+
+  return "active";
 }
 
 function normalizeEvaluationTime(value: string): number {

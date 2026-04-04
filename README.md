@@ -19,6 +19,8 @@ Implemented today:
 - bounded context packet assembly and decision-summary generation
 - deterministic validation and promotion for staged notes
 - actor-registry authn/authz with file-backed registry loading, rotated credentials, and validity windows
+- centrally issued short-lived actor tokens for registered actors via an issuer secret
+- operator-facing auth status surfaces in CLI and HTTP
 - model-role and provider abstractions for the local model stack
 - an OpenAI-compatible paid escalation provider path behind the reserved `paid_escalation` role
 - a vendored Python coding runtime integrated through the coding domain

@@ -30,6 +30,68 @@ test("brain-cli exposes shared release metadata through the version command", as
   assert.equal(payload.release.releaseChannel, "tagged");
 });
 
+test("brain-cli exposes auth registry status for operators", async () => {
+  const result = await runNodeCommand(
+    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    ["auth-status"],
+    {
+      ...process.env,
+      MAB_AUTH_MODE: "enforced",
+      MAB_AUTH_ISSUER_SECRET: "cli-issuer-secret",
+      MAB_AUTH_ACTOR_REGISTRY_JSON: JSON.stringify([
+        {
+          actorId: "operator-cli",
+          actorRole: "operator",
+          source: "brain-cli",
+          allowedTransports: ["cli"],
+          allowedCommands: ["query_history"],
+          authTokens: [
+            {
+              token: "current-operator-token",
+              validUntil: new Date(Date.now() + 3_600_000).toISOString()
+            }
+          ]
+        }
+      ])
+    }
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.auth.mode, "enforced");
+  assert.equal(payload.auth.issuedTokenSupport.enabled, true);
+  assert.equal(payload.auth.actorCounts.total, 1);
+});
+
+test("brain-cli can mint issued actor access tokens when the issuer secret is configured", async () => {
+  const result = await runNodeCommand(
+    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    [
+      "issue-auth-token",
+      "--json",
+      JSON.stringify({
+        actorId: "validate-note-http",
+        actorRole: "orchestrator",
+        source: "brain-api",
+        allowedTransports: ["http"],
+        allowedCommands: ["validate_note"],
+        ttlMinutes: 60
+      })
+    ],
+    {
+      ...process.env,
+      MAB_AUTH_ISSUER_SECRET: "cli-issuer-secret"
+    }
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, true);
+  assert.match(payload.issuedToken, /^mab1\./);
+  assert.equal(payload.claims.actorId, "validate-note-http");
+});
+
 test("brain-cli drafts notes through the staging service with JSON input", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-"));
   t.after(async () => {
@@ -320,6 +382,61 @@ test("brain-api exposes shared release metadata through the system version route
   assert.equal(payload.release.gitTag, "v0.3.0");
   assert.equal(payload.release.gitCommit, "abcdef0123456789");
   assert.equal(payload.release.releaseChannel, "tagged");
+});
+
+test("brain-api exposes auth registry status through the system auth route", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-auth-status-"));
+  const { createBrainApiServer } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+    ).href
+  );
+
+  const api = createBrainApiServer({
+    nodeEnv: "test",
+    vaultRoot: path.join(root, "vault", "canonical"),
+    stagingRoot: path.join(root, "vault", "staging"),
+    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    qdrantUrl: "http://127.0.0.1:6333",
+    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    embeddingProvider: "hash",
+    reasoningProvider: "heuristic",
+    draftingProvider: "disabled",
+    rerankerProvider: "local",
+    apiHost: "127.0.0.1",
+    apiPort: 18188,
+    logLevel: "error",
+    auth: {
+      mode: "enforced",
+      allowAnonymousInternal: true,
+      actorRegistry: [
+        {
+          actorId: "validate-note-http",
+          actorRole: "orchestrator",
+          source: "brain-api",
+          allowedTransports: ["http"],
+          allowedCommands: ["validate_note"]
+        }
+      ],
+      issuerSecret: "api-issuer-secret",
+      issuedTokenRequireRegistryMatch: true
+    }
+  });
+
+  t.after(async () => {
+    await api.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await api.listen();
+
+  const response = await fetch("http://127.0.0.1:18188/v1/system/auth");
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.ok, true);
+  assert.equal(payload.auth.mode, "enforced");
+  assert.equal(payload.auth.issuedTokenSupport.enabled, true);
+  assert.equal(payload.auth.actorCounts.total, 1);
 });
 
 test("brain-api exposes direct context-packet assembly over HTTP", async (t) => {
@@ -762,6 +879,125 @@ test("brain-api loads a file-backed actor registry and honors rotated credential
   assert.equal(current.status, 200);
   const currentPayload = await current.json();
   assert.equal(currentPayload.valid, true);
+});
+
+test("brain-api accepts centrally issued actor tokens for registered actors", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-issued-token-"));
+  const { createBrainApiServer } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+    ).href
+  );
+  const { issueActorAccessToken } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "packages", "infrastructure", "dist", "index.js")
+    ).href
+  );
+
+  const issuerSecret = "issued-token-secret";
+  const api = createBrainApiServer({
+    nodeEnv: "test",
+    vaultRoot: path.join(root, "vault", "canonical"),
+    stagingRoot: path.join(root, "vault", "staging"),
+    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    qdrantUrl: "http://127.0.0.1:6333",
+    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    embeddingProvider: "hash",
+    reasoningProvider: "heuristic",
+    draftingProvider: "disabled",
+    rerankerProvider: "local",
+    apiHost: "127.0.0.1",
+    apiPort: 18189,
+    logLevel: "error",
+    auth: {
+      mode: "enforced",
+      allowAnonymousInternal: true,
+      actorRegistry: [
+        {
+          actorId: "validate-note-http",
+          actorRole: "orchestrator",
+          source: "brain-api",
+          allowedTransports: ["http"],
+          allowedCommands: ["validate_note"]
+        }
+      ],
+      issuerSecret,
+      issuedTokenRequireRegistryMatch: true
+    }
+  });
+
+  t.after(async () => {
+    await api.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await api.listen();
+
+  const issuedToken = issueActorAccessToken(
+    {
+      actorId: "validate-note-http",
+      actorRole: "orchestrator",
+      source: "brain-api",
+      allowedTransports: ["http"],
+      allowedCommands: ["validate_note"],
+      validUntil: new Date(Date.now() + 3_600_000).toISOString(),
+      issuedAt: new Date().toISOString()
+    },
+    issuerSecret
+  );
+
+  const response = await fetch("http://127.0.0.1:18189/v1/notes/validate", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-brain-actor-token": issuedToken
+    },
+    body: JSON.stringify({
+      actor: {
+        actorId: "validate-note-http",
+        actorRole: "orchestrator",
+        source: "brain-api",
+        authToken: issuedToken
+      },
+      targetCorpus: "context_brain",
+      notePath: "context_brain/decision/issued-token-note.md",
+      validationMode: "promotion",
+      frontmatter: {
+        noteId: randomUUID(),
+        title: "Issued Token Note",
+        project: "multi-agent-brain",
+        type: "decision",
+        status: "promoted",
+        updated: currentDateIso(),
+        summary: "Issued tokens should work for registered operators.",
+        tags: ["project/multi-agent-brain", "domain/orchestration", "status/promoted"],
+        scope: "auth",
+        corpusId: "context_brain",
+        currentState: false
+      },
+      body: [
+        "## Context",
+        "",
+        "Issued-token auth context.",
+        "",
+        "## Decision",
+        "",
+        "Issued-token auth decision.",
+        "",
+        "## Rationale",
+        "",
+        "Issued-token auth rationale.",
+        "",
+        "## Consequences",
+        "",
+        "Issued-token auth consequences."
+      ].join("\n")
+    })
+  });
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.valid, true);
 });
 
 test("brain-api exposes coding execution through the root orchestrator", async (t) => {

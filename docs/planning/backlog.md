@@ -120,7 +120,7 @@ The next implementation order returns to the broader rollout backlog:
 
 | ID | Work Item | Why It Is Still Here | Status |
 | --- | --- | --- | --- |
-| BK-001 | Implement agent-scoped authentication and authorization | Actor-registry auth is now enforced across CLI, HTTP, MCP, and orchestrator command execution, with file-backed registry loading, rotated credentials, and validity windows, but shared-rollout hardening still lacks centralized identity issuance and broader operator controls | partial |
+| BK-001 | Implement agent-scoped authentication and authorization | Actor-registry auth is now enforced across CLI, HTTP, MCP, and orchestrator command execution, with file-backed registry loading, rotated credentials, validity windows, issuer-secret-backed issued tokens, and operator auth-status surfaces, but shared-rollout hardening still lacks a fuller central issuance and lifecycle-management control plane | partial |
 | BK-002 | Wire a real paid escalation provider behind the reserved `paid_escalation` role | A real OpenAI-compatible paid reasoning provider is now bound to the reserved role and can enrich escalation output when configured | done |
 | BK-003 | Expose context-packet assembly directly through transports | First-class packet assembly is now exposed through CLI, HTTP, and MCP | done |
 | BK-004 | Align `docker/compose.local.yml` with the live Docker Model Runner plus Qwen stack | Compose now mirrors the local Docker Model Runner plus Qwen role bindings | done |

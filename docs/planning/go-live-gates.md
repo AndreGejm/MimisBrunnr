@@ -21,7 +21,7 @@ The repository is not yet at "enable by default for every workspace" readiness.
 
 The main remaining gaps are:
 
-- auth boundaries are registry-backed with file-based loading, rotated credentials, and validity windows, but not yet fully hardened for shared rollout
+- auth boundaries are registry-backed with file-based loading, rotated credentials, validity windows, issued tokens, and local operator status surfaces, but not yet fully hardened for shared rollout
 - temporal-validity handling is stronger with runtime freshness reporting and retrieval warnings, but still limited beyond the new validity-window baseline
 - shared rollout still needs continued operator hardening and freshness governance after the versioning contract work
 
@@ -35,7 +35,7 @@ Extend the current actor-registry auth model into a more operationally complete 
 
 Why first:
 
-- broad multi-workspace rollout still needs stronger operator controls than a file-backed rotated-token registry alone
+- broad multi-workspace rollout still needs a fuller central issuance and lifecycle-management control plane than the current registry-plus-issued-token model
 
 ### 2. Remaining `BK-007` temporal validity refinement
 

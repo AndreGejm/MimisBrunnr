@@ -49,6 +49,7 @@ const DEFAULT_ACTOR_ROLE: Record<RouteName, ActorRole> = {
 const ROUTES: Record<string, { method: "GET" | "POST"; name?: RouteName; healthMode?: "live" | "ready" }> = {
   "/health/live": { method: "GET", healthMode: "live" },
   "/health/ready": { method: "GET", healthMode: "ready" },
+  "/v1/system/auth": { method: "GET" },
   "/v1/system/version": { method: "GET" },
   "/v1/coding/execute": { method: "POST", name: "execute-coding-task" },
   "/v1/context/search": { method: "POST", name: "search-context" },
@@ -162,6 +163,14 @@ async function handleRequest(
     sendJson(response, 200, {
       ok: true,
       release: container.env.release
+    });
+    return;
+  }
+
+  if (url.pathname === "/v1/system/auth") {
+    sendJson(response, 200, {
+      ok: true,
+      auth: container.authPolicy.getRegistrySummary()
     });
     return;
   }

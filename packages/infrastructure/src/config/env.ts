@@ -57,6 +57,8 @@ export interface AppEnvironment {
     allowAnonymousInternal: boolean;
     actorRegistryPath?: string;
     actorRegistry: ActorRegistryEntry[];
+    issuerSecret?: string;
+    issuedTokenRequireRegistryMatch: boolean;
   };
 }
 
@@ -146,6 +148,11 @@ export function loadEnvironment(env: NodeJS.ProcessEnv = process.env): AppEnviro
       actorRegistry: mergeActorRegistryEntries(
         loadActorRegistryFromPath(actorRegistryPath),
         parseActorRegistry(env.MAB_AUTH_ACTOR_REGISTRY_JSON)
+      ),
+      issuerSecret: env.MAB_AUTH_ISSUER_SECRET?.trim() || undefined,
+      issuedTokenRequireRegistryMatch: parseBoolean(
+        env.MAB_AUTH_ISSUED_TOKEN_REQUIRE_REGISTRY_MATCH,
+        true
       )
     }
   });
@@ -201,7 +208,10 @@ export function normalizeEnvironment(input: Partial<AppEnvironment>): AppEnviron
         (input.nodeEnv === "production" ? "enforced" : "permissive"),
       allowAnonymousInternal: input.auth?.allowAnonymousInternal ?? true,
       actorRegistryPath: input.auth?.actorRegistryPath?.trim() || undefined,
-      actorRegistry: input.auth?.actorRegistry ?? []
+      actorRegistry: input.auth?.actorRegistry ?? [],
+      issuerSecret: input.auth?.issuerSecret?.trim() || undefined,
+      issuedTokenRequireRegistryMatch:
+        input.auth?.issuedTokenRequireRegistryMatch ?? true
     }
   };
 

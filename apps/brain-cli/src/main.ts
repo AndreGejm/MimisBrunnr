@@ -13,11 +13,14 @@ import type {
   PromoteNoteRequest,
   QueryHistoryRequest,
   RetrieveContextRequest,
+  TransportKind,
   ValidateNoteRequest
 } from "@multi-agent-brain/contracts";
 import {
   ActorAuthorizationError,
+  ActorAuthorizationPolicy,
   buildServiceContainer,
+  issueActorAccessToken,
   loadEnvironment,
   TransportValidationError,
   validateTransportRequest
@@ -25,6 +28,8 @@ import {
 
 type CommandName =
   | "version"
+  | "auth-status"
+  | "issue-auth-token"
   | "execute-coding-task"
   | "search-context"
   | "get-context-packet"
@@ -33,7 +38,10 @@ type CommandName =
   | "validate-note"
   | "promote-note"
   | "query-history";
-type RoutedCommandName = Exclude<CommandName, "version">;
+type RoutedCommandName = Exclude<
+  CommandName,
+  "version" | "auth-status" | "issue-auth-token"
+>;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -51,6 +59,8 @@ interface ParsedCli {
 
 const COMMANDS: ReadonlyArray<CommandName> = [
   "version",
+  "auth-status",
+  "issue-auth-token",
   "execute-coding-task",
   "search-context",
   "get-context-packet",
@@ -71,6 +81,30 @@ const DEFAULT_ACTOR_ROLE: Record<RoutedCommandName, ActorRole> = {
   "promote-note": "orchestrator",
   "query-history": "operator"
 };
+const ACTOR_ROLES: ReadonlyArray<ActorRole> = [
+  "retrieval",
+  "writer",
+  "orchestrator",
+  "system",
+  "operator"
+];
+const TRANSPORTS: ReadonlyArray<TransportKind> = [
+  "internal",
+  "cli",
+  "http",
+  "mcp",
+  "automation"
+];
+const COMMAND_NAMES: ReadonlyArray<string> = [
+  "execute_coding_task",
+  "search_context",
+  "get_context_packet",
+  "fetch_decision_summary",
+  "draft_note",
+  "validate_note",
+  "promote_note",
+  "query_history"
+];
 
 async function main(): Promise<void> {
   const parsed = parseCli(process.argv.slice(2));
@@ -87,6 +121,61 @@ async function main(): Promise<void> {
       {
         ok: true,
         release: env.release
+      },
+      parsed.options.pretty
+    );
+    process.exitCode = 0;
+    return;
+  }
+
+  if (parsed.command === "auth-status") {
+    const env = loadEnvironment();
+    const policy = new ActorAuthorizationPolicy({
+      mode: env.auth.mode,
+      allowAnonymousInternal: env.auth.allowAnonymousInternal,
+      registry: env.auth.actorRegistry,
+      issuerSecret: env.auth.issuerSecret,
+      issuedTokenRequireRegistryMatch: env.auth.issuedTokenRequireRegistryMatch
+    });
+    writeJson(
+      {
+        ok: true,
+        auth: policy.getRegistrySummary()
+      },
+      parsed.options.pretty
+    );
+    process.exitCode = 0;
+    return;
+  }
+
+  if (parsed.command === "issue-auth-token") {
+    const env = loadEnvironment();
+    if (!env.auth.issuerSecret) {
+      throw new Error(
+        "MAB_AUTH_ISSUER_SECRET must be configured to issue actor access tokens."
+      );
+    }
+
+    const request = validateIssuedTokenRequest(
+      await loadCommandPayload(parsed.options)
+    );
+    writeJson(
+      {
+        ok: true,
+        issuedToken: issueActorAccessToken(
+          {
+            actorId: request.actorId,
+            actorRole: request.actorRole,
+            source: request.source,
+            allowedTransports: request.allowedTransports,
+            allowedCommands: request.allowedCommands,
+            validFrom: request.validFrom,
+            validUntil: request.validUntil,
+            issuedAt: new Date().toISOString()
+          },
+          env.auth.issuerSecret
+        ),
+        claims: request
       },
       parsed.options.pretty
     );
@@ -178,7 +267,7 @@ function parseCli(argv: string[]): ParsedCli {
       continue;
     }
 
-    if (value === "--version") {
+  if (value === "--version") {
       options.version = true;
       command = "version";
       continue;
@@ -366,6 +455,8 @@ brain-cli <command> [--input <file> | --stdin | --json <payload>] [--pretty | --
 
 Commands:
   version              Print the runtime release metadata used for this build
+  auth-status          Print the effective actor-registry and issued-token summary
+  issue-auth-token     Mint a short-lived issued actor token from JSON input
   execute-coding-task  Run a coding-domain task through the vendored safety-gated runtime
   search-context   Run bounded retrieval through retrieveContextService
   get-context-packet  Assemble a bounded packet directly from ranked candidates
@@ -376,7 +467,8 @@ Commands:
   query-history    Query bounded audit history
 
 Notes:
-  - version and --version do not require an input payload.
+  - version, --version, and auth-status do not require an input payload.
+  - issue-auth-token expects JSON input with actorId, actorRole, and optional source, allowedTransports, allowedCommands, validFrom, validUntil, or ttlMinutes.
   - Input payloads are JSON objects shaped like the existing service contracts.
   - Actor context is optional in the payload; the CLI injects command-safe defaults.
   - execute-coding-task defaults repoRoot to the current working directory when omitted.
@@ -387,3 +479,133 @@ Notes:
 }
 
 await main();
+
+function validateIssuedTokenRequest(payload: JsonRecord): {
+  actorId: string;
+  actorRole: ActorRole;
+  source?: string;
+  allowedTransports?: TransportKind[];
+  allowedCommands?: Array<
+    | "execute_coding_task"
+    | "search_context"
+    | "get_context_packet"
+    | "fetch_decision_summary"
+    | "draft_note"
+    | "validate_note"
+    | "promote_note"
+    | "query_history"
+  >;
+  validFrom?: string;
+  validUntil?: string;
+} {
+  const actorId = requireCliString(payload.actorId, "actorId");
+  const actorRole = requireCliActorRole(payload.actorRole, "actorRole");
+  const source = optionalCliString(payload.source, "source");
+  const allowedTransports = optionalCliEnumArray(
+    payload.allowedTransports,
+    "allowedTransports",
+    TRANSPORTS
+  );
+  const allowedCommands = optionalCliEnumArray(
+    payload.allowedCommands,
+    "allowedCommands",
+    COMMAND_NAMES
+  ) as Array<
+    | "execute_coding_task"
+    | "search_context"
+    | "get_context_packet"
+    | "fetch_decision_summary"
+    | "draft_note"
+    | "validate_note"
+    | "promote_note"
+    | "query_history"
+  > | undefined;
+  const validFrom = optionalCliString(payload.validFrom, "validFrom");
+  const explicitValidUntil = optionalCliString(payload.validUntil, "validUntil");
+  const ttlMinutes = optionalCliInteger(payload.ttlMinutes, "ttlMinutes", 1);
+  const validUntil =
+    explicitValidUntil ??
+    (ttlMinutes !== undefined
+      ? new Date(Date.now() + ttlMinutes * 60_000).toISOString()
+      : undefined);
+
+  return {
+    actorId,
+    actorRole,
+    source,
+    allowedTransports,
+    allowedCommands,
+    validFrom,
+    validUntil
+  };
+}
+
+function requireCliString(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`Invalid issued-token field '${field}': must be a non-empty string.`);
+  }
+
+  return value.trim();
+}
+
+function optionalCliString(value: unknown, field: string): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  return requireCliString(value, field);
+}
+
+function requireCliActorRole(value: unknown, field: string): ActorRole {
+  const normalized = requireCliString(value, field);
+  if (!ACTOR_ROLES.includes(normalized as ActorRole)) {
+    throw new Error(
+      `Invalid issued-token field '${field}': must be one of ${ACTOR_ROLES.join(", ")}.`
+    );
+  }
+
+  return normalized as ActorRole;
+}
+
+function optionalCliEnumArray<T extends string>(
+  value: unknown,
+  field: string,
+  allowedValues: ReadonlyArray<T>
+): T[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error(`Invalid issued-token field '${field}': must be an array.`);
+  }
+
+  return value.map((item, index) => {
+    const normalized = requireCliString(item, `${field}[${index}]`);
+    if (!allowedValues.includes(normalized as T)) {
+      throw new Error(
+        `Invalid issued-token field '${field}[${index}]': must be one of ${allowedValues.join(", ")}.`
+      );
+    }
+
+    return normalized as T;
+  });
+}
+
+function optionalCliInteger(
+  value: unknown,
+  field: string,
+  min: number
+): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "number" || !Number.isInteger(value) || value < min) {
+    throw new Error(
+      `Invalid issued-token field '${field}': must be an integer greater than or equal to ${min}.`
+    );
+  }
+
+  return value;
+}

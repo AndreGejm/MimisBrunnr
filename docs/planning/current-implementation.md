@@ -43,6 +43,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - structured frontmatter and note validation
 - temporal-validity windows via `validFrom` and `validUntil`
 - shared release metadata derived from workspace version plus optional Git tag and commit overrides
+- auth issuer-secret support for centrally issued short-lived actor tokens
 - controlled tag vocabulary enforcement
 - corpus separation for `context_brain` and `general_notes`
 - SQLite metadata authority
@@ -67,6 +68,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - decision-summary generation
 - runtime schema validation at CLI, HTTP, and MCP ingress
 - `GET /v1/system/version` plus release metadata embedded in health reports
+- `GET /v1/system/auth` for operator-facing auth registry status
 
 ### Governance
 
@@ -77,6 +79,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - supersede and current-state logic
 - actor-registry-backed authn/authz across CLI, HTTP, MCP, and orchestrator command dispatch
 - file-backed actor-registry loading with rotated credential windows and entry validity support
+- issuer-secret-backed short-lived issued tokens for registered actors
 - promotion event recording
 - audit-history queries
 - a documented Git-centric versioning contract with runtime release metadata surfaces
@@ -109,6 +112,8 @@ The running architecture is a local-first monorepo with clear boundaries:
 ### CLI
 
 - `version`
+- `auth-status`
+- `issue-auth-token`
 - `execute-coding-task`
 - `search-context`
 - `get-context-packet`
@@ -122,6 +127,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 
 - `GET /health/live`
 - `GET /health/ready`
+- `GET /v1/system/auth`
 - `GET /v1/system/version`
 - `POST /v1/coding/execute`
 - `POST /v1/context/search`
@@ -147,7 +153,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 
 These areas have enabling structure but are not fully complete:
 
-- shared-rollout auth hardening beyond the file-backed actor registry, rotated credentials, and validity-window model
+- shared-rollout auth hardening beyond the file-backed actor registry, rotated credentials, issued tokens, and local operator status surfaces
 - richer temporal-validity governance beyond validity windows, freshness reporting, and stale ranking
 
 See [`backlog.md`](./backlog.md) for the linked backlog items.

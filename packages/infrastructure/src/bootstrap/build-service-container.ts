@@ -86,6 +86,7 @@ export interface ServiceRegistry {
 
 export interface ServiceContainer {
   env: AppEnvironment;
+  authPolicy: ActorAuthorizationPolicy;
   ports: ServicePortRegistry;
   services: ServiceRegistry;
   orchestrator: MultiAgentOrchestrator;
@@ -189,6 +190,14 @@ export function buildServiceContainer(
     auditHistoryService
   );
 
+  const authPolicy = new ActorAuthorizationPolicy({
+    mode: env.auth.mode,
+    allowAnonymousInternal: env.auth.allowAnonymousInternal,
+    registry: env.auth.actorRegistry,
+    issuerSecret: env.auth.issuerSecret,
+    issuedTokenRequireRegistryMatch: env.auth.issuedTokenRequireRegistryMatch
+  });
+
   const brainDomainController = new BrainDomainController(
     new BrainRetrievalController(
       retrieveContextService,
@@ -217,17 +226,14 @@ export function buildServiceContainer(
     new TaskFamilyRouter(),
     brainDomainController,
     codingDomainController,
-    new ActorAuthorizationPolicy({
-      mode: env.auth.mode,
-      allowAnonymousInternal: env.auth.allowAnonymousInternal,
-      registry: env.auth.actorRegistry
-    }),
+    authPolicy,
     modelRoleRegistry,
     roleProviderRegistry
   );
 
   return {
     env,
+    authPolicy,
     ports: {
       canonicalNoteRepository,
       stagingNoteRepository,
