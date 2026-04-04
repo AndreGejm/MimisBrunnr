@@ -73,6 +73,36 @@ export interface TemporalValiditySummary {
   expiringSoonCurrentStateNotes: number;
 }
 
+export type TemporalValidityCandidateState =
+  | "expired"
+  | "future_dated"
+  | "expiring_soon";
+
+export interface TemporalValidityCandidate {
+  noteId: NoteId;
+  corpusId: CorpusId;
+  notePath: string;
+  noteType: NoteType;
+  lifecycleState: NoteLifecycleState;
+  currentState: boolean;
+  updatedAt: string;
+  validFrom?: string;
+  validUntil?: string;
+  summary?: string;
+  scope?: string;
+  state: TemporalValidityCandidateState;
+  daysPastDue?: number;
+  daysUntilValidityStart?: number;
+  daysUntilExpiry?: number;
+}
+
+export interface TemporalValidityReport extends TemporalValiditySummary {
+  limitPerCategory: number;
+  expiredCurrentState: TemporalValidityCandidate[];
+  futureDatedCurrentState: TemporalValidityCandidate[];
+  expiringSoonCurrentState: TemporalValidityCandidate[];
+}
+
 export interface MetadataControlStore {
   upsertNote(note: MetadataNoteRecord): Promise<void>;
   upsertChunks(chunks: ChunkRecord[]): Promise<void>;
@@ -102,5 +132,11 @@ export interface MetadataControlStore {
     expiringWithinDays?: number;
     corpusId?: CorpusId;
   }): Promise<TemporalValiditySummary>;
+  getTemporalValidityReport(input?: {
+    asOf?: string;
+    expiringWithinDays?: number;
+    corpusId?: CorpusId;
+    limitPerCategory?: number;
+  }): Promise<TemporalValidityReport>;
   queryHistory(request: QueryHistoryRequest): Promise<QueryHistoryResponse>;
 }

@@ -64,6 +64,34 @@ test("brain-cli exposes auth registry status for operators", async () => {
   assert.equal(payload.auth.actorCounts.total, 1);
 });
 
+test("brain-cli exposes temporal freshness status and refresh candidates for operators", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-freshness-"));
+  const sqlitePath = path.join(root, "state", "multi-agent-brain.sqlite");
+  await seedTemporalValidityNote(sqlitePath, {
+    noteId: "expired-cli-freshness-note",
+    notePath: "context_brain/reference/expired-cli-freshness-note.md",
+    validFrom: "2026-03-01",
+    validUntil: addDaysIso(currentDateIso(), -1),
+    summary: "CLI freshness status should show expired refresh candidates."
+  });
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const result = await runNodeCommand(
+    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    ["freshness-status"],
+    cliEnvironment(root)
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.freshness.expiredCurrentStateNotes, 1);
+  assert.equal(payload.freshness.expiredCurrentState[0].noteId, "expired-cli-freshness-note");
+  assert.equal(payload.freshness.expiredCurrentState[0].state, "expired");
+});
+
 test("brain-cli can mint issued actor access tokens when the issuer secret is configured", async () => {
   const result = await runNodeCommand(
     path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
@@ -437,6 +465,61 @@ test("brain-api exposes auth registry status through the system auth route", asy
   assert.equal(payload.auth.mode, "enforced");
   assert.equal(payload.auth.issuedTokenSupport.enabled, true);
   assert.equal(payload.auth.actorCounts.total, 1);
+});
+
+test("brain-api exposes temporal freshness reports through the system freshness route", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-freshness-"));
+  const sqlitePath = path.join(root, "state", "multi-agent-brain.sqlite");
+  await seedTemporalValidityNote(sqlitePath, {
+    noteId: "expiring-api-freshness-note",
+    notePath: "context_brain/reference/expiring-api-freshness-note.md",
+    validFrom: addDaysIso(currentDateIso(), -7),
+    validUntil: addDaysIso(currentDateIso(), 3),
+    summary: "API freshness route should show expiring refresh candidates."
+  });
+
+  const { createBrainApiServer } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+    ).href
+  );
+
+  const api = createBrainApiServer({
+    nodeEnv: "test",
+    vaultRoot: path.join(root, "vault", "canonical"),
+    stagingRoot: path.join(root, "vault", "staging"),
+    sqlitePath,
+    qdrantUrl: "http://127.0.0.1:6333",
+    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    embeddingProvider: "hash",
+    reasoningProvider: "heuristic",
+    draftingProvider: "disabled",
+    rerankerProvider: "local",
+    apiHost: "127.0.0.1",
+    apiPort: 18190,
+    logLevel: "error"
+  });
+
+  t.after(async () => {
+    await api.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await api.listen();
+
+  const response = await fetch(
+    "http://127.0.0.1:18190/v1/system/freshness?expiringWithinDays=7&limitPerCategory=5"
+  );
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.ok, true);
+  assert.equal(payload.freshness.expiringSoonCurrentStateNotes, 1);
+  assert.equal(payload.freshness.limitPerCategory, 5);
+  assert.equal(
+    payload.freshness.expiringSoonCurrentState[0].noteId,
+    "expiring-api-freshness-note"
+  );
+  assert.equal(payload.freshness.expiringSoonCurrentState[0].state, "expiring_soon");
 });
 
 test("brain-api exposes direct context-packet assembly over HTTP", async (t) => {
@@ -1104,4 +1187,41 @@ function runNodeCommand(scriptPath, args, env, cwd = process.cwd()) {
 
 function currentDateIso() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function addDaysIso(dateIso, days) {
+  const date = new Date(`${dateIso}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+async function seedTemporalValidityNote(sqlitePath, input) {
+  const { SqliteMetadataControlStore } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "packages", "infrastructure", "dist", "index.js")
+    ).href
+  );
+  const store = new SqliteMetadataControlStore(sqlitePath);
+
+  try {
+    await store.upsertNote({
+      noteId: input.noteId,
+      corpusId: "context_brain",
+      notePath: input.notePath,
+      noteType: "reference",
+      lifecycleState: "promoted",
+      revision: currentDateIso(),
+      updatedAt: currentDateIso(),
+      currentState: true,
+      validFrom: input.validFrom,
+      validUntil: input.validUntil,
+      summary: input.summary,
+      scope: "temporal-validity",
+      tags: ["project/multi-agent-brain", "status/current"],
+      contentHash: `sha256:${input.noteId}`,
+      semanticSignature: input.noteId
+    });
+  } finally {
+    store.close();
+  }
 }

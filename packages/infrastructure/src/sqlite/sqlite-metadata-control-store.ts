@@ -7,6 +7,9 @@ import type {
   PromotionOutboxPayload,
   PromotionOutboxRecord,
   PromotionOutboxState,
+  TemporalValidityCandidate,
+  TemporalValidityCandidateState,
+  TemporalValidityReport,
   TemporalValiditySummary
 } from "@multi-agent-brain/application";
 import type { QueryHistoryRequest, QueryHistoryResponse } from "@multi-agent-brain/contracts";
@@ -634,6 +637,56 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
     };
   }
 
+  async getTemporalValidityReport(input: {
+    asOf?: string;
+    expiringWithinDays?: number;
+    corpusId?: MetadataNoteRecord["corpusId"];
+    limitPerCategory?: number;
+  } = {}): Promise<TemporalValidityReport> {
+    const asOf = input.asOf ?? currentDateIso();
+    const expiringWithinDays = Math.max(1, input.expiringWithinDays ?? 14);
+    const limitPerCategory = Math.max(1, input.limitPerCategory ?? 10);
+    const expiryWindowEnd = addDaysIso(asOf, expiringWithinDays);
+    const summary = await this.getTemporalValiditySummary({
+      asOf,
+      expiringWithinDays,
+      corpusId: input.corpusId
+    });
+
+    const [expiredCurrentState, futureDatedCurrentState, expiringSoonCurrentState] =
+      await Promise.all([
+        this.listTemporalValidityCandidates({
+          state: "expired",
+          asOf,
+          expiryWindowEnd,
+          corpusId: input.corpusId,
+          limit: limitPerCategory
+        }),
+        this.listTemporalValidityCandidates({
+          state: "future_dated",
+          asOf,
+          expiryWindowEnd,
+          corpusId: input.corpusId,
+          limit: limitPerCategory
+        }),
+        this.listTemporalValidityCandidates({
+          state: "expiring_soon",
+          asOf,
+          expiryWindowEnd,
+          corpusId: input.corpusId,
+          limit: limitPerCategory
+        })
+      ]);
+
+    return {
+      ...summary,
+      limitPerCategory,
+      expiredCurrentState,
+      futureDatedCurrentState,
+      expiringSoonCurrentState
+    };
+  }
+
   async queryHistory(request: QueryHistoryRequest): Promise<QueryHistoryResponse> {
     const limit = Math.max(1, request.limit);
     const rows = this.database.prepare(`
@@ -822,6 +875,71 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
     ensureColumnExists(this.database, "chunks", "valid_until", "TEXT");
   }
 
+  private async listTemporalValidityCandidates(input: {
+    state: TemporalValidityCandidateState;
+    asOf: string;
+    expiryWindowEnd: string;
+    corpusId?: MetadataNoteRecord["corpusId"];
+    limit: number;
+  }): Promise<TemporalValidityCandidate[]> {
+    const { state, asOf, expiryWindowEnd, limit } = input;
+    const corpusClause = input.corpusId ? "AND corpus_id = :corpusId" : "";
+    const temporalClause =
+      state === "expired"
+        ? "valid_until IS NOT NULL AND valid_until < :asOf"
+        : state === "future_dated"
+          ? "valid_from IS NOT NULL AND valid_from > :asOf"
+          : `
+            valid_until IS NOT NULL
+            AND valid_until >= :asOf
+            AND valid_until <= :expiryWindowEnd
+          `;
+    const orderByClause =
+      state === "future_dated"
+        ? "valid_from ASC, updated_at ASC"
+        : "valid_until ASC, updated_at ASC";
+
+    const statement = this.database.prepare(`
+      SELECT
+        note_id,
+        corpus_id,
+        note_path,
+        note_type,
+        lifecycle_state,
+        revision,
+        updated_at,
+        current_state,
+        valid_from,
+        valid_until,
+        summary,
+        scope,
+        content_hash,
+        semantic_signature
+      FROM notes
+      WHERE current_state = 1
+        AND lifecycle_state = 'promoted'
+        AND ${temporalClause}
+        ${corpusClause}
+      ORDER BY ${orderByClause}
+      LIMIT :limit
+    `);
+
+    const parameters: Record<string, string | number> = {
+      asOf,
+      limit
+    };
+    if (state === "expiring_soon") {
+      parameters.expiryWindowEnd = expiryWindowEnd;
+    }
+    if (input.corpusId) {
+      parameters.corpusId = input.corpusId;
+    }
+
+    const rows = statement.all(parameters) as unknown as SqliteNoteRow[];
+
+    return rows.map((row) => this.mapTemporalValidityCandidate(row, state, asOf));
+  }
+
   private mapNoteRow(row: SqliteNoteRow): MetadataNoteRecord {
     const tags = this.database.prepare(`
       SELECT tag
@@ -846,6 +964,39 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
       contentHash: row.content_hash ?? undefined,
       semanticSignature: row.semantic_signature ?? undefined,
       tags: tags.map((tag) => tag.tag)
+    };
+  }
+
+  private mapTemporalValidityCandidate(
+    row: SqliteNoteRow,
+    state: TemporalValidityCandidateState,
+    asOf: string
+  ): TemporalValidityCandidate {
+    return {
+      noteId: row.note_id,
+      corpusId: row.corpus_id,
+      notePath: row.note_path,
+      noteType: row.note_type,
+      lifecycleState: row.lifecycle_state,
+      currentState: row.current_state === 1,
+      updatedAt: row.updated_at,
+      validFrom: row.valid_from ?? undefined,
+      validUntil: row.valid_until ?? undefined,
+      summary: row.summary ?? undefined,
+      scope: row.scope ?? undefined,
+      state,
+      daysPastDue:
+        state === "expired" && row.valid_until
+          ? Math.max(0, diffDaysIso(asOf, row.valid_until))
+          : undefined,
+      daysUntilValidityStart:
+        state === "future_dated" && row.valid_from
+          ? Math.max(0, diffDaysIso(row.valid_from, asOf))
+          : undefined,
+      daysUntilExpiry:
+        state === "expiring_soon" && row.valid_until
+          ? Math.max(0, diffDaysIso(row.valid_until, asOf))
+          : undefined
     };
   }
 
@@ -967,6 +1118,12 @@ function addDaysIso(dateIso: string, days: number): string {
   const date = new Date(`${dateIso}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+function diffDaysIso(leftIso: string, rightIso: string): number {
+  const left = new Date(`${leftIso}T00:00:00Z`);
+  const right = new Date(`${rightIso}T00:00:00Z`);
+  return Math.round((left.getTime() - right.getTime()) / 86_400_000);
 }
 
 function ensureColumnExists(

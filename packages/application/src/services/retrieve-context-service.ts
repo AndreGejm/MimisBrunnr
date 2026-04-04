@@ -291,6 +291,7 @@ function selectDeliveredCandidates(
 
 function buildFreshnessWarnings(candidates: readonly ContextCandidate[]): string[] {
   const today = currentDateIso();
+  const expiringSoonWindowEnd = addDaysIso(today, 14);
   const expired = [...new Set(
     candidates
       .filter((candidate) => Boolean(candidate.validUntil && candidate.validUntil < today))
@@ -299,6 +300,17 @@ function buildFreshnessWarnings(candidates: readonly ContextCandidate[]): string
   const futureDated = [...new Set(
     candidates
       .filter((candidate) => Boolean(candidate.validFrom && candidate.validFrom > today))
+      .map((candidate) => candidate.provenance.noteId)
+  )];
+  const expiringSoon = [...new Set(
+    candidates
+      .filter((candidate) =>
+        Boolean(
+          candidate.validUntil &&
+          candidate.validUntil >= today &&
+          candidate.validUntil <= expiringSoonWindowEnd
+        )
+      )
       .map((candidate) => candidate.provenance.noteId)
   )];
 
@@ -315,14 +327,22 @@ function buildFreshnessWarnings(candidates: readonly ContextCandidate[]): string
     );
   }
 
+  if (expiringSoon.length > 0) {
+    warnings.push(
+      `Retrieved evidence includes ${expiringSoon.length} note(s) expiring within 14 days: ${expiringSoon.join(", ")}.`
+    );
+  }
+
   return warnings;
 }
 
 function summarizeFreshness(candidates: readonly ContextCandidate[]): {
   expiredNoteIds: string[];
   futureDatedNoteIds: string[];
+  expiringSoonNoteIds: string[];
 } {
   const today = currentDateIso();
+  const expiringSoonWindowEnd = addDaysIso(today, 14);
   return {
     expiredNoteIds: [...new Set(
       candidates
@@ -333,10 +353,27 @@ function summarizeFreshness(candidates: readonly ContextCandidate[]): {
       candidates
         .filter((candidate) => Boolean(candidate.validFrom && candidate.validFrom > today))
         .map((candidate) => candidate.provenance.noteId)
+    )],
+    expiringSoonNoteIds: [...new Set(
+      candidates
+        .filter((candidate) =>
+          Boolean(
+            candidate.validUntil &&
+            candidate.validUntil >= today &&
+            candidate.validUntil <= expiringSoonWindowEnd
+          )
+        )
+        .map((candidate) => candidate.provenance.noteId)
     )]
   };
 }
 
 function currentDateIso(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function addDaysIso(dateIso: string, days: number): string {
+  const date = new Date(`${dateIso}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }

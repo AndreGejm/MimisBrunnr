@@ -22,7 +22,7 @@ The repository is not yet at "enable by default for every workspace" readiness.
 The main remaining gaps are:
 
 - auth boundaries are registry-backed with file-based loading, rotated credentials, validity windows, issued tokens, and local operator status surfaces, but not yet fully hardened for shared rollout
-- temporal-validity handling is stronger with runtime freshness reporting and retrieval warnings, but still limited beyond the new validity-window baseline
+- temporal-validity handling is stronger with runtime freshness reporting, operator-visible refresh candidates, and retrieval warnings, but still limited beyond the new validity-window baseline
 - shared rollout still needs continued operator hardening and freshness governance after the versioning contract work
 
 ## Next Backlog Order
@@ -39,7 +39,7 @@ Why first:
 
 ### 2. Remaining `BK-007` temporal validity refinement
 
-Expand temporal-validity handling beyond current-state snapshots, validity windows, and staleness heuristics.
+Expand temporal-validity handling beyond current-state snapshots, validity windows, refresh-candidate reporting, and staleness heuristics.
 
 Why second:
 

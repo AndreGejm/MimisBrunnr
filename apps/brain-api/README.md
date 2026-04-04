@@ -7,6 +7,7 @@ Thin local HTTP adapter over the existing application services.
 - `GET /health/live`
 - `GET /health/ready`
 - `GET /v1/system/auth`
+- `GET /v1/system/freshness`
 - `GET /v1/system/version`
 - `POST /v1/coding/execute`
 - `POST /v1/context/search`
@@ -25,6 +26,7 @@ Thin local HTTP adapter over the existing application services.
 - route handlers stay thin and delegate directly to the orchestrator and service layer
 - health routes expose live and ready checks for local runtime supervision and include release metadata
 - the system auth route exposes a redacted actor-registry and issued-token summary for operator review
+- the system freshness route exposes temporal-validity counts plus refresh candidates for expired, future-dated, and expiring-soon current-state notes
 - the system version route exposes the shared Git-centric release metadata contract
 - coding execution is surfaced through the same HTTP adapter as the brain-domain routes
 

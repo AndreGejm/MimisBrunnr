@@ -348,6 +348,56 @@ test("metadata control store summarizes expired and expiring current-state notes
   assert.equal(summary.futureDatedCurrentStateNotes, 0);
 });
 
+test("metadata control store reports actionable temporal refresh candidates", async (t) => {
+  const { container } = await createHarness(t);
+  const today = currentDateIso();
+
+  const expired = await createAndPromote(container, {
+    title: "Expired Refresh Candidate",
+    noteType: "reference",
+    bodyHints: [
+      "Expired refresh candidates should show up with note paths and days past due."
+    ],
+    scope: "temporal-validity-report-expired",
+    promoteAsCurrentState: true,
+    frontmatterOverrides: {
+      validFrom: addDaysIso(today, -30),
+      validUntil: addDaysIso(today, -2)
+    }
+  });
+
+  const expiringSoon = await createAndPromote(container, {
+    title: "Expiring Soon Candidate",
+    noteType: "reference",
+    bodyHints: [
+      "Soon-to-expire candidates should surface before they actually expire."
+    ],
+    scope: "temporal-validity-report-expiring",
+    promoteAsCurrentState: true,
+    frontmatterOverrides: {
+      validFrom: addDaysIso(today, -5),
+      validUntil: addDaysIso(today, 3)
+    }
+  });
+
+  const report = await container.ports.metadataControlStore.getTemporalValidityReport({
+    asOf: today,
+    expiringWithinDays: 7,
+    corpusId: "context_brain",
+    limitPerCategory: 5
+  });
+
+  assert.equal(report.expiredCurrentStateNotes, 1);
+  assert.equal(report.expiringSoonCurrentStateNotes, 1);
+  assert.equal(report.limitPerCategory, 5);
+  assert.equal(report.expiredCurrentState[0].noteId, expired.promotedNoteId);
+  assert.equal(report.expiredCurrentState[0].state, "expired");
+  assert.ok(report.expiredCurrentState[0].daysPastDue >= 1);
+  assert.equal(report.expiringSoonCurrentState[0].noteId, expiringSoon.promotedNoteId);
+  assert.equal(report.expiringSoonCurrentState[0].state, "expiring_soon");
+  assert.ok(report.expiringSoonCurrentState[0].daysUntilExpiry >= 0);
+});
+
 test("retrieval packets stay within explicit source and raw-excerpt budgets", async (t) => {
   const { container } = await createHarness(t);
 
@@ -561,6 +611,45 @@ test("retrieve context warns when bounded evidence includes expired notes", asyn
   assert.ok(result.data.packet.evidence.length >= 1);
   assert.ok(
     result.warnings?.some((warning) => /expired note/i.test(warning))
+  );
+});
+
+test("retrieve context warns when bounded evidence is approaching expiry", async (t) => {
+  const { container } = await createHarness(t);
+  const today = currentDateIso();
+
+  await createAndPromote(container, {
+    title: "Expiring Retrieval Guidance",
+    noteType: "architecture",
+    bodyHints: [
+      "Expiring retrieval guidance should warn before the note becomes stale.",
+      "Freshness warnings should mention expiring-soon evidence explicitly."
+    ],
+    scope: "expiring-retrieval-guidance",
+    promoteAsCurrentState: true,
+    frontmatterOverrides: {
+      validFrom: addDaysIso(today, -7),
+      validUntil: addDaysIso(today, 2)
+    }
+  });
+
+  const result = await container.services.retrieveContextService.retrieveContext({
+    actor: actor("retrieval"),
+    query: "freshness warnings should mention expiring-soon evidence explicitly",
+    budget: {
+      maxTokens: 320,
+      maxSources: 2,
+      maxRawExcerpts: 1,
+      maxSummarySentences: 2
+    },
+    corpusIds: ["context_brain"],
+    requireEvidence: false
+  });
+
+  assert.equal(result.ok, true);
+  assert.ok(result.data.packet.evidence.length >= 1);
+  assert.ok(
+    result.warnings?.some((warning) => /expiring within 14 days/i.test(warning))
   );
 });
 

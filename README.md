@@ -14,7 +14,7 @@ Implemented today:
 - canonical Markdown storage plus a separate staging write plane
 - SQLite as the metadata and audit authority
 - SQLite FTS lexical retrieval and Qdrant vector retrieval
-- runtime freshness reporting plus retrieval warnings for expired or not-yet-valid evidence
+- runtime freshness reporting plus operator-visible refresh candidates and retrieval warnings for expired, expiring, or not-yet-valid evidence
 - Git-centric release metadata exposed through CLI, HTTP, MCP, and health surfaces
 - bounded context packet assembly and decision-summary generation
 - deterministic validation and promotion for staged notes

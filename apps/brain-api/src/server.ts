@@ -50,6 +50,7 @@ const ROUTES: Record<string, { method: "GET" | "POST"; name?: RouteName; healthM
   "/health/live": { method: "GET", healthMode: "live" },
   "/health/ready": { method: "GET", healthMode: "ready" },
   "/v1/system/auth": { method: "GET" },
+  "/v1/system/freshness": { method: "GET" },
   "/v1/system/version": { method: "GET" },
   "/v1/coding/execute": { method: "POST", name: "execute-coding-task" },
   "/v1/context/search": { method: "POST", name: "search-context" },
@@ -171,6 +172,16 @@ async function handleRequest(
     sendJson(response, 200, {
       ok: true,
       auth: container.authPolicy.getRegistrySummary()
+    });
+    return;
+  }
+
+  if (url.pathname === "/v1/system/freshness") {
+    sendJson(response, 200, {
+      ok: true,
+      freshness: await container.ports.metadataControlStore.getTemporalValidityReport(
+        parseFreshnessQuery(url.searchParams)
+      )
     });
     return;
   }
@@ -302,6 +313,68 @@ function firstHeader(value: string | string[] | undefined): string | undefined {
     return value[0];
   }
   return value;
+}
+
+function parseFreshnessQuery(searchParams: URLSearchParams): {
+  asOf?: string;
+  expiringWithinDays?: number;
+  corpusId?: "context_brain" | "general_notes";
+  limitPerCategory?: number;
+} {
+  const asOf = searchParams.get("asOf") ?? undefined;
+  const expiringWithinDays = parseOptionalPositiveIntegerQuery(
+    searchParams,
+    "expiringWithinDays"
+  );
+  const limitPerCategory = parseOptionalPositiveIntegerQuery(
+    searchParams,
+    "limitPerCategory"
+  );
+  const corpusId = searchParams.get("corpusId");
+
+  if (
+    corpusId !== null &&
+    corpusId !== "context_brain" &&
+    corpusId !== "general_notes"
+  ) {
+    throw new TransportValidationError(
+      "Invalid request field 'corpusId': must be one of: context_brain, general_notes.",
+      {
+        field: "corpusId",
+        problem: "must be one of: context_brain, general_notes"
+      }
+    );
+  }
+
+  return {
+    asOf,
+    expiringWithinDays,
+    limitPerCategory,
+    corpusId: corpusId ?? undefined
+  };
+}
+
+function parseOptionalPositiveIntegerQuery(
+  searchParams: URLSearchParams,
+  field: string
+): number | undefined {
+  const value = searchParams.get(field);
+  if (value === null) {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new TransportValidationError(
+      `Invalid request field '${field}': must be an integer greater than or equal to 1.`,
+      {
+        field,
+        problem: "must be an integer greater than or equal to 1"
+      }
+    );
+  }
+
+  return parsed;
 }
 
 function mapServiceErrorToStatus(error: ServiceError): number {

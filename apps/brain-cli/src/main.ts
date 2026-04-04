@@ -29,6 +29,7 @@ import {
 type CommandName =
   | "version"
   | "auth-status"
+  | "freshness-status"
   | "issue-auth-token"
   | "execute-coding-task"
   | "search-context"
@@ -40,7 +41,7 @@ type CommandName =
   | "query-history";
 type RoutedCommandName = Exclude<
   CommandName,
-  "version" | "auth-status" | "issue-auth-token"
+  "version" | "auth-status" | "freshness-status" | "issue-auth-token"
 >;
 
 type JsonRecord = Record<string, unknown>;
@@ -60,6 +61,7 @@ interface ParsedCli {
 const COMMANDS: ReadonlyArray<CommandName> = [
   "version",
   "auth-status",
+  "freshness-status",
   "issue-auth-token",
   "execute-coding-task",
   "search-context",
@@ -105,6 +107,10 @@ const COMMAND_NAMES: ReadonlyArray<string> = [
   "promote_note",
   "query_history"
 ];
+const CORPORA: ReadonlyArray<"context_brain" | "general_notes"> = [
+  "context_brain",
+  "general_notes"
+];
 
 async function main(): Promise<void> {
   const parsed = parseCli(process.argv.slice(2));
@@ -146,6 +152,28 @@ async function main(): Promise<void> {
     );
     process.exitCode = 0;
     return;
+  }
+
+  if (parsed.command === "freshness-status") {
+    const container = buildServiceContainer(loadEnvironment());
+    try {
+      const request = validateFreshnessStatusRequest(
+        await loadOptionalCommandPayload(parsed.options)
+      );
+      writeJson(
+        {
+          ok: true,
+          freshness: await container.ports.metadataControlStore.getTemporalValidityReport(
+            request
+          )
+        },
+        parsed.options.pretty
+      );
+      process.exitCode = 0;
+      return;
+    } finally {
+      container.dispose();
+    }
   }
 
   if (parsed.command === "issue-auth-token") {
@@ -328,7 +356,7 @@ function parseCli(argv: string[]): ParsedCli {
 }
 
 async function loadCommandPayload(options: ParsedCli["options"]): Promise<JsonRecord> {
-  const sources = [options.stdin, Boolean(options.inputPath), Boolean(options.inlineJson)].filter(Boolean);
+  const sources = countCommandPayloadSources(options);
   if (sources.length !== 1) {
     throw new Error("Provide exactly one request source: --stdin, --input <path>, or --json <payload>.");
   }
@@ -342,6 +370,25 @@ async function loadCommandPayload(options: ParsedCli["options"]): Promise<JsonRe
   }
 
   return parseJson(options.inlineJson ?? "");
+}
+
+async function loadOptionalCommandPayload(
+  options: ParsedCli["options"]
+): Promise<JsonRecord> {
+  const sources = countCommandPayloadSources(options);
+  if (sources.length === 0) {
+    return {};
+  }
+
+  if (sources.length > 1) {
+    throw new Error("Provide at most one request source: --stdin, --input <path>, or --json <payload>.");
+  }
+
+  return loadCommandPayload(options);
+}
+
+function countCommandPayloadSources(options: ParsedCli["options"]): boolean[] {
+  return [options.stdin, Boolean(options.inputPath), Boolean(options.inlineJson)].filter(Boolean);
 }
 
 function parseJson(value: string): JsonRecord {
@@ -456,6 +503,7 @@ brain-cli <command> [--input <file> | --stdin | --json <payload>] [--pretty | --
 Commands:
   version              Print the runtime release metadata used for this build
   auth-status          Print the effective actor-registry and issued-token summary
+  freshness-status     Print temporal-validity summary data and refresh candidates
   issue-auth-token     Mint a short-lived issued actor token from JSON input
   execute-coding-task  Run a coding-domain task through the vendored safety-gated runtime
   search-context   Run bounded retrieval through retrieveContextService
@@ -468,6 +516,7 @@ Commands:
 
 Notes:
   - version, --version, and auth-status do not require an input payload.
+  - freshness-status accepts optional JSON input with asOf, expiringWithinDays, corpusId, and limitPerCategory.
   - issue-auth-token expects JSON input with actorId, actorRole, and optional source, allowedTransports, allowedCommands, validFrom, validUntil, or ttlMinutes.
   - Input payloads are JSON objects shaped like the existing service contracts.
   - Actor context is optional in the payload; the CLI injects command-safe defaults.
@@ -608,4 +657,45 @@ function optionalCliInteger(
   }
 
   return value;
+}
+
+function validateFreshnessStatusRequest(payload: JsonRecord): {
+  asOf?: string;
+  expiringWithinDays?: number;
+  corpusId?: "context_brain" | "general_notes";
+  limitPerCategory?: number;
+} {
+  const corpusId =
+    payload.corpusId === undefined
+      ? undefined
+      : requireCliCorpus(payload.corpusId, "corpusId");
+
+  return {
+    asOf: optionalCliString(payload.asOf, "asOf"),
+    expiringWithinDays: optionalCliInteger(
+      payload.expiringWithinDays,
+      "expiringWithinDays",
+      1
+    ),
+    corpusId,
+    limitPerCategory: optionalCliInteger(
+      payload.limitPerCategory,
+      "limitPerCategory",
+      1
+    )
+  };
+}
+
+function requireCliCorpus(
+  value: unknown,
+  field: string
+): "context_brain" | "general_notes" {
+  const normalized = requireCliString(value, field);
+  if (!CORPORA.includes(normalized as "context_brain" | "general_notes")) {
+    throw new Error(
+      `Invalid freshness-status field '${field}': must be one of ${CORPORA.join(", ")}.`
+    );
+  }
+
+  return normalized as "context_brain" | "general_notes";
 }
