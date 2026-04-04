@@ -320,6 +320,181 @@ test("brain-mcp enforces registered actor tokens when auth mode is enforced", as
   assert.equal(authorized.result.structuredContent.packet.evidence[0].noteId, "note-mcp-auth-2");
 });
 
+test("brain-mcp loads a file-backed actor registry and honors rotated credential windows", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-mcp-auth-file-"));
+  const registryPath = path.join(root, "config", "actor-registry.json");
+  await fsMkdir(path.dirname(registryPath), { recursive: true });
+  const now = Date.now();
+  await writeFile(
+    registryPath,
+    JSON.stringify(
+      {
+        actors: [
+          {
+            actorId: "get_context_packet-mcp",
+            actorRole: "retrieval",
+            authTokens: [
+              {
+                token: "expired-mcp-secret",
+                label: "previous",
+                validUntil: new Date(now - 60_000).toISOString()
+              },
+              {
+                token: "current-mcp-secret",
+                label: "current",
+                validFrom: new Date(now - 60_000).toISOString(),
+                validUntil: new Date(now + 3_600_000).toISOString()
+              }
+            ],
+            source: "brain-mcp",
+            allowedTransports: ["mcp"],
+            allowedCommands: ["get_context_packet"]
+          }
+        ]
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const child = spawn(
+    process.execPath,
+    [path.join(process.cwd(), "apps", "brain-mcp", "dist", "main.js")],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        MAB_NODE_ENV: "test",
+        MAB_VAULT_ROOT: path.join(root, "vault", "canonical"),
+        MAB_STAGING_ROOT: path.join(root, "vault", "staging"),
+        MAB_SQLITE_PATH: path.join(root, "state", "multi-agent-brain.sqlite"),
+        MAB_QDRANT_URL: "http://127.0.0.1:6333",
+        MAB_QDRANT_COLLECTION: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+        MAB_EMBEDDING_PROVIDER: "hash",
+        MAB_REASONING_PROVIDER: "heuristic",
+        MAB_DRAFTING_PROVIDER: "disabled",
+        MAB_RERANKER_PROVIDER: "local",
+        MAB_PROVIDER_DOCKER_OLLAMA_BASE_URL: "http://127.0.0.1:1",
+        MAB_OLLAMA_BASE_URL: "http://127.0.0.1:1",
+        MAB_LOG_LEVEL: "error",
+        MAB_AUTH_MODE: "enforced",
+        MAB_AUTH_ACTOR_REGISTRY_PATH: registryPath
+      },
+      stdio: ["pipe", "pipe", "pipe"]
+    }
+  );
+
+  t.after(async () => {
+    child.kill("SIGTERM");
+    await new Promise((resolve) => {
+      child.once("close", resolve);
+    });
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const transport = createMessageCollector(child.stdout);
+
+  writeMcpMessage(child.stdin, {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2024-11-05",
+      capabilities: {}
+    }
+  });
+  await transport.next();
+
+  writeMcpMessage(child.stdin, {
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/call",
+    params: {
+      name: "get_context_packet",
+      arguments: {
+        actor: {
+          authToken: "expired-mcp-secret"
+        },
+        intent: "architecture_recall",
+        budget: {
+          maxTokens: 320,
+          maxSources: 2,
+          maxRawExcerpts: 1,
+          maxSummarySentences: 2
+        },
+        includeRawExcerpts: false,
+        candidates: [
+          {
+            noteType: "architecture",
+            score: 0.85,
+            summary: "MCP file-backed auth should reject expired credentials.",
+            scope: "architecture",
+            qualifiers: ["auth required"],
+            tags: ["project/multi-agent-brain"],
+            stalenessClass: "current",
+            provenance: {
+              noteId: "note-mcp-auth-file-expired",
+              notePath: "context_brain/architecture/mcp-auth-file.md",
+              headingPath: ["Summary"]
+            }
+          }
+        ]
+      }
+    }
+  });
+
+  const expired = await transport.next();
+  assert.equal(expired.result.isError, true);
+  assert.equal(expired.result.structuredContent.error.code, "unauthorized");
+  assert.match(expired.result.structuredContent.error.message, /expired|inactive/i);
+
+  writeMcpMessage(child.stdin, {
+    jsonrpc: "2.0",
+    id: 3,
+    method: "tools/call",
+    params: {
+      name: "get_context_packet",
+      arguments: {
+        actor: {
+          authToken: "current-mcp-secret"
+        },
+        intent: "architecture_recall",
+        budget: {
+          maxTokens: 320,
+          maxSources: 2,
+          maxRawExcerpts: 1,
+          maxSummarySentences: 2
+        },
+        includeRawExcerpts: false,
+        candidates: [
+          {
+            noteType: "architecture",
+            score: 0.85,
+            summary: "MCP file-backed auth should accept active credentials.",
+            scope: "architecture",
+            qualifiers: ["auth required"],
+            tags: ["project/multi-agent-brain"],
+            stalenessClass: "current",
+            provenance: {
+              noteId: "note-mcp-auth-file-current",
+              notePath: "context_brain/architecture/mcp-auth-file.md",
+              headingPath: ["Summary"]
+            }
+          }
+        ]
+      }
+    }
+  });
+
+  const current = await transport.next();
+  assert.equal(current.result.isError, false);
+  assert.equal(
+    current.result.structuredContent.packet.evidence[0].noteId,
+    "note-mcp-auth-file-current"
+  );
+});
+
 test("brain-mcp rejects malformed tool arguments at ingress", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "mab-mcp-invalid-"));
   const child = spawn(

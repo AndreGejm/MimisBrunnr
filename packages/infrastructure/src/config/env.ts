@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
@@ -49,6 +50,7 @@ export interface AppEnvironment {
   auth: {
     mode: ActorAuthorizationMode;
     allowAnonymousInternal: boolean;
+    actorRegistryPath?: string;
     actorRegistry: ActorRegistryEntry[];
   };
 }
@@ -89,6 +91,7 @@ function coalesceString(...values: Array<string | undefined>): string | undefine
 }
 
 export function loadEnvironment(env: NodeJS.ProcessEnv = process.env): AppEnvironment {
+  const actorRegistryPath = env.MAB_AUTH_ACTOR_REGISTRY_PATH?.trim() || undefined;
   return normalizeEnvironment({
     nodeEnv: (env.MAB_NODE_ENV as AppEnvironment["nodeEnv"]) ?? "development",
     vaultRoot: env.MAB_VAULT_ROOT ?? DEFAULT_CANONICAL_VAULT_ROOT,
@@ -133,8 +136,10 @@ export function loadEnvironment(env: NodeJS.ProcessEnv = process.env): AppEnviro
         env.MAB_AUTH_ALLOW_ANONYMOUS_INTERNAL,
         true
       ),
-      actorRegistry: parseActorRegistry(
-        env.MAB_AUTH_ACTOR_REGISTRY_JSON
+      actorRegistryPath,
+      actorRegistry: mergeActorRegistryEntries(
+        loadActorRegistryFromPath(actorRegistryPath),
+        parseActorRegistry(env.MAB_AUTH_ACTOR_REGISTRY_JSON)
       )
     }
   });
@@ -188,6 +193,7 @@ export function normalizeEnvironment(input: Partial<AppEnvironment>): AppEnviron
         input.auth?.mode ??
         (input.nodeEnv === "production" ? "enforced" : "permissive"),
       allowAnonymousInternal: input.auth?.allowAnonymousInternal ?? true,
+      actorRegistryPath: input.auth?.actorRegistryPath?.trim() || undefined,
       actorRegistry: input.auth?.actorRegistry ?? []
     }
   };
@@ -215,11 +221,7 @@ function parseActorRegistry(value: string | undefined): ActorRegistryEntry[] {
   }
 
   const parsed = JSON.parse(value) as unknown;
-  if (!Array.isArray(parsed)) {
-    throw new Error("MAB_AUTH_ACTOR_REGISTRY_JSON must be a JSON array.");
-  }
-
-  return parsed.map((entry, index) => normalizeActorRegistryEntry(entry, index));
+  return parseActorRegistryValue(parsed, "MAB_AUTH_ACTOR_REGISTRY_JSON");
 }
 
 function buildRoleBindingsFromProcessEnvironment(
@@ -397,11 +399,114 @@ function normalizeActorRegistryEntry(
     actorId: entry.actorId.trim(),
     actorRole: entry.actorRole,
     authToken: entry.authToken?.trim() || undefined,
+    authTokens: normalizeActorTokenCredentials(entry.authTokens, entry.actorId),
     source: entry.source?.trim() || undefined,
     enabled: entry.enabled ?? true,
     allowedTransports: entry.allowedTransports,
-    allowedCommands: entry.allowedCommands
+    allowedCommands: entry.allowedCommands,
+    validFrom: entry.validFrom?.trim() || undefined,
+    validUntil: entry.validUntil?.trim() || undefined
   };
+}
+
+function loadActorRegistryFromPath(filePath: string | undefined): ActorRegistryEntry[] {
+  if (!filePath) {
+    return [];
+  }
+
+  const raw = readFileSync(filePath, "utf8");
+  const parsed = JSON.parse(raw) as unknown;
+  return parseActorRegistryValue(
+    parsed,
+    `MAB_AUTH_ACTOR_REGISTRY_PATH (${filePath})`
+  );
+}
+
+function parseActorRegistryValue(
+  parsed: unknown,
+  sourceLabel: string
+): ActorRegistryEntry[] {
+  const entries = Array.isArray(parsed)
+    ? parsed
+    : parsed &&
+        typeof parsed === "object" &&
+        !Array.isArray(parsed) &&
+        "actors" in parsed &&
+        Array.isArray((parsed as { actors?: unknown }).actors)
+      ? ((parsed as { actors: unknown[] }).actors)
+      : undefined;
+
+  if (!entries) {
+    throw new Error(
+      `${sourceLabel} must be either a JSON array or an object with an 'actors' array.`
+    );
+  }
+
+  return entries.map((entry, index) => normalizeActorRegistryEntry(entry, index));
+}
+
+function mergeActorRegistryEntries(
+  baseEntries: ReadonlyArray<ActorRegistryEntry>,
+  overrideEntries: ReadonlyArray<ActorRegistryEntry>
+): ActorRegistryEntry[] {
+  const merged = new Map<string, ActorRegistryEntry>();
+
+  for (const entry of baseEntries) {
+    merged.set(entry.actorId, entry);
+  }
+
+  for (const entry of overrideEntries) {
+    merged.set(entry.actorId, entry);
+  }
+
+  return [...merged.values()];
+}
+
+function normalizeActorTokenCredentials(
+  value: unknown,
+  actorId: string
+): ActorRegistryEntry["authTokens"] {
+  if (!Array.isArray(value) || value.length === 0) {
+    return undefined;
+  }
+
+  return value.map((credential, index) => {
+    if (typeof credential === "string") {
+      const token = credential.trim();
+      if (!token) {
+        throw new Error(
+          `Actor registry entry '${actorId}' has an empty auth token at index ${index}.`
+        );
+      }
+      return token;
+    }
+
+    if (!credential || typeof credential !== "object" || Array.isArray(credential)) {
+      throw new Error(
+        `Actor registry entry '${actorId}' authTokens[${index}] must be a string or object.`
+      );
+    }
+
+    const normalized = credential as {
+      token?: string;
+      label?: string;
+      validFrom?: string;
+      validUntil?: string;
+    };
+
+    if (!normalized.token?.trim()) {
+      throw new Error(
+        `Actor registry entry '${actorId}' authTokens[${index}] is missing token.`
+      );
+    }
+
+    return {
+      token: normalized.token.trim(),
+      label: normalized.label?.trim() || undefined,
+      validFrom: normalized.validFrom?.trim() || undefined,
+      validUntil: normalized.validUntil?.trim() || undefined
+    };
+  });
 }
 
 function mergeRoleBindings(

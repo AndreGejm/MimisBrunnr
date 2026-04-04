@@ -72,6 +72,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - duplicate detection
 - supersede and current-state logic
 - actor-registry-backed authn/authz across CLI, HTTP, MCP, and orchestrator command dispatch
+- file-backed actor-registry loading with rotated credential windows and entry validity support
 - promotion event recording
 - audit-history queries
 
@@ -139,7 +140,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 
 These areas have enabling structure but are not fully complete:
 
-- shared-rollout auth hardening beyond the static actor registry and token model
+- shared-rollout auth hardening beyond the file-backed actor registry, rotated credentials, and validity-window model
 - formal Git-centric versioning contract
 - richer temporal-validity governance beyond validity windows and stale ranking
 

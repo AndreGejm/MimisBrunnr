@@ -515,6 +515,179 @@ test("brain-api enforces registered actor tokens when auth mode is enforced", as
   assert.equal(authenticatedPayload.valid, true);
 });
 
+test("brain-api loads a file-backed actor registry and honors rotated credential windows", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-auth-file-"));
+  const registryPath = path.join(root, "config", "actor-registry.json");
+  await fsMkdir(path.dirname(registryPath), { recursive: true });
+  const now = Date.now();
+  await writeFile(
+    registryPath,
+    JSON.stringify(
+      {
+        actors: [
+          {
+            actorId: "validate-note-http",
+            actorRole: "orchestrator",
+            authTokens: [
+              {
+                token: "expired-http-secret",
+                label: "previous",
+                validUntil: new Date(now - 60_000).toISOString()
+              },
+              {
+                token: "current-http-secret",
+                label: "current",
+                validFrom: new Date(now - 60_000).toISOString(),
+                validUntil: new Date(now + 3_600_000).toISOString()
+              }
+            ],
+            source: "brain-api",
+            allowedTransports: ["http"],
+            allowedCommands: ["validate_note"]
+          }
+        ]
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const { createBrainApiServer } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+    ).href
+  );
+  const { loadEnvironment } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "packages", "infrastructure", "dist", "index.js")
+    ).href
+  );
+
+  const api = createBrainApiServer(
+    loadEnvironment({
+      ...process.env,
+      MAB_NODE_ENV: "test",
+      MAB_VAULT_ROOT: path.join(root, "vault", "canonical"),
+      MAB_STAGING_ROOT: path.join(root, "vault", "staging"),
+      MAB_SQLITE_PATH: path.join(root, "state", "multi-agent-brain.sqlite"),
+      MAB_QDRANT_URL: "http://127.0.0.1:6333",
+      MAB_QDRANT_COLLECTION: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+      MAB_EMBEDDING_PROVIDER: "hash",
+      MAB_REASONING_PROVIDER: "heuristic",
+      MAB_DRAFTING_PROVIDER: "disabled",
+      MAB_RERANKER_PROVIDER: "local",
+      MAB_API_HOST: "127.0.0.1",
+      MAB_API_PORT: "18186",
+      MAB_LOG_LEVEL: "error",
+      MAB_AUTH_MODE: "enforced",
+      MAB_AUTH_ACTOR_REGISTRY_PATH: registryPath
+    })
+  );
+
+  t.after(async () => {
+    await api.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await api.listen();
+
+  const expired = await fetch("http://127.0.0.1:18186/v1/notes/validate", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-brain-actor-token": "expired-http-secret"
+    },
+    body: JSON.stringify({
+      targetCorpus: "context_brain",
+      notePath: "context_brain/decision/auth-file-note.md",
+      validationMode: "promotion",
+      frontmatter: {
+        noteId: randomUUID(),
+        title: "Auth File Note",
+        project: "multi-agent-brain",
+        type: "decision",
+        status: "promoted",
+        updated: currentDateIso(),
+        summary: "File-backed auth should reject expired credentials.",
+        tags: ["project/multi-agent-brain", "domain/orchestration", "status/promoted"],
+        scope: "auth",
+        corpusId: "context_brain",
+        currentState: false
+      },
+      body: [
+        "## Context",
+        "",
+        "Auth context.",
+        "",
+        "## Decision",
+        "",
+        "Auth decision.",
+        "",
+        "## Rationale",
+        "",
+        "Auth rationale.",
+        "",
+        "## Consequences",
+        "",
+        "Auth consequences."
+      ].join("\n")
+    })
+  });
+
+  assert.equal(expired.status, 401);
+  const expiredPayload = await expired.json();
+  assert.equal(expiredPayload.error.code, "unauthorized");
+  assert.match(expiredPayload.error.message, /expired|inactive/i);
+
+  const current = await fetch("http://127.0.0.1:18186/v1/notes/validate", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-brain-actor-token": "current-http-secret"
+    },
+    body: JSON.stringify({
+      targetCorpus: "context_brain",
+      notePath: "context_brain/decision/auth-file-note.md",
+      validationMode: "promotion",
+      frontmatter: {
+        noteId: randomUUID(),
+        title: "Auth File Note",
+        project: "multi-agent-brain",
+        type: "decision",
+        status: "promoted",
+        updated: currentDateIso(),
+        summary: "File-backed auth should accept active credentials.",
+        tags: ["project/multi-agent-brain", "domain/orchestration", "status/promoted"],
+        scope: "auth",
+        corpusId: "context_brain",
+        currentState: false
+      },
+      body: [
+        "## Context",
+        "",
+        "Auth context.",
+        "",
+        "## Decision",
+        "",
+        "Auth decision.",
+        "",
+        "## Rationale",
+        "",
+        "Auth rationale.",
+        "",
+        "## Consequences",
+        "",
+        "Auth consequences."
+      ].join("\n")
+    })
+  });
+
+  assert.equal(current.status, 200);
+  const currentPayload = await current.json();
+  assert.equal(currentPayload.valid, true);
+});
+
 test("brain-api exposes coding execution through the root orchestrator", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-coding-"));
   const repoRoot = path.join(root, "repo");

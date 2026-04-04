@@ -8,14 +8,24 @@ import type { OrchestratorCommand } from "../routing/task-family-router.js";
 
 export type ActorAuthorizationMode = "permissive" | "enforced";
 
+export interface ActorTokenCredential {
+  token: string;
+  label?: string;
+  validFrom?: string;
+  validUntil?: string;
+}
+
 export interface ActorRegistryEntry {
   actorId: string;
   actorRole: ActorRole;
   authToken?: string;
+  authTokens?: Array<string | ActorTokenCredential>;
   source?: string;
   enabled?: boolean;
   allowedTransports?: TransportKind[];
   allowedCommands?: OrchestratorCommand[];
+  validFrom?: string;
+  validUntil?: string;
 }
 
 export interface ActorAuthorizationOptions {
@@ -29,11 +39,20 @@ type AuthorizationErrorCode = "unauthorized" | "forbidden";
 interface NormalizedActorRegistryEntry {
   actorId: string;
   actorRole: ActorRole;
-  authToken?: string;
+  authTokens?: ReadonlyArray<NormalizedActorTokenCredential>;
   source?: string;
   enabled: boolean;
   allowedTransports?: ReadonlySet<TransportKind>;
   allowedCommands?: ReadonlySet<OrchestratorCommand>;
+  validFromMs?: number;
+  validUntilMs?: number;
+}
+
+interface NormalizedActorTokenCredential {
+  token: string;
+  label?: string;
+  validFromMs?: number;
+  validUntilMs?: number;
 }
 
 const COMMAND_ROLE_POLICY: Record<OrchestratorCommand, ReadonlySet<ActorRole>> = {
@@ -82,6 +101,7 @@ export class ActorAuthorizationPolicy {
   authorize(command: OrchestratorCommand, actor: ActorContext): void {
     this.assertActorShape(actor);
     this.assertCommandRole(command, actor);
+    const evaluationTimeMs = normalizeEvaluationTime(actor.initiatedAt);
 
     const registeredActor = this.registry.get(actor.actorId);
     if (!registeredActor) {
@@ -107,6 +127,29 @@ export class ActorAuthorizationPolicy {
         {
           actorId: actor.actorId,
           command
+        }
+      );
+    }
+
+    if (
+      !isWithinValidityWindow(
+        evaluationTimeMs,
+        registeredActor.validFromMs,
+        registeredActor.validUntilMs
+      )
+    ) {
+      throw new ActorAuthorizationError(
+        "forbidden",
+        `Actor '${actor.actorId}' is outside its configured validity window.`,
+        {
+          actorId: actor.actorId,
+          command,
+          validFrom: registeredActor.validFromMs
+            ? new Date(registeredActor.validFromMs).toISOString()
+            : undefined,
+          validUntil: registeredActor.validUntilMs
+            ? new Date(registeredActor.validUntilMs).toISOString()
+            : undefined
         }
       );
     }
@@ -166,11 +209,12 @@ export class ActorAuthorizationPolicy {
       );
     }
 
-    if (registeredActor.authToken) {
-      if (actor.authToken !== registeredActor.authToken) {
+    if ((registeredActor.authTokens?.length ?? 0) > 0) {
+      const suppliedToken = actor.authToken?.trim();
+      if (!suppliedToken) {
         throw new ActorAuthorizationError(
           "unauthorized",
-          `Actor '${actor.actorId}' failed authentication.`,
+          `Actor '${actor.actorId}' must provide a valid authentication token.`,
           {
             actorId: actor.actorId,
             transport: actor.transport,
@@ -178,6 +222,35 @@ export class ActorAuthorizationPolicy {
           }
         );
       }
+
+      const matchedCredential = registeredActor.authTokens?.find(
+        (credential) =>
+          credential.token === suppliedToken &&
+          isWithinValidityWindow(
+            evaluationTimeMs,
+            credential.validFromMs,
+            credential.validUntilMs
+          )
+      );
+
+      if (!matchedCredential) {
+        const inactiveCredential = registeredActor.authTokens?.find(
+          (credential) => credential.token === suppliedToken
+        );
+        throw new ActorAuthorizationError(
+          "unauthorized",
+          inactiveCredential
+            ? `Actor '${actor.actorId}' supplied an expired or inactive authentication token.`
+            : `Actor '${actor.actorId}' failed authentication.`,
+          {
+            actorId: actor.actorId,
+            transport: actor.transport,
+            command,
+            credentialLabel: inactiveCredential?.label
+          }
+        );
+      }
+
       return;
     }
 
@@ -233,7 +306,7 @@ function normalizeEntry(entry: ActorRegistryEntry): NormalizedActorRegistryEntry
   return {
     actorId: entry.actorId.trim(),
     actorRole: entry.actorRole,
-    authToken: entry.authToken?.trim() || undefined,
+    authTokens: normalizeTokenCredentials(entry),
     source: entry.source?.trim() || undefined,
     enabled: entry.enabled ?? true,
     allowedTransports:
@@ -243,6 +316,91 @@ function normalizeEntry(entry: ActorRegistryEntry): NormalizedActorRegistryEntry
     allowedCommands:
       entry.allowedCommands && entry.allowedCommands.length > 0
         ? new Set(entry.allowedCommands)
-        : undefined
+        : undefined,
+    validFromMs: parseValidityInstant(
+      entry.validFrom,
+      `actor '${entry.actorId}' validFrom`
+    ),
+    validUntilMs: parseValidityInstant(
+      entry.validUntil,
+      `actor '${entry.actorId}' validUntil`
+    )
   };
+}
+
+function normalizeTokenCredentials(
+  entry: ActorRegistryEntry
+): ReadonlyArray<NormalizedActorTokenCredential> | undefined {
+  const credentials: NormalizedActorTokenCredential[] = [];
+
+  if (entry.authToken?.trim()) {
+    credentials.push({ token: entry.authToken.trim() });
+  }
+
+  for (const credential of entry.authTokens ?? []) {
+    if (typeof credential === "string") {
+      const token = credential.trim();
+      if (token) {
+        credentials.push({ token });
+      }
+      continue;
+    }
+
+    const token = credential.token?.trim();
+    if (!token) {
+      continue;
+    }
+
+    credentials.push({
+      token,
+      label: credential.label?.trim() || undefined,
+      validFromMs: parseValidityInstant(
+        credential.validFrom,
+        `actor '${entry.actorId}' token '${credential.label ?? token}' validFrom`
+      ),
+      validUntilMs: parseValidityInstant(
+        credential.validUntil,
+        `actor '${entry.actorId}' token '${credential.label ?? token}' validUntil`
+      )
+    });
+  }
+
+  return credentials.length > 0 ? credentials : undefined;
+}
+
+function parseValidityInstant(
+  value: string | undefined,
+  label: string
+): number | undefined {
+  if (!value?.trim()) {
+    return undefined;
+  }
+
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${label} must be a valid ISO-8601 timestamp.`);
+  }
+
+  return parsed;
+}
+
+function normalizeEvaluationTime(value: string): number {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+function isWithinValidityWindow(
+  evaluationTimeMs: number,
+  validFromMs?: number,
+  validUntilMs?: number
+): boolean {
+  if (validFromMs !== undefined && evaluationTimeMs < validFromMs) {
+    return false;
+  }
+
+  if (validUntilMs !== undefined && evaluationTimeMs > validUntilMs) {
+    return false;
+  }
+
+  return true;
 }

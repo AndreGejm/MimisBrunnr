@@ -21,7 +21,7 @@ The repository is not yet at "enable by default for every workspace" readiness.
 
 The main remaining gaps are:
 
-- auth boundaries are registry-backed but not yet fully hardened for shared rollout
+- auth boundaries are registry-backed with file-based loading, rotated credentials, and validity windows, but not yet fully hardened for shared rollout
 - temporal-validity handling is still limited beyond the new validity-window baseline
 - release/versioning discipline is still implicit rather than part of the application contract
 
@@ -31,11 +31,11 @@ These are the rollout-critical backlog items in the recommended implementation o
 
 ### 1. Remaining `BK-001` shared-rollout hardening
 
-Extend the current static actor-registry auth model into a more operationally complete shared-rollout boundary.
+Extend the current actor-registry auth model into a more operationally complete shared-rollout boundary.
 
 Why first:
 
-- broad multi-workspace rollout still needs stronger operator controls than a static token registry alone
+- broad multi-workspace rollout still needs stronger operator controls than a file-backed rotated-token registry alone
 
 ### 2. Remaining `BK-007` temporal validity refinement
 
