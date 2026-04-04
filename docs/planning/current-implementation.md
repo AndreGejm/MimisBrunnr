@@ -42,6 +42,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - staging note repository on disk
 - structured frontmatter and note validation
 - temporal-validity windows via `validFrom` and `validUntil`
+- shared release metadata derived from workspace version plus optional Git tag and commit overrides
 - controlled tag vocabulary enforcement
 - corpus separation for `context_brain` and `general_notes`
 - SQLite metadata authority
@@ -65,6 +66,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - direct context-packet transport exposure
 - decision-summary generation
 - runtime schema validation at CLI, HTTP, and MCP ingress
+- `GET /v1/system/version` plus release metadata embedded in health reports
 
 ### Governance
 
@@ -77,6 +79,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - file-backed actor-registry loading with rotated credential windows and entry validity support
 - promotion event recording
 - audit-history queries
+- a documented Git-centric versioning contract with runtime release metadata surfaces
 
 ### Local model and coding stack
 
@@ -105,6 +108,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 
 ### CLI
 
+- `version`
 - `execute-coding-task`
 - `search-context`
 - `get-context-packet`
@@ -118,6 +122,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 
 - `GET /health/live`
 - `GET /health/ready`
+- `GET /v1/system/version`
 - `POST /v1/coding/execute`
 - `POST /v1/context/search`
 - `POST /v1/context/packet`
@@ -143,7 +148,6 @@ The running architecture is a local-first monorepo with clear boundaries:
 These areas have enabling structure but are not fully complete:
 
 - shared-rollout auth hardening beyond the file-backed actor registry, rotated credentials, and validity-window model
-- formal Git-centric versioning contract
 - richer temporal-validity governance beyond validity windows, freshness reporting, and stale ranking
 
 See [`backlog.md`](./backlog.md) for the linked backlog items.

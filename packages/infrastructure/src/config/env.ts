@@ -7,6 +7,10 @@ import type {
   ModelRole,
   ModelRoleBinding
 } from "@multi-agent-brain/orchestration";
+import {
+  loadReleaseMetadata,
+  type ReleaseMetadata
+} from "./release-metadata.js";
 
 const DEFAULT_WORKSPACE_ROOT = fileURLToPath(
   new URL("../../../../", import.meta.url)
@@ -21,6 +25,7 @@ const DEFAULT_SQLITE_PATH = "./state/multi-agent-brain.sqlite";
 
 export interface AppEnvironment {
   nodeEnv: "development" | "test" | "production";
+  release: ReleaseMetadata;
   vaultRoot: string;
   stagingRoot: string;
   sqlitePath: string;
@@ -94,6 +99,7 @@ export function loadEnvironment(env: NodeJS.ProcessEnv = process.env): AppEnviro
   const actorRegistryPath = env.MAB_AUTH_ACTOR_REGISTRY_PATH?.trim() || undefined;
   return normalizeEnvironment({
     nodeEnv: (env.MAB_NODE_ENV as AppEnvironment["nodeEnv"]) ?? "development",
+    release: loadReleaseMetadata(env),
     vaultRoot: env.MAB_VAULT_ROOT ?? DEFAULT_CANONICAL_VAULT_ROOT,
     stagingRoot: env.MAB_STAGING_ROOT ?? DEFAULT_STAGING_ROOT,
     sqlitePath: env.MAB_SQLITE_PATH ?? DEFAULT_SQLITE_PATH,
@@ -157,6 +163,7 @@ export function normalizeEnvironment(input: Partial<AppEnvironment>): AppEnviron
 
   const baseEnvironment: AppEnvironment = {
     nodeEnv: input.nodeEnv ?? "development",
+    release: input.release ?? loadReleaseMetadata(),
     vaultRoot: input.vaultRoot ?? DEFAULT_CANONICAL_VAULT_ROOT,
     stagingRoot: input.stagingRoot ?? DEFAULT_STAGING_ROOT,
     sqlitePath: input.sqlitePath ?? DEFAULT_SQLITE_PATH,

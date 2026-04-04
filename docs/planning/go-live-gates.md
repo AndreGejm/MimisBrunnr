@@ -23,7 +23,7 @@ The main remaining gaps are:
 
 - auth boundaries are registry-backed with file-based loading, rotated credentials, and validity windows, but not yet fully hardened for shared rollout
 - temporal-validity handling is stronger with runtime freshness reporting and retrieval warnings, but still limited beyond the new validity-window baseline
-- release/versioning discipline is still implicit rather than part of the application contract
+- shared rollout still needs continued operator hardening and freshness governance after the versioning contract work
 
 ## Next Backlog Order
 
@@ -45,14 +45,6 @@ Why second:
 
 - all-workspace use will increase note volume
 - freshness governance becomes more important as more workspaces depend on shared memory
-
-### 3. `BK-006` Git-centric versioning contract
-
-Define the release and rollback contract that operators can rely on when the MCP tool is enabled across all workspaces.
-
-Why third:
-
-- broader rollout benefits from explicit release boundaries, rollback points, and operator guidance
 
 ## Pilot Gate
 
@@ -97,11 +89,10 @@ These items should be closed or materially complete before all-workspace default
 - the remaining shared-rollout hardening under `BK-001`
 - the remaining freshness-governance work under `BK-007`
 
-`BK-006` is recommended so rollout and rollback are operationally explicit.
-
 ### Operational checklist
 
 - clean committed worktree or tagged release candidate
+- release metadata exposed and verified through CLI, HTTP, or health surfaces
 - documented install and operator path for MCP usage
 - documented workspace onboarding path
 - documented recovery path for bad notes or bad promotions

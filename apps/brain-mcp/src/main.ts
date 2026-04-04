@@ -144,7 +144,7 @@ async function handleRequest(request: JsonRpcRequest): Promise<unknown> {
           },
           serverInfo: {
             name: "multi-agent-brain-mcp",
-            version: "0.1.0"
+            version: container.env.release.version
           }
         }
       };

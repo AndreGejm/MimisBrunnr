@@ -1,6 +1,7 @@
 export * from "./bootstrap/build-service-container.js";
 export * from "./coding/python-coding-controller-bridge.js";
 export * from "./config/env.js";
+export * from "./config/release-metadata.js";
 export { ActorAuthorizationError } from "@multi-agent-brain/orchestration";
 export * from "./fts/sqlite-fts-index.js";
 export * from "./health/runtime-health.js";

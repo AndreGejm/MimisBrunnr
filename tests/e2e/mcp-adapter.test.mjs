@@ -36,7 +36,11 @@ test("brain-mcp serves initialize, tools/list, get_context_packet, and validate_
         MAB_RERANKER_PROVIDER: "local",
         MAB_PROVIDER_DOCKER_OLLAMA_BASE_URL: "http://127.0.0.1:1",
         MAB_OLLAMA_BASE_URL: "http://127.0.0.1:1",
-        MAB_LOG_LEVEL: "error"
+        MAB_LOG_LEVEL: "error",
+        MAB_RELEASE_VERSION: "0.4.0",
+        MAB_GIT_TAG: "v0.4.0",
+        MAB_GIT_COMMIT: "fedcba9876543210",
+        MAB_RELEASE_CHANNEL: "tagged"
       },
       stdio: ["pipe", "pipe", "pipe"]
     }
@@ -63,6 +67,7 @@ test("brain-mcp serves initialize, tools/list, get_context_packet, and validate_
   });
   const initializeResponse = await transport.next();
   assert.equal(initializeResponse.result.serverInfo.name, "multi-agent-brain-mcp");
+  assert.equal(initializeResponse.result.serverInfo.version, "0.4.0");
 
   writeMcpMessage(child.stdin, {
     jsonrpc: "2.0",

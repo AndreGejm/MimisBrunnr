@@ -15,6 +15,7 @@ Implemented today:
 - SQLite as the metadata and audit authority
 - SQLite FTS lexical retrieval and Qdrant vector retrieval
 - runtime freshness reporting plus retrieval warnings for expired or not-yet-valid evidence
+- Git-centric release metadata exposed through CLI, HTTP, MCP, and health surfaces
 - bounded context packet assembly and decision-summary generation
 - deterministic validation and promotion for staged notes
 - actor-registry authn/authz with file-backed registry loading, rotated credentials, and validity windows
@@ -63,4 +64,5 @@ tests/
 - Current implementation overview: [`docs/planning/current-implementation.md`](./docs/planning/current-implementation.md)
 - Backlog and not-yet-implemented items: [`docs/planning/backlog.md`](./docs/planning/backlog.md)
 - MCP rollout and go-live gates: [`docs/planning/go-live-gates.md`](./docs/planning/go-live-gates.md)
+- Git-centric versioning and release contract: [`docs/planning/versioning-contract.md`](./docs/planning/versioning-contract.md)
 - Original rollout plan: [`docs/planning/implementation-plan.md`](./docs/planning/implementation-plan.md)

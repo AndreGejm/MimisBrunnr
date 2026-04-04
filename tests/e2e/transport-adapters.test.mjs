@@ -8,6 +8,28 @@ import test from "node:test";
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
+test("brain-cli exposes shared release metadata through the version command", async () => {
+  const result = await runNodeCommand(
+    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    ["version"],
+    {
+      ...process.env,
+      MAB_RELEASE_VERSION: "0.2.0",
+      MAB_GIT_TAG: "v0.2.0",
+      MAB_GIT_COMMIT: "0123456789abcdef",
+      MAB_RELEASE_CHANNEL: "tagged"
+    }
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.release.version, "0.2.0");
+  assert.equal(payload.release.gitTag, "v0.2.0");
+  assert.equal(payload.release.gitCommit, "0123456789abcdef");
+  assert.equal(payload.release.releaseChannel, "tagged");
+});
+
 test("brain-cli drafts notes through the staging service with JSON input", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-"));
   t.after(async () => {
@@ -212,6 +234,7 @@ test("brain-api exposes validation as a thin HTTP transport over services", asyn
   const livePayload = await liveResponse.json();
   assert.equal(livePayload.mode, "live");
   assert.ok(["pass", "degraded"].includes(livePayload.status));
+  assert.equal(typeof livePayload.release.version, "string");
 
   const noteId = randomUUID();
   const response = await fetch("http://127.0.0.1:18181/v1/notes/validate", {
@@ -244,6 +267,59 @@ test("brain-api exposes validation as a thin HTTP transport over services", asyn
   const payload = await response.json();
   assert.equal(payload.valid, false);
   assert.ok(payload.violations.some((issue) => issue.field === "body.sections"));
+});
+
+test("brain-api exposes shared release metadata through the system version route", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-version-"));
+  const { createBrainApiServer } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+    ).href
+  );
+  const { loadEnvironment } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "packages", "infrastructure", "dist", "index.js")
+    ).href
+  );
+
+  const api = createBrainApiServer(
+    loadEnvironment({
+      ...process.env,
+      MAB_NODE_ENV: "test",
+      MAB_RELEASE_VERSION: "0.3.0",
+      MAB_GIT_TAG: "v0.3.0",
+      MAB_GIT_COMMIT: "abcdef0123456789",
+      MAB_RELEASE_CHANNEL: "tagged",
+      MAB_VAULT_ROOT: path.join(root, "vault", "canonical"),
+      MAB_STAGING_ROOT: path.join(root, "vault", "staging"),
+      MAB_SQLITE_PATH: path.join(root, "state", "multi-agent-brain.sqlite"),
+      MAB_QDRANT_URL: "http://127.0.0.1:6333",
+      MAB_QDRANT_COLLECTION: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+      MAB_EMBEDDING_PROVIDER: "hash",
+      MAB_REASONING_PROVIDER: "heuristic",
+      MAB_DRAFTING_PROVIDER: "disabled",
+      MAB_RERANKER_PROVIDER: "local",
+      MAB_API_HOST: "127.0.0.1",
+      MAB_API_PORT: "18187",
+      MAB_LOG_LEVEL: "error"
+    })
+  );
+
+  t.after(async () => {
+    await api.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await api.listen();
+
+  const response = await fetch("http://127.0.0.1:18187/v1/system/version");
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.ok, true);
+  assert.equal(payload.release.version, "0.3.0");
+  assert.equal(payload.release.gitTag, "v0.3.0");
+  assert.equal(payload.release.gitCommit, "abcdef0123456789");
+  assert.equal(payload.release.releaseChannel, "tagged");
 });
 
 test("brain-api exposes direct context-packet assembly over HTTP", async (t) => {

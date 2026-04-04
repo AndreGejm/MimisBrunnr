@@ -24,6 +24,7 @@ import {
 } from "@multi-agent-brain/infrastructure";
 
 type CommandName =
+  | "version"
   | "execute-coding-task"
   | "search-context"
   | "get-context-packet"
@@ -32,6 +33,7 @@ type CommandName =
   | "validate-note"
   | "promote-note"
   | "query-history";
+type RoutedCommandName = Exclude<CommandName, "version">;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -39,6 +41,7 @@ interface ParsedCli {
   command?: CommandName;
   options: {
     help: boolean;
+    version: boolean;
     pretty: boolean;
     stdin: boolean;
     inputPath?: string;
@@ -47,6 +50,7 @@ interface ParsedCli {
 }
 
 const COMMANDS: ReadonlyArray<CommandName> = [
+  "version",
   "execute-coding-task",
   "search-context",
   "get-context-packet",
@@ -57,7 +61,7 @@ const COMMANDS: ReadonlyArray<CommandName> = [
   "query-history"
 ];
 
-const DEFAULT_ACTOR_ROLE: Record<CommandName, ActorRole> = {
+const DEFAULT_ACTOR_ROLE: Record<RoutedCommandName, ActorRole> = {
   "execute-coding-task": "operator",
   "search-context": "retrieval",
   "get-context-packet": "retrieval",
@@ -77,15 +81,28 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (parsed.command === "version") {
+    const env = loadEnvironment();
+    writeJson(
+      {
+        ok: true,
+        release: env.release
+      },
+      parsed.options.pretty
+    );
+    process.exitCode = 0;
+    return;
+  }
+
   const container = buildServiceContainer(loadEnvironment());
   try {
-  const request = await loadCommandPayload(parsed.options);
-  const validatedRequest = validateTransportRequest(parsed.command, request);
-  const actor = buildActorContext(parsed.command, validatedRequest.actor);
-  const normalizedRequest = normalizeCommandRequest(parsed.command, {
-    ...validatedRequest,
-    actor
-  });
+    const request = await loadCommandPayload(parsed.options);
+    const validatedRequest = validateTransportRequest(parsed.command, request);
+    const actor = buildActorContext(parsed.command, validatedRequest.actor);
+    const normalizedRequest = normalizeCommandRequest(parsed.command, {
+      ...validatedRequest,
+      actor
+    });
 
     const result = await runCommand(parsed.command, normalizedRequest, container);
     writeJson(result, parsed.options.pretty);
@@ -103,7 +120,7 @@ async function main(): Promise<void> {
 }
 
 async function runCommand(
-  command: CommandName,
+  command: RoutedCommandName,
   request: JsonRecord,
   container: ReturnType<typeof buildServiceContainer>
 ): Promise<unknown> {
@@ -146,6 +163,7 @@ async function runCommand(
 function parseCli(argv: string[]): ParsedCli {
   const options: ParsedCli["options"] = {
     help: false,
+    version: false,
     pretty: true,
     stdin: false
   };
@@ -157,6 +175,12 @@ function parseCli(argv: string[]): ParsedCli {
 
     if (value === "--help" || value === "-h") {
       options.help = true;
+      continue;
+    }
+
+    if (value === "--version") {
+      options.version = true;
+      command = "version";
       continue;
     }
 
@@ -207,6 +231,10 @@ function parseCli(argv: string[]): ParsedCli {
     throw new Error(`Unexpected argument '${value}'.`);
   }
 
+  if (options.version) {
+    command = "version";
+  }
+
   return { command, options };
 }
 
@@ -243,7 +271,7 @@ async function readStdin(): Promise<string> {
   return chunks.join("");
 }
 
-function buildActorContext(command: CommandName, actor: unknown): ActorContext {
+function buildActorContext(command: RoutedCommandName, actor: unknown): ActorContext {
   const input = actor && typeof actor === "object" ? actor as Partial<ActorContext> : {};
   const now = new Date().toISOString();
 
@@ -259,7 +287,7 @@ function buildActorContext(command: CommandName, actor: unknown): ActorContext {
   };
 }
 
-function normalizeCommandRequest(command: CommandName, request: JsonRecord): JsonRecord {
+function normalizeCommandRequest(command: RoutedCommandName, request: JsonRecord): JsonRecord {
   if (
     command === "execute-coding-task" &&
     typeof request.repoRoot !== "string"
@@ -273,7 +301,7 @@ function normalizeCommandRequest(command: CommandName, request: JsonRecord): Jso
   return request;
 }
 
-function shouldFailProcess(result: unknown, command: CommandName): boolean {
+function shouldFailProcess(result: unknown, command: RoutedCommandName): boolean {
   if (!result || typeof result !== "object") {
     return true;
   }
@@ -337,6 +365,7 @@ function printUsage(): void {
 brain-cli <command> [--input <file> | --stdin | --json <payload>] [--pretty | --no-pretty]
 
 Commands:
+  version              Print the runtime release metadata used for this build
   execute-coding-task  Run a coding-domain task through the vendored safety-gated runtime
   search-context   Run bounded retrieval through retrieveContextService
   get-context-packet  Assemble a bounded packet directly from ranked candidates
@@ -347,6 +376,7 @@ Commands:
   query-history    Query bounded audit history
 
 Notes:
+  - version and --version do not require an input payload.
   - Input payloads are JSON objects shaped like the existing service contracts.
   - Actor context is optional in the payload; the CLI injects command-safe defaults.
   - execute-coding-task defaults repoRoot to the current working directory when omitted.

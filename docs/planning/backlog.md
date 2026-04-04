@@ -30,7 +30,6 @@ If the goal is to make Multi Agent Brain the default MCP tool across all workspa
 
 1. close the remaining shared-rollout hardening under `BK-001`
 2. close the remaining freshness-governance work under `BK-007`
-3. formalize the Git-centric release and versioning contract under `BK-006`
 
 The pilot and all-workspace go-live gates for this sequence are documented in [`go-live-gates.md`](./go-live-gates.md).
 
@@ -42,7 +41,6 @@ The next implementation order returns to the broader rollout backlog:
 
 1. close the remaining shared-rollout hardening under `BK-001`
 2. close the remaining freshness-governance work under `BK-007`
-3. formalize the Git-centric release and versioning contract under `BK-006`
 
 ## Review-Driven Ready Work
 
@@ -127,7 +125,7 @@ The next implementation order returns to the broader rollout backlog:
 | BK-003 | Expose context-packet assembly directly through transports | First-class packet assembly is now exposed through CLI, HTTP, and MCP | done |
 | BK-004 | Align `docker/compose.local.yml` with the live Docker Model Runner plus Qwen stack | Compose now mirrors the local Docker Model Runner plus Qwen role bindings | done |
 | BK-005 | Refresh repository documentation to match the current implementation | Core repo READMEs and planning docs are synchronized with the current implementation | done |
-| BK-006 | Define a formal Git-centric versioning contract | Promotion and audit exist, but Git is not yet part of the application contract | later |
+| BK-006 | Define a formal Git-centric versioning contract | The runtime now exposes shared release metadata through CLI, HTTP, MCP initialization, and health surfaces, and the release workflow is documented in [`versioning-contract.md`](./versioning-contract.md) | done |
 | BK-007 | Expand temporal-validity handling beyond current-state and staleness heuristics | Validity windows (`validFrom` / `validUntil`), validation, metadata persistence, stale ranking, expired-note retrieval warnings, and runtime freshness reporting are implemented, but broader lifecycle governance and refresh workflows are still incomplete | partial |
 
 ## Optional Enhancement Backlog

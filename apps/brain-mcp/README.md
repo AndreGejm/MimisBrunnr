@@ -28,5 +28,6 @@ pnpm mcp
 The adapter is intentionally thin:
 
 - actor metadata is injected at the transport edge
+- `initialize` reports the shared runtime release version
 - tool handlers delegate directly to the orchestrator and existing services
 - tool output remains bounded and JSON-shaped
