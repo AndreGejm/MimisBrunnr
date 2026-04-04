@@ -46,6 +46,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - corpus separation for `context_brain` and `general_notes`
 - SQLite metadata authority
 - SQLite audit history
+- shared SQLite connection strategy with WAL and busy-timeout configuration across metadata, audit, and FTS adapters
 
 ### Retrieval
 
@@ -58,6 +59,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - bounded context packet assembly
 - hard token-budget and summary-sentence enforcement during packet assembly
 - `tagFilters` enforced across lexical retrieval, vector retrieval, and fusion
+- explicit degraded-mode vector health surfaced in retrieval warnings and runtime health reporting
 - direct context-packet transport exposure
 - decision-summary generation
 - runtime schema validation at CLI, HTTP, and MCP ingress

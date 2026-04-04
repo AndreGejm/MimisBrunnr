@@ -1,4 +1,8 @@
-import type { VectorIndex, VectorSearchHit } from "@multi-agent-brain/application";
+import type {
+  VectorIndex,
+  VectorIndexHealthSnapshot,
+  VectorSearchHit
+} from "@multi-agent-brain/application";
 import type {
   ChunkStalenessClass,
   CorpusId,
@@ -24,6 +28,7 @@ export class QdrantVectorIndex implements VectorIndex {
   private readonly fetchImplementation: FetchImplementation;
   private readonly softFail: boolean;
   private collectionVectorSize?: number;
+  private healthSnapshot: VectorIndexHealthSnapshot;
 
   constructor(options: QdrantVectorIndexOptions) {
     this.baseUrl = options.baseUrl.endsWith("/")
@@ -33,6 +38,15 @@ export class QdrantVectorIndex implements VectorIndex {
     this.distance = options.distance ?? "Cosine";
     this.fetchImplementation = options.fetchImplementation ?? fetch;
     this.softFail = options.softFail ?? true;
+    this.healthSnapshot = {
+      status: "healthy",
+      softFail: this.softFail,
+      consecutiveFailures: 0,
+      details: {
+        baseUrl: this.baseUrl,
+        collectionName: this.collectionName
+      }
+    };
   }
 
   async upsertEmbeddings(input: {
@@ -54,6 +68,7 @@ export class QdrantVectorIndex implements VectorIndex {
     }
 
     const response = await this.requestJson("/points?wait=true", {
+      operation: "upsert_points",
       method: "PUT",
       body: {
         points: input.map((entry) => ({
@@ -78,6 +93,7 @@ export class QdrantVectorIndex implements VectorIndex {
 
   async removeByNoteId(noteId: NoteId): Promise<void> {
     const response = await this.requestJson("/points/delete?wait=true", {
+      operation: "delete_points",
       method: "POST",
       body: {
         filter: {
@@ -113,6 +129,7 @@ export class QdrantVectorIndex implements VectorIndex {
     }
 
     const response = await this.requestJson<QdrantSearchResponse>("/points/search", {
+      operation: "search_points",
       method: "POST",
       body: {
         vector: input.queryEmbedding,
@@ -129,12 +146,24 @@ export class QdrantVectorIndex implements VectorIndex {
     }));
   }
 
+  getHealthSnapshot(): VectorIndexHealthSnapshot {
+    return {
+      ...this.healthSnapshot,
+      details: {
+        ...this.healthSnapshot.details,
+        baseUrl: this.baseUrl,
+        collectionName: this.collectionName
+      }
+    };
+  }
+
   private async ensureCollection(vectorSize: number): Promise<boolean> {
     if (this.collectionVectorSize === vectorSize) {
       return true;
     }
 
     const existing = await this.requestJson<QdrantCollectionResponse>("", {
+      operation: "get_collection",
       method: "GET"
     });
 
@@ -142,6 +171,9 @@ export class QdrantVectorIndex implements VectorIndex {
       const existingSize = extractVectorSize(existing);
       if (existingSize && existingSize !== vectorSize) {
         if (this.softFail) {
+          this.recordFailure(
+            `Qdrant collection '${this.collectionName}' uses vector size ${existingSize}, expected ${vectorSize}.`
+          );
           return false;
         }
 
@@ -155,6 +187,7 @@ export class QdrantVectorIndex implements VectorIndex {
     }
 
     const created = await this.requestJson("", {
+      operation: "create_collection",
       method: "PUT",
       body: {
         vectors: {
@@ -175,6 +208,7 @@ export class QdrantVectorIndex implements VectorIndex {
   private async requestJson<T = unknown>(
     relativePath: string,
     init: {
+      operation: string;
       method: "GET" | "POST" | "PUT";
       body?: unknown;
     }
@@ -193,6 +227,9 @@ export class QdrantVectorIndex implements VectorIndex {
       });
 
       if (!response.ok) {
+        this.recordFailure(
+          `Qdrant ${init.operation} failed with status ${response.status}.`
+        );
         if (this.softFail) {
           return null;
         }
@@ -200,14 +237,52 @@ export class QdrantVectorIndex implements VectorIndex {
         throw new Error(`Qdrant request failed with status ${response.status}.`);
       }
 
-      return await response.json() as T;
+      const payload = await response.json() as T;
+      this.recordSuccess();
+      return payload;
     } catch (error) {
+      this.recordFailure(
+        error instanceof Error
+          ? `Qdrant ${init.operation} failed: ${error.message}`
+          : `Qdrant ${init.operation} failed: ${String(error)}`
+      );
       if (this.softFail) {
         return null;
       }
 
       throw error;
     }
+  }
+
+  private recordSuccess(): void {
+    this.healthSnapshot = {
+      status: "healthy",
+      softFail: this.softFail,
+      consecutiveFailures: 0,
+      lastSuccessAt: new Date().toISOString(),
+      details: {
+        baseUrl: this.baseUrl,
+        collectionName: this.collectionName
+      }
+    };
+  }
+
+  private recordFailure(message: string): void {
+    const now = new Date().toISOString();
+    const wasDegraded = this.healthSnapshot.status === "degraded";
+    this.healthSnapshot = {
+      status: "degraded",
+      softFail: this.softFail,
+      consecutiveFailures: this.healthSnapshot.consecutiveFailures + 1,
+      lastError: message,
+      lastFailureAt: now,
+      lastSuccessAt: this.healthSnapshot.lastSuccessAt,
+      degradedSince: wasDegraded ? this.healthSnapshot.degradedSince ?? now : now,
+      details: {
+        baseUrl: this.baseUrl,
+        collectionName: this.collectionName
+      }
+    };
   }
 }
 

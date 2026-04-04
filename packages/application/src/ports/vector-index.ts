@@ -11,6 +11,17 @@ export interface VectorSearchHit {
   score: number;
 }
 
+export interface VectorIndexHealthSnapshot {
+  status: "healthy" | "degraded";
+  softFail: boolean;
+  consecutiveFailures: number;
+  lastError?: string;
+  lastFailureAt?: string;
+  lastSuccessAt?: string;
+  degradedSince?: string;
+  details?: Record<string, unknown>;
+}
+
 export interface VectorIndex {
   upsertEmbeddings(input: {
     chunkId: ChunkId;
@@ -29,4 +40,5 @@ export interface VectorIndex {
     limit: number;
     includeSuperseded: boolean;
   }): Promise<VectorSearchHit[]>;
+  getHealthSnapshot?(): VectorIndexHealthSnapshot;
 }

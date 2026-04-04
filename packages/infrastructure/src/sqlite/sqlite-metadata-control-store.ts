@@ -1,5 +1,3 @@
-import { mkdirSync } from "node:fs";
-import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import type {
@@ -12,14 +10,19 @@ import type {
 } from "@multi-agent-brain/application";
 import type { QueryHistoryRequest, QueryHistoryResponse } from "@multi-agent-brain/contracts";
 import type { AuditEntry, ChunkId, ChunkRecord, NoteId } from "@multi-agent-brain/domain";
+import {
+  acquireSharedSqliteConnection,
+  type SharedSqliteConnection
+} from "./shared-sqlite-connection.js";
 
 export class SqliteMetadataControlStore implements MetadataControlStore {
   private readonly database: DatabaseSync;
+  private readonly sharedConnection: SharedSqliteConnection;
   private closed = false;
 
-  constructor(private readonly databasePath: string) {
-    mkdirSync(path.dirname(path.resolve(databasePath)), { recursive: true });
-    this.database = new DatabaseSync(databasePath);
+  constructor(databasePath: string) {
+    this.sharedConnection = acquireSharedSqliteConnection(databasePath);
+    this.database = this.sharedConnection.database;
     this.initialize();
   }
 
@@ -28,7 +31,7 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
       return;
     }
 
-    this.database.close();
+    this.sharedConnection.release();
     this.closed = true;
   }
 
@@ -615,8 +618,6 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
 
   private initialize(): void {
     this.database.exec(`
-      PRAGMA foreign_keys = ON;
-
       CREATE TABLE IF NOT EXISTS notes (
         note_id TEXT PRIMARY KEY,
         corpus_id TEXT NOT NULL,

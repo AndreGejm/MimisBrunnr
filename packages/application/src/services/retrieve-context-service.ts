@@ -54,11 +54,13 @@ export class RetrieveContextService {
     this.auditHistoryService = input.auditHistoryService;
     this.rerankerProvider = input.rerankerProvider;
     this.paidEscalationProvider = input.paidEscalationProvider;
+    this.vectorIndex = input.vectorIndex;
   }
 
   private readonly auditHistoryService?: AuditHistoryService;
   private readonly paidEscalationProvider?: LocalReasoningProvider;
   private readonly rerankerProvider?: RerankerProvider;
+  private readonly vectorIndex: VectorIndex;
 
   async retrieveContext(
     request: RetrieveContextRequest
@@ -113,6 +115,10 @@ export class RetrieveContextService {
       );
       const packet = packetResponse.packet;
       const warnings: string[] = [];
+      const vectorHealth = this.vectorIndex.getHealthSnapshot?.();
+      if (vectorHealth?.status === "degraded") {
+        warnings.push("Vector retrieval is degraded; lexical retrieval remains active.");
+      }
       const escalationSummary = await this.summarizeEscalationUncertainty(
         request.query,
         answerability,
@@ -146,6 +152,7 @@ export class RetrieveContextService {
               configured: Boolean(this.paidEscalationProvider),
               used: Boolean(escalationSummary)
             },
+            vectorHealth,
             budget,
             candidateCounts: {
               lexical: lexicalCandidates.length,

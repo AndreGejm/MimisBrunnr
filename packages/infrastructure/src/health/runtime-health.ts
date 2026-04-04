@@ -1,6 +1,7 @@
 import { mkdir, open } from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import type { VectorIndexHealthSnapshot } from "@multi-agent-brain/application";
 import type { AppEnvironment } from "../config/env.js";
 
 export type HealthStatus = "pass" | "warn" | "fail";
@@ -21,13 +22,16 @@ export interface RuntimeHealthReport {
 
 export async function runRuntimeHealthChecks(
   env: AppEnvironment,
-  mode: "live" | "ready"
+  mode: "live" | "ready",
+  options: {
+    vectorHealth?: VectorIndexHealthSnapshot;
+  } = {}
 ): Promise<RuntimeHealthReport> {
   const checks: HealthCheckResult[] = [
     await ensureDirectoryCheck("canonical_vault", env.vaultRoot),
     await ensureDirectoryCheck("staging_vault", env.stagingRoot),
     await sqliteCheck(env.sqlitePath),
-    await qdrantCheck(env.qdrantUrl, env.qdrantCollection, mode)
+    await qdrantCheck(env.qdrantUrl, env.qdrantCollection, mode, options.vectorHealth)
   ];
 
   return {
@@ -91,7 +95,8 @@ async function sqliteCheck(databasePath: string): Promise<HealthCheckResult> {
 async function qdrantCheck(
   baseUrl: string,
   collectionName: string,
-  mode: "live" | "ready"
+  mode: "live" | "ready",
+  vectorHealth?: VectorIndexHealthSnapshot
 ): Promise<HealthCheckResult> {
   try {
     const response = await fetch(
@@ -103,6 +108,19 @@ async function qdrantCheck(
     );
 
     if (response.ok || response.status === 404) {
+      if (vectorHealth?.status === "degraded") {
+        return {
+          name: "qdrant_vector_store",
+          status: "warn",
+          message: `Qdrant is reachable, but the in-process vector index is operating in degraded mode.`,
+          details: {
+            baseUrl,
+            collectionName,
+            vectorHealth
+          }
+        };
+      }
+
       return {
         name: "qdrant_vector_store",
         status: "pass",
@@ -116,7 +134,8 @@ async function qdrantCheck(
       message: `Qdrant responded with status ${response.status}.`,
       details: {
         baseUrl,
-        collectionName
+        collectionName,
+        vectorHealth
       }
     };
   } catch (error) {
@@ -126,6 +145,7 @@ async function qdrantCheck(
       message: `Qdrant at '${baseUrl}' is unavailable.`,
       details: {
         collectionName,
+        vectorHealth,
         reason: error instanceof Error ? error.message : String(error)
       }
     };

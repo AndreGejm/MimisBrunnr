@@ -1,18 +1,21 @@
-import { mkdirSync } from "node:fs";
-import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { LexicalIndex, LexicalSearchHit } from "@multi-agent-brain/application";
 import type { ChunkRecord, CorpusId, NoteId, NoteType } from "@multi-agent-brain/domain";
+import {
+  acquireSharedSqliteConnection,
+  type SharedSqliteConnection
+} from "../sqlite/shared-sqlite-connection.js";
 
 const FTS_TABLE_NAME = "chunk_fts_index";
 
 export class SqliteFtsIndex implements LexicalIndex {
   private readonly database: DatabaseSync;
+  private readonly sharedConnection: SharedSqliteConnection;
   private closed = false;
 
-  constructor(private readonly databasePath: string) {
-    mkdirSync(path.dirname(path.resolve(databasePath)), { recursive: true });
-    this.database = new DatabaseSync(databasePath);
+  constructor(databasePath: string) {
+    this.sharedConnection = acquireSharedSqliteConnection(databasePath);
+    this.database = this.sharedConnection.database;
     this.initialize();
   }
 
@@ -21,7 +24,7 @@ export class SqliteFtsIndex implements LexicalIndex {
       return;
     }
 
-    this.database.close();
+    this.sharedConnection.release();
     this.closed = true;
   }
 

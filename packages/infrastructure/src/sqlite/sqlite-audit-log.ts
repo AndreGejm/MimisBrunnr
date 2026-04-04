@@ -1,17 +1,20 @@
-import { mkdirSync } from "node:fs";
-import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { AuditLog } from "@multi-agent-brain/application";
 import type { QueryHistoryRequest, QueryHistoryResponse } from "@multi-agent-brain/contracts";
 import type { AuditEntry } from "@multi-agent-brain/domain";
+import {
+  acquireSharedSqliteConnection,
+  type SharedSqliteConnection
+} from "./shared-sqlite-connection.js";
 
 export class SqliteAuditLog implements AuditLog {
   private readonly database: DatabaseSync;
+  private readonly sharedConnection: SharedSqliteConnection;
   private closed = false;
 
   constructor(databasePath: string) {
-    mkdirSync(path.dirname(path.resolve(databasePath)), { recursive: true });
-    this.database = new DatabaseSync(databasePath);
+    this.sharedConnection = acquireSharedSqliteConnection(databasePath);
+    this.database = this.sharedConnection.database;
     this.initialize();
   }
 
@@ -20,7 +23,7 @@ export class SqliteAuditLog implements AuditLog {
       return;
     }
 
-    this.database.close();
+    this.sharedConnection.release();
     this.closed = true;
   }
 
@@ -143,8 +146,6 @@ export class SqliteAuditLog implements AuditLog {
 
   private initialize(): void {
     this.database.exec(`
-      PRAGMA foreign_keys = ON;
-
       CREATE TABLE IF NOT EXISTS audit_entries (
         audit_entry_id TEXT PRIMARY KEY,
         action_type TEXT NOT NULL,

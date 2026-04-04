@@ -36,14 +36,13 @@ The pilot and all-workspace go-live gates for this sequence are documented in [`
 
 ## Architectural Review Carry-Forward
 
-These findings still stand after the latest auth, temporal-validity, paid-escalation, and promotion-outbox work, and they should drive the next implementation order:
+The highest-priority items from the latest architectural review are now implemented.
 
-- `F7` SQLite connection and concurrency strategy still needs hardening
-- `F6` vector degraded-mode observability still needs to become explicit
+The next implementation order returns to the broader rollout backlog:
 
-Recommended implementation order:
-
-1. SQLite access strategy and degraded-mode telemetry
+1. close the remaining shared-rollout hardening under `BK-001`
+2. close the remaining freshness-governance work under `BK-007`
+3. formalize the Git-centric release and versioning contract under `BK-006`
 
 ## Review-Driven Ready Work
 
@@ -53,7 +52,7 @@ Recommended implementation order:
 | RV-002 | Hard-enforce token budgets and summary-sentence limits during packet assembly | `F3` | done |
 | RV-003 | Implement `tagFilters` end-to-end through lexical retrieval, vector retrieval, and fusion | `F4` | done |
 | RV-004 | Add runtime schema validation at CLI, HTTP, and MCP ingress | `F8` | done |
-| RV-005 | Harden SQLite access strategy and make vector degraded mode explicit in telemetry and health reporting | `F6`, `F7` | ready |
+| RV-005 | Harden SQLite access strategy and make vector degraded mode explicit in telemetry and health reporting | `F6`, `F7` | done |
 
 ## Ready Now
 

@@ -5,7 +5,13 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import * as application from "../../packages/application/dist/index.js";
-import { buildServiceContainer } from "../../packages/infrastructure/dist/index.js";
+import {
+  SqliteAuditLog,
+  SqliteFtsIndex,
+  SqliteMetadataControlStore,
+  buildServiceContainer,
+  runRuntimeHealthChecks
+} from "../../packages/infrastructure/dist/index.js";
 
 test("retrieval actors cannot create staging drafts", async (t) => {
   const { container } = await createHarness(t);
@@ -524,6 +530,163 @@ test("retrieve context uses the paid escalation provider to enrich uncertainty w
       "Paid escalation provider enriched the uncertainty summary."
     )
   );
+});
+
+test("retrieve context surfaces degraded vector mode explicitly while continuing lexical retrieval", async (t) => {
+  const { container } = await createHarness(t);
+
+  await createAndPromote(container, {
+    title: "Vector Degraded Fallback",
+    noteType: "architecture",
+    bodyHints: [
+      "Lexical retrieval should still answer when vector mode is degraded.",
+      "Degraded vector telemetry should surface as a warning."
+    ],
+    scope: "vector-degraded-warning"
+  });
+
+  const retrieveContextService = new application.RetrieveContextService({
+    lexicalIndex: container.ports.lexicalIndex,
+    metadataControlStore: container.ports.metadataControlStore,
+    vectorIndex: {
+      async upsertEmbeddings() {},
+      async removeByNoteId() {},
+      async search() {
+        return [];
+      },
+      getHealthSnapshot() {
+        return {
+          status: "degraded",
+          softFail: true,
+          consecutiveFailures: 3,
+          lastError: "Qdrant search_points failed with status 503.",
+          lastFailureAt: new Date().toISOString(),
+          degradedSince: new Date().toISOString(),
+          details: {
+            baseUrl: "http://127.0.0.1:6333/",
+            collectionName: "context_brain_chunks_test"
+          }
+        };
+      }
+    },
+    embeddingProvider: container.ports.embeddingProvider,
+    localReasoningProvider: container.ports.localReasoningProvider,
+    rerankerProvider: container.ports.rerankerProvider
+  });
+
+  const result = await retrieveContextService.retrieveContext({
+    actor: actor("retrieval"),
+    query: "degraded vector telemetry should surface as a warning",
+    budget: {
+      maxTokens: 320,
+      maxSources: 2,
+      maxRawExcerpts: 1,
+      maxSummarySentences: 2
+    },
+    corpusIds: ["context_brain"],
+    requireEvidence: false
+  });
+
+  assert.equal(result.ok, true);
+  assert.ok(result.data.packet.evidence.length >= 1);
+  assert.ok(
+    result.warnings?.includes(
+      "Vector retrieval is degraded; lexical retrieval remains active."
+    )
+  );
+});
+
+test("runtime health reports degraded vector state explicitly", async (t) => {
+  const { env } = await createHarness(t);
+
+  const report = await runRuntimeHealthChecks(env, "live", {
+    vectorHealth: {
+      status: "degraded",
+      softFail: true,
+      consecutiveFailures: 2,
+      lastError: "Qdrant search_points failed with status 503.",
+      lastFailureAt: new Date().toISOString(),
+      degradedSince: new Date().toISOString(),
+      details: {
+        baseUrl: env.qdrantUrl,
+        collectionName: env.qdrantCollection
+      }
+    }
+  });
+
+  assert.equal(report.status, "degraded");
+  const qdrantCheck = report.checks.find((check) => check.name === "qdrant_vector_store");
+  assert.ok(qdrantCheck);
+  assert.equal(qdrantCheck.status, "warn");
+  assert.equal(qdrantCheck.details?.vectorHealth?.status, "degraded");
+});
+
+test("sqlite-backed adapters share a reference-counted connection lifecycle", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-sqlite-shared-"));
+  const sqlitePath = path.join(root, "state", "multi-agent-brain.sqlite");
+  const metadataStore = new SqliteMetadataControlStore(sqlitePath);
+  const auditLog = new SqliteAuditLog(sqlitePath);
+  const lexicalIndex = new SqliteFtsIndex(sqlitePath);
+
+  t.after(async () => {
+    lexicalIndex.close();
+    auditLog.close();
+    metadataStore.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const noteId = randomUUID();
+  await metadataStore.upsertNote({
+    noteId,
+    corpusId: "context_brain",
+    notePath: "context_brain/architecture/sqlite-shared-lifecycle.md",
+    noteType: "architecture",
+    lifecycleState: "promoted",
+    revision: currentDateIso(),
+    updatedAt: currentDateIso(),
+    currentState: false,
+    summary: "Shared SQLite lifecycle test.",
+    scope: "sqlite-shared-lifecycle",
+    tags: ["project/multi-agent-brain"],
+    contentHash: "sha256:test",
+    semanticSignature: "sqlite-shared-lifecycle"
+  });
+
+  auditLog.close();
+
+  const duplicates = await metadataStore.findPotentialDuplicates({
+    corpusId: "context_brain",
+    contentHash: "sha256:test"
+  });
+  assert.equal(duplicates.length, 1);
+
+  await lexicalIndex.upsertChunks([
+    {
+      chunkId: "sqlite-shared-lifecycle-chunk",
+      noteId,
+      corpusId: "context_brain",
+      noteType: "architecture",
+      notePath: "context_brain/architecture/sqlite-shared-lifecycle.md",
+      headingPath: ["Summary"],
+      rawText: "Shared SQLite lifecycle should keep the remaining adapters alive.",
+      summary: "Shared SQLite lifecycle remains available.",
+      entities: [],
+      qualifiers: [],
+      scope: "sqlite-shared-lifecycle",
+      tags: ["project/multi-agent-brain"],
+      stalenessClass: "current",
+      tokenEstimate: 12,
+      updatedAt: currentDateIso()
+    }
+  ]);
+
+  const lexicalHits = await lexicalIndex.search({
+    query: "remaining adapters alive",
+    corpusIds: ["context_brain"],
+    limit: 5,
+    includeSuperseded: true
+  });
+  assert.ok(lexicalHits.length >= 1);
 });
 
 test("root orchestrator exposes direct context-packet assembly for ranked candidates", async (t) => {
