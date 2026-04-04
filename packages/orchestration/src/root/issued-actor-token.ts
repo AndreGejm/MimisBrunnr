@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { ActorRole, TransportKind } from "@multi-agent-brain/contracts";
 import type { OrchestratorCommand } from "../routing/task-family-router.js";
+import type { AdministrativeAction } from "./administrative-action.js";
 
 const TOKEN_PREFIX = "mab1";
 
@@ -10,6 +11,7 @@ export interface IssuedActorTokenClaims {
   source?: string;
   allowedTransports?: TransportKind[];
   allowedCommands?: OrchestratorCommand[];
+  allowedAdminActions?: AdministrativeAction[];
   validFrom?: string;
   validUntil?: string;
   issuedAt: string;
@@ -69,6 +71,9 @@ function normalizeClaims(claims: IssuedActorTokenClaims): IssuedActorTokenClaims
       : undefined,
     allowedCommands: claims.allowedCommands?.length
       ? [...claims.allowedCommands]
+      : undefined,
+    allowedAdminActions: claims.allowedAdminActions?.length
+      ? [...claims.allowedAdminActions]
       : undefined,
     validFrom: claims.validFrom?.trim() || undefined,
     validUntil: claims.validUntil?.trim() || undefined,

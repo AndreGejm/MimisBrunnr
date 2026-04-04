@@ -64,6 +64,63 @@ test("brain-cli exposes auth registry status for operators", async () => {
   assert.equal(payload.auth.actorCounts.total, 1);
 });
 
+test("brain-cli can introspect issued actor tokens against the current auth policy", async () => {
+  const { issueActorAccessToken } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "packages", "infrastructure", "dist", "index.js")
+    ).href
+  );
+
+  const issuedToken = issueActorAccessToken(
+    {
+      actorId: "validate-note-http",
+      actorRole: "orchestrator",
+      source: "brain-api",
+      allowedTransports: ["http"],
+      allowedCommands: ["validate_note"],
+      validUntil: new Date(Date.now() + 3_600_000).toISOString(),
+      issuedAt: new Date().toISOString()
+    },
+    "cli-issuer-secret"
+  );
+
+  const result = await runNodeCommand(
+    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    [
+      "auth-introspect-token",
+      "--json",
+      JSON.stringify({
+        token: issuedToken,
+        expectedTransport: "http",
+        expectedCommand: "validate_note"
+      })
+    ],
+    {
+      ...process.env,
+      MAB_AUTH_MODE: "enforced",
+      MAB_AUTH_ISSUER_SECRET: "cli-issuer-secret",
+      MAB_AUTH_ACTOR_REGISTRY_JSON: JSON.stringify([
+        {
+          actorId: "validate-note-http",
+          actorRole: "orchestrator",
+          source: "brain-api",
+          allowedTransports: ["http"],
+          allowedCommands: ["validate_note"]
+        }
+      ])
+    }
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.inspection.tokenKind, "issued");
+  assert.equal(payload.inspection.valid, true);
+  assert.equal(payload.inspection.authorization.transportAllowed, true);
+  assert.equal(payload.inspection.authorization.commandAllowed, true);
+  assert.equal(payload.inspection.matchedActor.actorId, "validate-note-http");
+});
+
 test("brain-cli exposes temporal freshness status and refresh candidates for operators", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-freshness-"));
   const sqlitePath = path.join(root, "state", "multi-agent-brain.sqlite");
@@ -472,6 +529,80 @@ test("brain-api exposes auth registry status through the system auth route", asy
       allowAnonymousInternal: true,
       actorRegistry: [
         {
+          actorId: "operator-http",
+          actorRole: "operator",
+          authToken: "operator-http-secret",
+          source: "brain-api-admin",
+          allowedTransports: ["http"],
+          allowedAdminActions: ["view_auth_status"]
+        }
+      ],
+      issuerSecret: "api-issuer-secret",
+      issuedTokenRequireRegistryMatch: true
+    }
+  });
+
+  t.after(async () => {
+    await api.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await api.listen();
+
+  const unauthorized = await fetch("http://127.0.0.1:18188/v1/system/auth");
+  assert.equal(unauthorized.status, 401);
+
+  const response = await fetch("http://127.0.0.1:18188/v1/system/auth", {
+    headers: {
+      "x-brain-actor-id": "operator-http",
+      "x-brain-actor-role": "operator",
+      "x-brain-source": "brain-api-admin",
+      "x-brain-actor-token": "operator-http-secret"
+    }
+  });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.ok, true);
+  assert.equal(payload.auth.mode, "enforced");
+  assert.equal(payload.auth.issuedTokenSupport.enabled, true);
+  assert.equal(payload.auth.actorCounts.total, 1);
+});
+
+test("brain-api can issue short-lived actor tokens through the protected auth route", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-issue-token-"));
+  const { createBrainApiServer } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+    ).href
+  );
+
+  const api = createBrainApiServer({
+    nodeEnv: "test",
+    vaultRoot: path.join(root, "vault", "canonical"),
+    stagingRoot: path.join(root, "vault", "staging"),
+    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    qdrantUrl: "http://127.0.0.1:6333",
+    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    embeddingProvider: "hash",
+    reasoningProvider: "heuristic",
+    draftingProvider: "disabled",
+    rerankerProvider: "local",
+    apiHost: "127.0.0.1",
+    apiPort: 18192,
+    logLevel: "error",
+    auth: {
+      mode: "enforced",
+      allowAnonymousInternal: true,
+      actorRegistry: [
+        {
+          actorId: "operator-http",
+          actorRole: "operator",
+          authToken: "operator-http-secret",
+          source: "brain-api-admin",
+          allowedTransports: ["http"],
+          allowedAdminActions: ["issue_auth_token", "inspect_auth_token"]
+        },
+        {
           actorId: "validate-note-http",
           actorRole: "orchestrator",
           source: "brain-api",
@@ -491,13 +622,132 @@ test("brain-api exposes auth registry status through the system auth route", asy
 
   await api.listen();
 
-  const response = await fetch("http://127.0.0.1:18188/v1/system/auth");
+  const response = await fetch("http://127.0.0.1:18192/v1/system/auth/issue-token", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-brain-actor-id": "operator-http",
+      "x-brain-actor-role": "operator",
+      "x-brain-source": "brain-api-admin",
+      "x-brain-actor-token": "operator-http-secret"
+    },
+    body: JSON.stringify({
+      actorId: "validate-note-http",
+      actorRole: "orchestrator",
+      source: "brain-api",
+      allowedTransports: ["http"],
+      allowedCommands: ["validate_note"],
+      ttlMinutes: 60
+    })
+  });
+
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.ok, true);
-  assert.equal(payload.auth.mode, "enforced");
-  assert.equal(payload.auth.issuedTokenSupport.enabled, true);
-  assert.equal(payload.auth.actorCounts.total, 1);
+  assert.match(payload.issuedToken, /^mab1\./);
+  assert.equal(payload.claims.actorId, "validate-note-http");
+});
+
+test("brain-api can introspect actor tokens through the protected auth route", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-introspect-token-"));
+  const { createBrainApiServer } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+    ).href
+  );
+
+  const api = createBrainApiServer({
+    nodeEnv: "test",
+    vaultRoot: path.join(root, "vault", "canonical"),
+    stagingRoot: path.join(root, "vault", "staging"),
+    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    qdrantUrl: "http://127.0.0.1:6333",
+    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    embeddingProvider: "hash",
+    reasoningProvider: "heuristic",
+    draftingProvider: "disabled",
+    rerankerProvider: "local",
+    apiHost: "127.0.0.1",
+    apiPort: 18193,
+    logLevel: "error",
+    auth: {
+      mode: "enforced",
+      allowAnonymousInternal: true,
+      actorRegistry: [
+        {
+          actorId: "operator-http",
+          actorRole: "operator",
+          authToken: "operator-http-secret",
+          source: "brain-api-admin",
+          allowedTransports: ["http"],
+          allowedAdminActions: ["issue_auth_token", "inspect_auth_token"]
+        },
+        {
+          actorId: "validate-note-http",
+          actorRole: "orchestrator",
+          source: "brain-api",
+          allowedTransports: ["http"],
+          allowedCommands: ["validate_note"]
+        }
+      ],
+      issuerSecret: "api-issuer-secret",
+      issuedTokenRequireRegistryMatch: true
+    }
+  });
+
+  t.after(async () => {
+    await api.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await api.listen();
+
+  const issueResponse = await fetch("http://127.0.0.1:18193/v1/system/auth/issue-token", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-brain-actor-id": "operator-http",
+      "x-brain-actor-role": "operator",
+      "x-brain-source": "brain-api-admin",
+      "x-brain-actor-token": "operator-http-secret"
+    },
+    body: JSON.stringify({
+      actorId: "validate-note-http",
+      actorRole: "orchestrator",
+      source: "brain-api",
+      allowedTransports: ["http"],
+      allowedCommands: ["validate_note"],
+      ttlMinutes: 60
+    })
+  });
+
+  assert.equal(issueResponse.status, 200);
+  const issuedPayload = await issueResponse.json();
+
+  const response = await fetch("http://127.0.0.1:18193/v1/system/auth/introspect-token", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-brain-actor-id": "operator-http",
+      "x-brain-actor-role": "operator",
+      "x-brain-source": "brain-api-admin",
+      "x-brain-actor-token": "operator-http-secret"
+    },
+    body: JSON.stringify({
+      token: issuedPayload.issuedToken,
+      expectedTransport: "http",
+      expectedCommand: "validate_note"
+    })
+  });
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.ok, true);
+  assert.equal(payload.inspection.tokenKind, "issued");
+  assert.equal(payload.inspection.valid, true);
+  assert.equal(payload.inspection.authorization.transportAllowed, true);
+  assert.equal(payload.inspection.authorization.commandAllowed, true);
+  assert.equal(payload.inspection.matchedActor.actorId, "validate-note-http");
 });
 
 test("brain-api exposes temporal freshness reports through the system freshness route", async (t) => {

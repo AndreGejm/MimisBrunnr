@@ -81,6 +81,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - actor-registry-backed authn/authz across CLI, HTTP, MCP, and orchestrator command dispatch
 - file-backed actor-registry loading with rotated credential windows and entry validity support
 - issuer-secret-backed short-lived issued tokens for registered actors
+- protected operator auth-control surfaces for auth status, token issuance, and token introspection
 - promotion event recording
 - audit-history queries
 - a documented Git-centric versioning contract with runtime release metadata surfaces
@@ -114,6 +115,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 
 - `version`
 - `auth-status`
+- `auth-introspect-token`
 - `freshness-status`
 - `issue-auth-token`
 - `execute-coding-task`
@@ -133,6 +135,8 @@ The running architecture is a local-first monorepo with clear boundaries:
 - `GET /v1/system/auth`
 - `GET /v1/system/freshness`
 - `GET /v1/system/version`
+- `POST /v1/system/auth/issue-token`
+- `POST /v1/system/auth/introspect-token`
 - `POST /v1/coding/execute`
 - `POST /v1/context/search`
 - `POST /v1/context/packet`
@@ -159,7 +163,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 
 These areas have enabling structure but are not fully complete:
 
-- shared-rollout auth hardening beyond the file-backed actor registry, rotated credentials, issued tokens, and local operator status surfaces
+- shared-rollout auth hardening beyond the file-backed actor registry, rotated credentials, issued tokens, protected local operator control surfaces, and basic token issuance and introspection
 - richer temporal-validity governance beyond validity windows, refresh-candidate reporting, explicit refresh-draft creation, freshness warnings, and stale ranking
 
 See [`backlog.md`](./backlog.md) for the linked backlog items.

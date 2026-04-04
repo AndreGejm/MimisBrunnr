@@ -17,9 +17,12 @@ import type {
 import {
   ActorAuthorizationError,
   buildServiceContainer,
+  issueActorAccessToken,
   loadEnvironment,
   runRuntimeHealthChecks,
   TransportValidationError,
+  validateInspectActorTokenControlRequest,
+  validateIssueActorTokenControlRequest,
   validateTransportRequest,
   type AppEnvironment
 } from "@multi-agent-brain/infrastructure";
@@ -53,6 +56,8 @@ const ROUTES: Record<string, { method: "GET" | "POST"; name?: RouteName; healthM
   "/health/live": { method: "GET", healthMode: "live" },
   "/health/ready": { method: "GET", healthMode: "ready" },
   "/v1/system/auth": { method: "GET" },
+  "/v1/system/auth/issue-token": { method: "POST" },
+  "/v1/system/auth/introspect-token": { method: "POST" },
   "/v1/system/freshness": { method: "GET" },
   "/v1/system/version": { method: "GET" },
   "/v1/coding/execute": { method: "POST", name: "execute-coding-task" },
@@ -173,6 +178,10 @@ async function handleRequest(
   }
 
   if (url.pathname === "/v1/system/auth") {
+    container.authPolicy.authorizeAdministrativeAction(
+      "view_auth_status",
+      buildAdministrativeActorContext("view_auth_status", request.headers)
+    );
     sendJson(response, 200, {
       ok: true,
       auth: container.authPolicy.getRegistrySummary()
@@ -180,7 +189,78 @@ async function handleRequest(
     return;
   }
 
+  if (url.pathname === "/v1/system/auth/issue-token") {
+    container.authPolicy.authorizeAdministrativeAction(
+      "issue_auth_token",
+      buildAdministrativeActorContext("issue_auth_token", request.headers)
+    );
+    if (!container.env.auth.issuerSecret) {
+      sendJson(response, 422, {
+        ok: false,
+        error: {
+          code: "validation_failed",
+          message: "MAB_AUTH_ISSUER_SECRET must be configured to issue actor access tokens."
+        }
+      });
+      return;
+    }
+
+    const body = await readJsonBody(request);
+    const validated = validateIssueActorTokenControlRequest(body);
+    const validUntil =
+      validated.validUntil ??
+      (validated.ttlMinutes !== undefined
+        ? new Date(Date.now() + validated.ttlMinutes * 60_000).toISOString()
+        : undefined);
+
+    sendJson(response, 200, {
+      ok: true,
+      issuedToken: issueActorAccessToken(
+        {
+          actorId: validated.actorId,
+          actorRole: validated.actorRole,
+          source: validated.source,
+          allowedTransports: validated.allowedTransports,
+          allowedCommands: validated.allowedCommands,
+          allowedAdminActions: validated.allowedAdminActions,
+          validFrom: validated.validFrom,
+          validUntil,
+          issuedAt: new Date().toISOString()
+        },
+        container.env.auth.issuerSecret
+      ),
+      claims: {
+        ...validated,
+        validUntil
+      }
+    });
+    return;
+  }
+
+  if (url.pathname === "/v1/system/auth/introspect-token") {
+    container.authPolicy.authorizeAdministrativeAction(
+      "inspect_auth_token",
+      buildAdministrativeActorContext("inspect_auth_token", request.headers)
+    );
+    const body = await readJsonBody(request);
+    const validated = validateInspectActorTokenControlRequest(body);
+    sendJson(response, 200, {
+      ok: true,
+      inspection: container.authPolicy.inspectToken(validated.token, {
+        asOf: validated.asOf,
+        expectedTransport: validated.expectedTransport,
+        expectedCommand: validated.expectedCommand,
+        expectedAdministrativeAction: validated.expectedAdministrativeAction
+      })
+    });
+    return;
+  }
+
   if (url.pathname === "/v1/system/freshness") {
+    container.authPolicy.authorizeAdministrativeAction(
+      "view_freshness_status",
+      buildAdministrativeActorContext("view_freshness_status", request.headers)
+    );
     sendJson(response, 200, {
       ok: true,
       freshness: await container.ports.metadataControlStore.getTemporalValidityReport(
@@ -316,6 +396,30 @@ function buildActorContext(
     initiatedAt: input.initiatedAt ?? now,
     toolName: firstHeader(headers["x-brain-tool-name"]) ?? input.toolName ?? routeName,
     authToken: firstHeader(headers["x-brain-actor-token"]) ?? input.authToken
+  };
+}
+
+function buildAdministrativeActorContext(
+  administrativeAction:
+    | "view_auth_status"
+    | "issue_auth_token"
+    | "inspect_auth_token"
+    | "view_freshness_status",
+  headers: IncomingMessage["headers"]
+): ActorContext {
+  const now = new Date().toISOString();
+
+  return {
+    actorId: firstHeader(headers["x-brain-actor-id"]) ?? `${administrativeAction}-http`,
+    actorRole:
+      (firstHeader(headers["x-brain-actor-role"]) as ActorRole | undefined) ??
+      "operator",
+    transport: "http",
+    source: firstHeader(headers["x-brain-source"]) ?? "brain-api",
+    requestId: firstHeader(headers["x-request-id"]) ?? randomUUID(),
+    initiatedAt: now,
+    toolName: firstHeader(headers["x-brain-tool-name"]) ?? administrativeAction,
+    authToken: firstHeader(headers["x-brain-actor-token"])
   };
 }
 

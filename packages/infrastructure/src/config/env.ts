@@ -421,6 +421,7 @@ function normalizeActorRegistryEntry(
     enabled: entry.enabled ?? true,
     allowedTransports: entry.allowedTransports,
     allowedCommands: entry.allowedCommands,
+    allowedAdminActions: entry.allowedAdminActions,
     validFrom: entry.validFrom?.trim() || undefined,
     validUntil: entry.validUntil?.trim() || undefined
   };

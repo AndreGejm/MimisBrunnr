@@ -23,6 +23,8 @@ import {
   buildServiceContainer,
   issueActorAccessToken,
   loadEnvironment,
+  validateInspectActorTokenControlRequest,
+  validateIssueActorTokenControlRequest,
   TransportValidationError,
   validateTransportRequest
 } from "@multi-agent-brain/infrastructure";
@@ -30,6 +32,7 @@ import {
 type CommandName =
   | "version"
   | "auth-status"
+  | "auth-introspect-token"
   | "freshness-status"
   | "issue-auth-token"
   | "execute-coding-task"
@@ -43,7 +46,7 @@ type CommandName =
   | "query-history";
 type RoutedCommandName = Exclude<
   CommandName,
-  "version" | "auth-status" | "freshness-status" | "issue-auth-token"
+  "version" | "auth-status" | "auth-introspect-token" | "freshness-status" | "issue-auth-token"
 >;
 
 type JsonRecord = Record<string, unknown>;
@@ -63,6 +66,7 @@ interface ParsedCli {
 const COMMANDS: ReadonlyArray<CommandName> = [
   "version",
   "auth-status",
+  "auth-introspect-token",
   "freshness-status",
   "issue-auth-token",
   "execute-coding-task",
@@ -159,6 +163,34 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (parsed.command === "auth-introspect-token") {
+    const env = loadEnvironment();
+    const policy = new ActorAuthorizationPolicy({
+      mode: env.auth.mode,
+      allowAnonymousInternal: env.auth.allowAnonymousInternal,
+      registry: env.auth.actorRegistry,
+      issuerSecret: env.auth.issuerSecret,
+      issuedTokenRequireRegistryMatch: env.auth.issuedTokenRequireRegistryMatch
+    });
+    const request = validateInspectActorTokenControlRequest(
+      await loadCommandPayload(parsed.options)
+    );
+    writeJson(
+      {
+        ok: true,
+        inspection: policy.inspectToken(request.token, {
+          asOf: request.asOf,
+          expectedTransport: request.expectedTransport,
+          expectedCommand: request.expectedCommand,
+          expectedAdministrativeAction: request.expectedAdministrativeAction
+        })
+      },
+      parsed.options.pretty
+    );
+    process.exitCode = 0;
+    return;
+  }
+
   if (parsed.command === "freshness-status") {
     const container = buildServiceContainer(loadEnvironment());
     try {
@@ -189,7 +221,7 @@ async function main(): Promise<void> {
       );
     }
 
-    const request = validateIssuedTokenRequest(
+    const request = validateIssueActorTokenControlRequest(
       await loadCommandPayload(parsed.options)
     );
     writeJson(
@@ -202,6 +234,7 @@ async function main(): Promise<void> {
             source: request.source,
             allowedTransports: request.allowedTransports,
             allowedCommands: request.allowedCommands,
+            allowedAdminActions: request.allowedAdminActions,
             validFrom: request.validFrom,
             validUntil: request.validUntil,
             issuedAt: new Date().toISOString()
@@ -512,6 +545,7 @@ brain-cli <command> [--input <file> | --stdin | --json <payload>] [--pretty | --
 Commands:
   version              Print the runtime release metadata used for this build
   auth-status          Print the effective actor-registry and issued-token summary
+  auth-introspect-token  Inspect a static or issued actor token against the current auth policy
   freshness-status     Print temporal-validity summary data and refresh candidates
   issue-auth-token     Mint a short-lived issued actor token from JSON input
   execute-coding-task  Run a coding-domain task through the vendored safety-gated runtime
@@ -526,9 +560,10 @@ Commands:
 
 Notes:
   - version, --version, and auth-status do not require an input payload.
+  - auth-introspect-token expects JSON input with token and optional asOf, expectedTransport, expectedCommand, or expectedAdministrativeAction.
   - freshness-status accepts optional JSON input with asOf, expiringWithinDays, corpusId, and limitPerCategory.
   - create-refresh-draft expects JSON input with noteId and optional asOf, expiringWithinDays, or bodyHints.
-  - issue-auth-token expects JSON input with actorId, actorRole, and optional source, allowedTransports, allowedCommands, validFrom, validUntil, or ttlMinutes.
+  - issue-auth-token expects JSON input with actorId, actorRole, and optional source, allowedTransports, allowedCommands, allowedAdminActions, validFrom, validUntil, or ttlMinutes.
   - Input payloads are JSON objects shaped like the existing service contracts.
   - Actor context is optional in the payload; the CLI injects command-safe defaults.
   - execute-coding-task defaults repoRoot to the current working directory when omitted.
@@ -539,68 +574,6 @@ Notes:
 }
 
 await main();
-
-function validateIssuedTokenRequest(payload: JsonRecord): {
-  actorId: string;
-  actorRole: ActorRole;
-  source?: string;
-  allowedTransports?: TransportKind[];
-  allowedCommands?: Array<
-    | "execute_coding_task"
-    | "search_context"
-    | "get_context_packet"
-    | "fetch_decision_summary"
-    | "draft_note"
-    | "create_refresh_draft"
-    | "validate_note"
-    | "promote_note"
-    | "query_history"
-  >;
-  validFrom?: string;
-  validUntil?: string;
-} {
-  const actorId = requireCliString(payload.actorId, "actorId");
-  const actorRole = requireCliActorRole(payload.actorRole, "actorRole");
-  const source = optionalCliString(payload.source, "source");
-  const allowedTransports = optionalCliEnumArray(
-    payload.allowedTransports,
-    "allowedTransports",
-    TRANSPORTS
-  );
-  const allowedCommands = optionalCliEnumArray(
-    payload.allowedCommands,
-    "allowedCommands",
-    COMMAND_NAMES
-  ) as Array<
-    | "execute_coding_task"
-    | "search_context"
-    | "get_context_packet"
-    | "fetch_decision_summary"
-    | "draft_note"
-    | "create_refresh_draft"
-    | "validate_note"
-    | "promote_note"
-    | "query_history"
-  > | undefined;
-  const validFrom = optionalCliString(payload.validFrom, "validFrom");
-  const explicitValidUntil = optionalCliString(payload.validUntil, "validUntil");
-  const ttlMinutes = optionalCliInteger(payload.ttlMinutes, "ttlMinutes", 1);
-  const validUntil =
-    explicitValidUntil ??
-    (ttlMinutes !== undefined
-      ? new Date(Date.now() + ttlMinutes * 60_000).toISOString()
-      : undefined);
-
-  return {
-    actorId,
-    actorRole,
-    source,
-    allowedTransports,
-    allowedCommands,
-    validFrom,
-    validUntil
-  };
-}
 
 function requireCliString(value: unknown, field: string): string {
   if (typeof value !== "string" || value.trim() === "") {

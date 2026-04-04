@@ -5,6 +5,7 @@ import type {
   TransportKind
 } from "@multi-agent-brain/contracts";
 import type { OrchestratorCommand } from "../routing/task-family-router.js";
+import type { AdministrativeAction } from "./administrative-action.js";
 import {
   verifyActorAccessToken,
   type IssuedActorTokenClaims
@@ -28,6 +29,7 @@ export interface ActorRegistryEntry {
   enabled?: boolean;
   allowedTransports?: TransportKind[];
   allowedCommands?: OrchestratorCommand[];
+  allowedAdminActions?: AdministrativeAction[];
   validFrom?: string;
   validUntil?: string;
 }
@@ -48,10 +50,34 @@ export interface ActorRegistryEntryStatus {
   lifecycleStatus: "active" | "future" | "expired" | "disabled";
   allowedTransports?: TransportKind[];
   allowedCommands?: OrchestratorCommand[];
+  allowedAdminActions?: AdministrativeAction[];
   staticCredentialCount: number;
   activeCredentialCount: number;
   futureCredentialCount: number;
   expiredCredentialCount: number;
+}
+
+export interface ActorTokenInspection {
+  asOf: string;
+  tokenKind: "issued" | "static" | "unknown";
+  valid: boolean;
+  reason?: string;
+  claims?: IssuedActorTokenClaims;
+  matchedActor?: {
+    actorId: string;
+    actorRole: ActorRole;
+    source?: string;
+    lifecycleStatus: ActorRegistryEntryStatus["lifecycleStatus"];
+    enabled: boolean;
+  };
+  authorization?: {
+    transport?: TransportKind;
+    transportAllowed?: boolean;
+    command?: OrchestratorCommand;
+    commandAllowed?: boolean;
+    administrativeAction?: AdministrativeAction;
+    administrativeActionAllowed?: boolean;
+  };
 }
 
 export interface ActorRegistrySummary {
@@ -88,6 +114,7 @@ interface NormalizedActorRegistryEntry {
   enabled: boolean;
   allowedTransports?: ReadonlySet<TransportKind>;
   allowedCommands?: ReadonlySet<OrchestratorCommand>;
+  allowedAdminActions?: ReadonlySet<AdministrativeAction>;
   validFromMs?: number;
   validUntilMs?: number;
 }
@@ -109,6 +136,13 @@ const COMMAND_ROLE_POLICY: Record<OrchestratorCommand, ReadonlySet<ActorRole>> =
   validate_note: new Set(["operator", "orchestrator", "system"]),
   promote_note: new Set(["operator", "orchestrator", "system"]),
   query_history: new Set(["operator", "orchestrator", "system"])
+};
+
+const ADMIN_ACTION_ROLE_POLICY: Record<AdministrativeAction, ReadonlySet<ActorRole>> = {
+  view_auth_status: new Set(["operator", "system"]),
+  issue_auth_token: new Set(["operator", "system"]),
+  inspect_auth_token: new Set(["operator", "system"]),
+  view_freshness_status: new Set(["operator", "orchestrator", "system"])
 };
 
 export class ActorAuthorizationError extends Error {
@@ -149,180 +183,14 @@ export class ActorAuthorizationPolicy {
   }
 
   authorize(command: OrchestratorCommand, actor: ActorContext): void {
-    this.assertActorShape(actor);
-    this.assertCommandRole(command, actor);
-    const evaluationTimeMs = normalizeEvaluationTime(actor.initiatedAt);
+    this.authorizeOperation(actor, { command });
+  }
 
-    const registeredActor = this.registry.get(actor.actorId);
-    if (!registeredActor) {
-      if (this.tryAuthorizeIssuedToken(command, actor, evaluationTimeMs)) {
-        return;
-      }
-
-      if (this.mode === "enforced" && !this.isAnonymousInternalAllowed(actor)) {
-        throw new ActorAuthorizationError(
-          "unauthorized",
-          `Actor '${actor.actorId}' is not registered for ${actor.transport} access.`,
-          {
-            actorId: actor.actorId,
-            actorRole: actor.actorRole,
-            transport: actor.transport,
-            command
-          }
-        );
-      }
-      return;
-    }
-
-    if (!registeredActor.enabled) {
-      throw new ActorAuthorizationError(
-        "forbidden",
-        `Actor '${actor.actorId}' is disabled.`,
-        {
-          actorId: actor.actorId,
-          command
-        }
-      );
-    }
-
-    if (
-      !isWithinValidityWindow(
-        evaluationTimeMs,
-        registeredActor.validFromMs,
-        registeredActor.validUntilMs
-      )
-    ) {
-      throw new ActorAuthorizationError(
-        "forbidden",
-        `Actor '${actor.actorId}' is outside its configured validity window.`,
-        {
-          actorId: actor.actorId,
-          command,
-          validFrom: registeredActor.validFromMs
-            ? new Date(registeredActor.validFromMs).toISOString()
-            : undefined,
-          validUntil: registeredActor.validUntilMs
-            ? new Date(registeredActor.validUntilMs).toISOString()
-            : undefined
-        }
-      );
-    }
-
-    if (registeredActor.actorRole !== actor.actorRole) {
-      throw new ActorAuthorizationError(
-        "forbidden",
-        `Actor '${actor.actorId}' cannot assume role '${actor.actorRole}'.`,
-        {
-          actorId: actor.actorId,
-          expectedRole: registeredActor.actorRole,
-          actualRole: actor.actorRole,
-          command
-        }
-      );
-    }
-
-    if (
-      registeredActor.allowedTransports &&
-      !registeredActor.allowedTransports.has(actor.transport)
-    ) {
-      throw new ActorAuthorizationError(
-        "forbidden",
-        `Actor '${actor.actorId}' is not allowed on transport '${actor.transport}'.`,
-        {
-          actorId: actor.actorId,
-          transport: actor.transport,
-          command
-        }
-      );
-    }
-
-    if (
-      registeredActor.allowedCommands &&
-      !registeredActor.allowedCommands.has(command)
-    ) {
-      throw new ActorAuthorizationError(
-        "forbidden",
-        `Actor '${actor.actorId}' is not allowed to execute '${command}'.`,
-        {
-          actorId: actor.actorId,
-          command
-        }
-      );
-    }
-
-    if (registeredActor.source && registeredActor.source !== actor.source) {
-      throw new ActorAuthorizationError(
-        "forbidden",
-        `Actor '${actor.actorId}' is bound to source '${registeredActor.source}', not '${actor.source}'.`,
-        {
-          actorId: actor.actorId,
-          expectedSource: registeredActor.source,
-          actualSource: actor.source,
-          command
-        }
-      );
-    }
-
-    if (this.tryAuthorizeIssuedToken(command, actor, evaluationTimeMs, registeredActor)) {
-      return;
-    }
-
-    if ((registeredActor.authTokens?.length ?? 0) > 0) {
-      const suppliedToken = actor.authToken?.trim();
-      if (!suppliedToken) {
-        throw new ActorAuthorizationError(
-          "unauthorized",
-          `Actor '${actor.actorId}' must provide a valid authentication token.`,
-          {
-            actorId: actor.actorId,
-            transport: actor.transport,
-            command
-          }
-        );
-      }
-
-      const matchedCredential = registeredActor.authTokens?.find(
-        (credential) =>
-          credential.token === suppliedToken &&
-          isWithinValidityWindow(
-            evaluationTimeMs,
-            credential.validFromMs,
-            credential.validUntilMs
-          )
-      );
-
-      if (!matchedCredential) {
-        const inactiveCredential = registeredActor.authTokens?.find(
-          (credential) => credential.token === suppliedToken
-        );
-        throw new ActorAuthorizationError(
-          "unauthorized",
-          inactiveCredential
-            ? `Actor '${actor.actorId}' supplied an expired or inactive authentication token.`
-            : `Actor '${actor.actorId}' failed authentication.`,
-          {
-            actorId: actor.actorId,
-            transport: actor.transport,
-            command,
-            credentialLabel: inactiveCredential?.label
-          }
-        );
-      }
-
-      return;
-    }
-
-    if (this.mode === "enforced" && actor.transport !== "internal") {
-      throw new ActorAuthorizationError(
-        "unauthorized",
-        `Actor '${actor.actorId}' is registered without a token and cannot access '${actor.transport}' while auth is enforced.`,
-        {
-          actorId: actor.actorId,
-          transport: actor.transport,
-          command
-        }
-      );
-    }
+  authorizeAdministrativeAction(
+    administrativeAction: AdministrativeAction,
+    actor: ActorContext
+  ): void {
+    this.authorizeOperation(actor, { administrativeAction });
   }
 
   private assertActorShape(actor: ActorContext): void {
@@ -351,6 +219,26 @@ export class ActorAuthorizationPolicy {
         actorId: actor.actorId,
         actorRole: actor.actorRole,
         command
+      }
+    );
+  }
+
+  private assertAdministrativeActionRole(
+    administrativeAction: AdministrativeAction,
+    actor: ActorContext
+  ): void {
+    const allowedRoles = ADMIN_ACTION_ROLE_POLICY[administrativeAction];
+    if (allowedRoles.has(actor.actorRole)) {
+      return;
+    }
+
+    throw new ActorAuthorizationError(
+      "forbidden",
+      `Actor role '${actor.actorRole}' cannot execute administrative action '${administrativeAction}'.`,
+      {
+        actorId: actor.actorId,
+        actorRole: actor.actorRole,
+        administrativeAction
       }
     );
   }
@@ -390,10 +278,188 @@ export class ActorAuthorizationPolicy {
     };
   }
 
+  inspectToken(
+    token: string,
+    options: {
+      asOf?: string;
+      expectedTransport?: TransportKind;
+      expectedCommand?: OrchestratorCommand;
+      expectedAdministrativeAction?: AdministrativeAction;
+    } = {}
+  ): ActorTokenInspection {
+    const asOf = options.asOf ?? new Date().toISOString();
+    const evaluationTimeMs = normalizeEvaluationTime(asOf);
+    const trimmedToken = token.trim();
+
+    if (!trimmedToken) {
+      return {
+        asOf,
+        tokenKind: "unknown",
+        valid: false,
+        reason: "missing_token"
+      };
+    }
+
+    const staticMatch = findStaticCredentialMatch(this.registry, trimmedToken);
+    if (staticMatch) {
+      const lifecycleStatus = deriveActorLifecycleStatus(
+        staticMatch.entry,
+        evaluationTimeMs
+      );
+      const credentialActive = isWithinValidityWindow(
+        evaluationTimeMs,
+        staticMatch.credential.validFromMs,
+        staticMatch.credential.validUntilMs
+      );
+      const transportAllowed =
+        options.expectedTransport === undefined ||
+        !staticMatch.entry.allowedTransports ||
+        staticMatch.entry.allowedTransports.has(options.expectedTransport);
+      const commandAllowed =
+        options.expectedCommand === undefined ||
+        !staticMatch.entry.allowedCommands ||
+        staticMatch.entry.allowedCommands.has(options.expectedCommand);
+      const administrativeActionAllowed =
+        options.expectedAdministrativeAction === undefined ||
+        !staticMatch.entry.allowedAdminActions ||
+        staticMatch.entry.allowedAdminActions.has(options.expectedAdministrativeAction);
+
+      return {
+        asOf,
+        tokenKind: "static",
+        valid:
+          staticMatch.entry.enabled &&
+          lifecycleStatus === "active" &&
+          credentialActive &&
+          transportAllowed &&
+          commandAllowed &&
+          administrativeActionAllowed,
+        reason: !staticMatch.entry.enabled
+          ? "actor_disabled"
+          : lifecycleStatus !== "active"
+            ? `actor_${lifecycleStatus}`
+            : !credentialActive
+              ? "inactive_static_token"
+              : !transportAllowed
+                ? "transport_not_allowed"
+                : !commandAllowed
+                  ? "command_not_allowed"
+                  : !administrativeActionAllowed
+                    ? "administrative_action_not_allowed"
+                    : undefined,
+        matchedActor: {
+          actorId: staticMatch.entry.actorId,
+          actorRole: staticMatch.entry.actorRole,
+          source: staticMatch.entry.source,
+          lifecycleStatus,
+          enabled: staticMatch.entry.enabled
+        },
+        authorization: {
+          transport: options.expectedTransport,
+          transportAllowed,
+          command: options.expectedCommand,
+          commandAllowed,
+          administrativeAction: options.expectedAdministrativeAction,
+          administrativeActionAllowed
+        }
+      };
+    }
+
+    if (this.issuerSecret) {
+      try {
+        const claims = verifyActorAccessToken(trimmedToken, this.issuerSecret);
+        const registryEntry = this.registry.get(claims.actorId);
+        const validWindow = isWithinValidityWindow(
+          evaluationTimeMs,
+          parseValidityInstant(claims.validFrom, "issued token validFrom"),
+          parseValidityInstant(claims.validUntil, "issued token validUntil")
+        );
+        const lifecycleStatus = registryEntry
+          ? deriveActorLifecycleStatus(registryEntry, evaluationTimeMs)
+          : "active";
+        const registryMatch =
+          !this.issuedTokenRequireRegistryMatch ||
+          (registryEntry !== undefined &&
+            registryEntry.actorRole === claims.actorRole &&
+            (!claims.source || !registryEntry.source || registryEntry.source === claims.source));
+        const transportAllowed =
+          options.expectedTransport === undefined ||
+          !claims.allowedTransports?.length ||
+          claims.allowedTransports.includes(options.expectedTransport);
+        const commandAllowed =
+          options.expectedCommand === undefined ||
+          !claims.allowedCommands?.length ||
+          claims.allowedCommands.includes(options.expectedCommand);
+        const administrativeActionAllowed =
+          options.expectedAdministrativeAction === undefined ||
+          !claims.allowedAdminActions?.length ||
+          claims.allowedAdminActions.includes(options.expectedAdministrativeAction);
+
+        return {
+          asOf,
+          tokenKind: "issued",
+          valid:
+            validWindow &&
+            registryMatch &&
+            transportAllowed &&
+            commandAllowed &&
+            administrativeActionAllowed &&
+            (!registryEntry ||
+              (registryEntry.enabled && lifecycleStatus === "active")),
+          reason: !validWindow
+            ? "inactive_issued_token"
+            : !registryMatch
+              ? "registry_mismatch"
+              : !transportAllowed
+                ? "transport_not_allowed"
+                : !commandAllowed
+                  ? "command_not_allowed"
+                  : !administrativeActionAllowed
+                    ? "administrative_action_not_allowed"
+                    : registryEntry && !registryEntry.enabled
+                      ? "actor_disabled"
+                      : registryEntry && lifecycleStatus !== "active"
+                        ? `actor_${lifecycleStatus}`
+                        : undefined,
+          claims,
+          matchedActor: registryEntry
+            ? {
+                actorId: registryEntry.actorId,
+                actorRole: registryEntry.actorRole,
+                source: registryEntry.source,
+                lifecycleStatus,
+                enabled: registryEntry.enabled
+              }
+            : undefined,
+          authorization: {
+            transport: options.expectedTransport,
+            transportAllowed,
+            command: options.expectedCommand,
+            commandAllowed,
+            administrativeAction: options.expectedAdministrativeAction,
+            administrativeActionAllowed
+          }
+        };
+      } catch {
+        // Fall through to unknown token shape.
+      }
+    }
+
+    return {
+      asOf,
+      tokenKind: "unknown",
+      valid: false,
+      reason: "unrecognized_token"
+    };
+  }
+
   private tryAuthorizeIssuedToken(
-    command: OrchestratorCommand,
     actor: ActorContext,
     evaluationTimeMs: number,
+    scope: {
+      command?: OrchestratorCommand;
+      administrativeAction?: AdministrativeAction;
+    },
     registeredActor?: NormalizedActorRegistryEntry
   ): boolean {
     const suppliedToken = actor.authToken?.trim();
@@ -438,12 +504,236 @@ export class ActorAuthorizationPolicy {
 
     if (
       claims.allowedCommands?.length &&
-      !claims.allowedCommands.includes(command)
+      scope.command !== undefined &&
+      !claims.allowedCommands.includes(scope.command)
+    ) {
+      return false;
+    }
+
+    if (
+      claims.allowedAdminActions?.length &&
+      scope.administrativeAction !== undefined &&
+      !claims.allowedAdminActions.includes(scope.administrativeAction)
     ) {
       return false;
     }
 
     return true;
+  }
+
+  private authorizeOperation(
+    actor: ActorContext,
+    scope: {
+      command?: OrchestratorCommand;
+      administrativeAction?: AdministrativeAction;
+    }
+  ): void {
+    this.assertActorShape(actor);
+
+    if (scope.command) {
+      this.assertCommandRole(scope.command, actor);
+    }
+
+    if (scope.administrativeAction) {
+      this.assertAdministrativeActionRole(scope.administrativeAction, actor);
+    }
+
+    const evaluationTimeMs = normalizeEvaluationTime(actor.initiatedAt);
+    const registeredActor = this.registry.get(actor.actorId);
+    if (!registeredActor) {
+      if (this.tryAuthorizeIssuedToken(actor, evaluationTimeMs, scope)) {
+        return;
+      }
+
+      if (this.mode === "enforced" && !this.isAnonymousInternalAllowed(actor)) {
+        throw new ActorAuthorizationError(
+          "unauthorized",
+          `Actor '${actor.actorId}' is not registered for ${actor.transport} access.`,
+          {
+            actorId: actor.actorId,
+            actorRole: actor.actorRole,
+            transport: actor.transport,
+            command: scope.command,
+            administrativeAction: scope.administrativeAction
+          }
+        );
+      }
+      return;
+    }
+
+    if (!registeredActor.enabled) {
+      throw new ActorAuthorizationError(
+        "forbidden",
+        `Actor '${actor.actorId}' is disabled.`,
+        {
+          actorId: actor.actorId,
+          command: scope.command,
+          administrativeAction: scope.administrativeAction
+        }
+      );
+    }
+
+    if (
+      !isWithinValidityWindow(
+        evaluationTimeMs,
+        registeredActor.validFromMs,
+        registeredActor.validUntilMs
+      )
+    ) {
+      throw new ActorAuthorizationError(
+        "forbidden",
+        `Actor '${actor.actorId}' is outside its configured validity window.`,
+        {
+          actorId: actor.actorId,
+          command: scope.command,
+          administrativeAction: scope.administrativeAction,
+          validFrom: registeredActor.validFromMs
+            ? new Date(registeredActor.validFromMs).toISOString()
+            : undefined,
+          validUntil: registeredActor.validUntilMs
+            ? new Date(registeredActor.validUntilMs).toISOString()
+            : undefined
+        }
+      );
+    }
+
+    if (registeredActor.actorRole !== actor.actorRole) {
+      throw new ActorAuthorizationError(
+        "forbidden",
+        `Actor '${actor.actorId}' cannot assume role '${actor.actorRole}'.`,
+        {
+          actorId: actor.actorId,
+          expectedRole: registeredActor.actorRole,
+          actualRole: actor.actorRole,
+          command: scope.command,
+          administrativeAction: scope.administrativeAction
+        }
+      );
+    }
+
+    if (
+      registeredActor.allowedTransports &&
+      !registeredActor.allowedTransports.has(actor.transport)
+    ) {
+      throw new ActorAuthorizationError(
+        "forbidden",
+        `Actor '${actor.actorId}' is not allowed on transport '${actor.transport}'.`,
+        {
+          actorId: actor.actorId,
+          transport: actor.transport,
+          command: scope.command,
+          administrativeAction: scope.administrativeAction
+        }
+      );
+    }
+
+    if (
+      scope.command &&
+      registeredActor.allowedCommands &&
+      !registeredActor.allowedCommands.has(scope.command)
+    ) {
+      throw new ActorAuthorizationError(
+        "forbidden",
+        `Actor '${actor.actorId}' is not allowed to execute '${scope.command}'.`,
+        {
+          actorId: actor.actorId,
+          command: scope.command
+        }
+      );
+    }
+
+    if (
+      scope.administrativeAction &&
+      registeredActor.allowedAdminActions &&
+      !registeredActor.allowedAdminActions.has(scope.administrativeAction)
+    ) {
+      throw new ActorAuthorizationError(
+        "forbidden",
+        `Actor '${actor.actorId}' is not allowed to execute administrative action '${scope.administrativeAction}'.`,
+        {
+          actorId: actor.actorId,
+          administrativeAction: scope.administrativeAction
+        }
+      );
+    }
+
+    if (registeredActor.source && registeredActor.source !== actor.source) {
+      throw new ActorAuthorizationError(
+        "forbidden",
+        `Actor '${actor.actorId}' is bound to source '${registeredActor.source}', not '${actor.source}'.`,
+        {
+          actorId: actor.actorId,
+          expectedSource: registeredActor.source,
+          actualSource: actor.source,
+          command: scope.command,
+          administrativeAction: scope.administrativeAction
+        }
+      );
+    }
+
+    if (this.tryAuthorizeIssuedToken(actor, evaluationTimeMs, scope, registeredActor)) {
+      return;
+    }
+
+    if ((registeredActor.authTokens?.length ?? 0) > 0) {
+      const suppliedToken = actor.authToken?.trim();
+      if (!suppliedToken) {
+        throw new ActorAuthorizationError(
+          "unauthorized",
+          `Actor '${actor.actorId}' must provide a valid authentication token.`,
+          {
+            actorId: actor.actorId,
+            transport: actor.transport,
+            command: scope.command,
+            administrativeAction: scope.administrativeAction
+          }
+        );
+      }
+
+      const matchedCredential = registeredActor.authTokens?.find(
+        (credential) =>
+          credential.token === suppliedToken &&
+          isWithinValidityWindow(
+            evaluationTimeMs,
+            credential.validFromMs,
+            credential.validUntilMs
+          )
+      );
+
+      if (!matchedCredential) {
+        const inactiveCredential = registeredActor.authTokens?.find(
+          (credential) => credential.token === suppliedToken
+        );
+        throw new ActorAuthorizationError(
+          "unauthorized",
+          inactiveCredential
+            ? `Actor '${actor.actorId}' supplied an expired or inactive authentication token.`
+            : `Actor '${actor.actorId}' failed authentication.`,
+          {
+            actorId: actor.actorId,
+            transport: actor.transport,
+            command: scope.command,
+            administrativeAction: scope.administrativeAction,
+            credentialLabel: inactiveCredential?.label
+          }
+        );
+      }
+
+      return;
+    }
+
+    if (this.mode === "enforced" && actor.transport !== "internal") {
+      throw new ActorAuthorizationError(
+        "unauthorized",
+        `Actor '${actor.actorId}' is registered without a token and cannot access '${actor.transport}' while auth is enforced.`,
+        {
+          actorId: actor.actorId,
+          transport: actor.transport,
+          command: scope.command,
+          administrativeAction: scope.administrativeAction
+        }
+      );
+    }
   }
 }
 
@@ -461,6 +751,10 @@ function normalizeEntry(entry: ActorRegistryEntry): NormalizedActorRegistryEntry
     allowedCommands:
       entry.allowedCommands && entry.allowedCommands.length > 0
         ? new Set(entry.allowedCommands)
+        : undefined,
+    allowedAdminActions:
+      entry.allowedAdminActions && entry.allowedAdminActions.length > 0
+        ? new Set(entry.allowedAdminActions)
         : undefined,
     validFromMs: parseValidityInstant(
       entry.validFrom,
@@ -560,6 +854,9 @@ function summarizeEntry(
       ? [...entry.allowedTransports]
       : undefined,
     allowedCommands: entry.allowedCommands ? [...entry.allowedCommands] : undefined,
+    allowedAdminActions: entry.allowedAdminActions
+      ? [...entry.allowedAdminActions]
+      : undefined,
     staticCredentialCount: credentials.length,
     activeCredentialCount,
     futureCredentialCount,
@@ -605,4 +902,22 @@ function isWithinValidityWindow(
   }
 
   return true;
+}
+
+function findStaticCredentialMatch(
+  registry: ReadonlyMap<string, NormalizedActorRegistryEntry>,
+  token: string
+): {
+  entry: NormalizedActorRegistryEntry;
+  credential: NormalizedActorTokenCredential;
+} | null {
+  for (const entry of registry.values()) {
+    for (const credential of entry.authTokens ?? []) {
+      if (credential.token === token) {
+        return { entry, credential };
+      }
+    }
+  }
+
+  return null;
 }
