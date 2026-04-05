@@ -31,7 +31,7 @@ Thin local HTTP adapter over the existing application services.
 - the system auth route exposes a redacted actor-registry and issued-token summary for operator review
 - the auth control routes let authorized operators issue short-lived actor tokens and inspect token validity against the active policy
 - the system freshness route exposes temporal-validity counts plus refresh candidates for expired, future-dated, and expiring-soon current-state notes
-- the refresh-draft route creates a governed staging draft for a stale or time-bounded current-state canonical note instead of mutating canonical memory directly
+- the refresh-draft route creates a governed staging draft for a stale or time-bounded current-state canonical note instead of mutating canonical memory directly, and it reuses an existing open refresh draft for the same source note when one already exists
 - the system version route exposes the shared Git-centric release metadata contract
 - coding execution is surfaced through the same HTTP adapter as the brain-domain routes
 

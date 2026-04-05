@@ -157,6 +157,12 @@ export class StagingDraftService {
     };
   }
 
+  async listDraftsByCorpus(
+    corpusId: DraftNoteRequest["targetCorpus"]
+  ): Promise<StagingDraftRecord[]> {
+    return this.stagingNoteRepository.listByCorpus(corpusId);
+  }
+
   private async generateDraftBody(
     request: DraftNoteRequest,
     draftNoteId: NoteId

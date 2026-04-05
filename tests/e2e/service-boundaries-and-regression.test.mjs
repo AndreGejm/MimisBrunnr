@@ -454,6 +454,53 @@ test("temporal refresh service creates a governed staging draft for expired curr
   );
 });
 
+test("temporal refresh service reuses an existing open refresh draft for the same canonical note", async (t) => {
+  const { container } = await createHarness(t);
+  const today = currentDateIso();
+
+  const promoted = await createAndPromote(container, {
+    title: "Refresh Draft Reuse Guidance",
+    noteType: "reference",
+    bodyHints: [
+      "Repeated refresh attempts should reuse the open draft.",
+      "The system should avoid duplicate refresh drafts for the same stale note."
+    ],
+    scope: "temporal-refresh-reuse",
+    promoteAsCurrentState: true,
+    frontmatterOverrides: {
+      validFrom: addDaysIso(today, -21),
+      validUntil: addDaysIso(today, -1)
+    }
+  });
+
+  const first = await container.orchestrator.createRefreshDraft({
+    actor: actor("operator"),
+    noteId: promoted.promotedNoteId,
+    bodyHints: ["Create the first refresh draft."]
+  });
+
+  assert.equal(first.ok, true);
+  assert.equal(first.data.reusedExistingDraft, false);
+
+  const second = await container.orchestrator.createRefreshDraft({
+    actor: actor("operator"),
+    noteId: promoted.promotedNoteId,
+    bodyHints: ["Attempt to create another refresh draft."]
+  });
+
+  assert.equal(second.ok, true);
+  assert.equal(second.data.reusedExistingDraft, true);
+  assert.equal(second.data.draftNoteId, first.data.draftNoteId);
+  assert.match(second.data.warnings[0], /existing draft was reused/i);
+
+  const drafts = await container.services.stagingDraftService.listDraftsByCorpus("context_brain");
+  const refreshDrafts = drafts.filter((draft) =>
+    draft.frontmatter.supersedes?.includes(promoted.promotedNoteId)
+  );
+
+  assert.equal(refreshDrafts.length, 1);
+});
+
 test("retrieval packets stay within explicit source and raw-excerpt budgets", async (t) => {
   const { container } = await createHarness(t);
 

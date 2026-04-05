@@ -22,5 +22,6 @@ export interface CreateRefreshDraftResponse {
   draftPath: string;
   frontmatter: NoteFrontmatter;
   body: string;
+  reusedExistingDraft: boolean;
   warnings: string[];
 }

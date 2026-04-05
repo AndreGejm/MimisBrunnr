@@ -60,6 +60,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - temporal-validity-aware stale classification for expired or not-yet-valid notes
 - runtime freshness reporting and operator-visible refresh candidates for expired and expiring current-state notes
 - governed refresh-draft creation for expired, future-dated, or expiring-soon current-state notes
+- idempotent refresh-draft reuse so the same stale canonical note does not spawn duplicate open refresh drafts
 - retrieval warnings when bounded evidence includes expired, expiring-soon, or not-yet-valid notes
 - bounded context packet assembly
 - hard token-budget and summary-sentence enforcement during packet assembly
@@ -164,7 +165,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 These areas have enabling structure but are not fully complete:
 
 - shared-rollout auth hardening beyond the file-backed actor registry, rotated credentials, issued tokens, protected local operator control surfaces, and basic token issuance and introspection
-- richer temporal-validity governance beyond validity windows, refresh-candidate reporting, explicit refresh-draft creation, freshness warnings, and stale ranking
+- richer temporal-validity governance beyond validity windows, refresh-candidate reporting, idempotent refresh-draft reuse, explicit refresh-draft creation, freshness warnings, and stale ranking
 
 See [`backlog.md`](./backlog.md) for the linked backlog items.
 

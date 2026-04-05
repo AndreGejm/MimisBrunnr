@@ -69,6 +69,51 @@ export class TemporalRefreshService {
     }
 
     const sourceNote = canonical.data;
+    const existingDraft = await this.findExistingRefreshDraft(
+      sourceNote.corpusId,
+      sourceNote.noteId
+    );
+    if (existingDraft) {
+      const auditResult = await this.auditHistoryService?.recordAction({
+        actionType: "create_refresh_draft",
+        actorId: request.actor.actorId,
+        actorRole: request.actor.actorRole,
+        source: request.actor.source,
+        toolName: request.actor.toolName,
+        occurredAt: new Date().toISOString(),
+        outcome: "partial",
+        affectedNoteIds: [sourceNote.noteId, existingDraft.noteId],
+        affectedChunkIds: [],
+        detail: {
+          sourceState: candidate.state,
+          sourceNotePath: sourceNote.notePath,
+          sourceValidity: {
+            validFrom: candidate.validFrom,
+            validUntil: candidate.validUntil
+          },
+          reusedExistingDraft: true
+        }
+      });
+
+      return {
+        ok: true,
+        data: {
+          sourceNoteId: sourceNote.noteId,
+          sourceNotePath: sourceNote.notePath,
+          sourceState: candidate.state,
+          draftNoteId: existingDraft.noteId,
+          draftPath: existingDraft.draftPath,
+          frontmatter: existingDraft.frontmatter,
+          body: existingDraft.body,
+          reusedExistingDraft: true,
+          warnings: [
+            "An open refresh draft already exists for this canonical note; the existing draft was reused.",
+            ...(auditResult && !auditResult.ok ? [auditResult.error.message] : [])
+          ]
+        }
+      };
+    }
+
     const draftResult = await this.stagingDraftService.createDraft({
       actor: request.actor,
       targetCorpus: sourceNote.corpusId,
@@ -113,7 +158,8 @@ export class TemporalRefreshService {
         sourceValidity: {
           validFrom: candidate.validFrom,
           validUntil: candidate.validUntil
-        }
+        },
+        reusedExistingDraft: false
       }
     });
 
@@ -127,12 +173,34 @@ export class TemporalRefreshService {
         draftPath: draftResult.data.draftPath,
         frontmatter: draftResult.data.frontmatter,
         body: draftResult.data.body,
+        reusedExistingDraft: false,
         warnings: [
           ...draftResult.data.warnings,
           ...(auditResult && !auditResult.ok ? [auditResult.error.message] : [])
         ]
       }
     };
+  }
+
+  private async findExistingRefreshDraft(
+    corpusId: NoteFrontmatter["corpusId"],
+    sourceNoteId: NoteFrontmatter["noteId"]
+  ) {
+    const drafts = await this.stagingDraftService.listDraftsByCorpus(corpusId);
+    return drafts
+      .filter(
+        (draft) =>
+          draft.lifecycleState === "draft" &&
+          draft.frontmatter.supersedes?.includes(sourceNoteId)
+      )
+      .sort((left, right) => {
+        const updatedCompare = right.frontmatter.updated.localeCompare(left.frontmatter.updated);
+        if (updatedCompare !== 0) {
+          return updatedCompare;
+        }
+
+        return left.noteId.localeCompare(right.noteId);
+      })[0];
   }
 }
 
