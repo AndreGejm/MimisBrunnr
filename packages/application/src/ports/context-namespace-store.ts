@@ -8,7 +8,6 @@ export interface ContextNamespaceStore {
   listNodes(input: {
     ownerScope?: ContextOwnerScope;
     authorityStates?: ContextAuthorityState[];
-    parentUri?: string;
   }): Promise<ContextNode[]>;
 
   getNodeByUri(uri: string): Promise<ContextNode | undefined>;

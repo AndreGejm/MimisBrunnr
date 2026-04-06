@@ -42,7 +42,6 @@ export class SqliteContextNamespaceStore implements ContextNamespaceStore {
   async listNodes(input: {
     ownerScope?: ContextOwnerScope;
     authorityStates?: ContextAuthorityState[];
-    parentUri?: string;
   }): Promise<ContextNode[]> {
     const lifecycleStates = mapAuthorityStatesToLifecycleStates(input.authorityStates);
     if (input.authorityStates && lifecycleStates.length === 0) {
@@ -80,8 +79,7 @@ export class SqliteContextNamespaceStore implements ContextNamespaceStore {
 
     return rows
       .map((row) => mapSqliteNoteRowToContextNode(row))
-      .filter((node): node is ContextNode => Boolean(node))
-      .filter((node) => matchesParentUri(node.uri, input.parentUri));
+      .filter((node): node is ContextNode => Boolean(node));
   }
 
   async getNodeByUri(uri: string): Promise<ContextNode | undefined> {
@@ -301,13 +299,6 @@ function mapAuthorityStatesToLifecycleStates(
   return [...mapped].filter((state) => NOTE_BACKED_LIFECYCLE_STATES.includes(state as typeof NOTE_BACKED_LIFECYCLE_STATES[number]));
 }
 
-function matchesParentUri(uri: string, parentUri?: string): boolean {
-  if (!parentUri) {
-    return true;
-  }
-
-  return uri === parentUri || uri.startsWith(`${parentUri}/`);
-}
 
 function parseNamespaceUri(
   uri: string
