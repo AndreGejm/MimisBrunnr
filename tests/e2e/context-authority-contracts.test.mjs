@@ -52,4 +52,12 @@ test("context node descriptors preserve authority and freshness fields", async (
       }),
     /representation/i
   );
+  assert.throws(
+    () =>
+      parseContextNodeDescriptor({
+        ...descriptor,
+        representations: {}
+      }),
+    /representations/i
+  );
 });

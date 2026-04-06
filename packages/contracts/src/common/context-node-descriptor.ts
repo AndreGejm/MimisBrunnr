@@ -86,11 +86,7 @@ export function parseContextNodeDescriptor(
     ),
     createdAt: expectString(value.createdAt, "ContextNodeDescriptor.createdAt"),
     updatedAt: expectString(value.updatedAt, "ContextNodeDescriptor.updatedAt"),
-    representations: Array.isArray(value.representations)
-      ? value.representations.map((representation, index) =>
-          parseContextRepresentationRef(representation)
-        )
-      : undefined
+    representations: parseRepresentations(value.representations)
   };
 }
 
@@ -140,6 +136,20 @@ function parseRepresentationAvailability(
       "ContextNodeDescriptor.representationAvailability.L2"
     )
   };
+}
+
+function parseRepresentations(
+  value: unknown
+): ContextRepresentationRef[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value)) {
+    throw new TypeError("ContextNodeDescriptor.representations must be an array");
+  }
+
+  return value.map((representation) => parseContextRepresentationRef(representation));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
