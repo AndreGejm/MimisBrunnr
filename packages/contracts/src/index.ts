@@ -1,5 +1,7 @@
 export * from "./common/actor-context.js";
+export * from "./common/context-node-descriptor.js";
 export * from "./common/context-budget.js";
+export * from "./common/context-representation-ref.js";
 export * from "./common/provenance-ref.js";
 export * from "./common/service-result.js";
 export * from "./drafting/draft-note.contract.js";
