@@ -22,6 +22,7 @@ export * from "./providers/ollama-local-reasoning-provider.js";
 export * from "./providers/ollama-reranker-provider.js";
 export * from "./sqlite/sqlite-audit-log.js";
 export * from "./sqlite/sqlite-context-namespace-store.js";
+export * from "./sqlite/sqlite-context-representation-store.js";
 export * from "./sqlite/sqlite-issued-token-store.js";
 export * from "./sqlite/sqlite-metadata-control-store.js";
 export * from "./transport/request-validation.js";

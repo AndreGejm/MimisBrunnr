@@ -3,6 +3,7 @@ import type { CanonicalNoteRecord } from "../ports/canonical-note-repository.js"
 import type { EmbeddingProvider } from "../ports/embedding-provider.js";
 import type { LexicalIndex } from "../ports/lexical-index.js";
 import type { MetadataControlStore } from "../ports/metadata-control-store.js";
+import type { ContextRepresentationService } from "./context-representation-service.js";
 import type {
   StagingDraftRecord,
   StagingNoteRepository
@@ -47,7 +48,8 @@ export class PromotionOrchestratorService {
     private readonly auditHistoryService: AuditHistoryService,
     private readonly lexicalIndex?: LexicalIndex,
     private readonly vectorIndex?: VectorIndex,
-    private readonly embeddingProvider?: EmbeddingProvider
+    private readonly embeddingProvider?: EmbeddingProvider,
+    private readonly contextRepresentationService?: ContextRepresentationService
   ) {}
 
   async promoteDraft(
@@ -364,6 +366,7 @@ export class PromotionOrchestratorService {
       let promotedChunks: ChunkRecord[] = [];
       let snapshotChunks: ChunkRecord[] = [];
       let snapshotNotePath: string | undefined;
+      let promotedCanonicalNote: CanonicalNoteRecord | undefined;
 
       for (const canonicalWrite of queuedPromotion.payload.canonicalWrites) {
         const persisted = await this.canonicalNoteService.writeCanonicalNote(canonicalWrite);
@@ -378,6 +381,7 @@ export class PromotionOrchestratorService {
 
         if (persisted.data.noteId === queuedPromotion.payload.promotionDecision.canonicalNoteId) {
           promotedChunks = chunks;
+          promotedCanonicalNote = persisted.data;
         }
 
         if (persisted.data.frontmatter.tags.includes("topic/current-state-snapshot")) {
@@ -396,6 +400,11 @@ export class PromotionOrchestratorService {
       await this.metadataControlStore.upsertNote(
         mapDraftMetadataRecord(promotedDraft)
       );
+      if (!promotedCanonicalNote) {
+        throw new Error("Promoted canonical note was not captured during promotion processing.");
+      }
+
+      await this.contextRepresentationService?.regenerateForCanonicalNote(promotedCanonicalNote);
       await this.metadataControlStore.completePromotionOutboxEntry(outboxId);
 
       return {

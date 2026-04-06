@@ -23,6 +23,7 @@ import {
   CanonicalNoteService as ConcreteCanonicalNoteService,
   ChunkingService as ConcreteChunkingService,
   ContextNamespaceService as ConcreteContextNamespaceService,
+  ContextRepresentationService as ConcreteContextRepresentationService,
   ContextPacketService as ConcreteContextPacketService,
   DecisionSummaryService as ConcreteDecisionSummaryService,
   NoteValidationService as ConcreteNoteValidationService,
@@ -56,6 +57,7 @@ import { OllamaLocalReasoningProvider } from "../providers/ollama-local-reasonin
 import { OllamaRerankerProvider } from "../providers/ollama-reranker-provider.js";
 import { SqliteAuditLog } from "../sqlite/sqlite-audit-log.js";
 import { SqliteContextNamespaceStore } from "../sqlite/sqlite-context-namespace-store.js";
+import { SqliteContextRepresentationStore } from "../sqlite/sqlite-context-representation-store.js";
 import { SqliteIssuedTokenStore } from "../sqlite/sqlite-issued-token-store.js";
 import { SqliteMetadataControlStore } from "../sqlite/sqlite-metadata-control-store.js";
 import { SqliteRevocationStore } from "../sqlite/sqlite-revocation-store.js";
@@ -91,6 +93,7 @@ export interface ServiceRegistry {
   contextPacketService: ConcreteContextPacketService;
   decisionSummaryService: ConcreteDecisionSummaryService;
   contextNamespaceService: ConcreteContextNamespaceService;
+  contextRepresentationService: ConcreteContextRepresentationService;
   temporalRefreshService: TemporalRefreshService;
 }
 
@@ -115,6 +118,7 @@ export function buildServiceContainer(
   const auditLog = new SqliteAuditLog(env.sqlitePath);
   const lexicalIndex = new SqliteFtsIndex(env.sqlitePath);
   const contextNamespaceStore = new SqliteContextNamespaceStore(env.sqlitePath);
+  const contextRepresentationStore = new SqliteContextRepresentationStore(env.sqlitePath);
   const vectorIndex = new QdrantVectorIndex({
     baseUrl: env.qdrantUrl,
     collectionName: env.qdrantCollection
@@ -176,6 +180,9 @@ export function buildServiceContainer(
     draftingProvider
   );
   const chunkingService = new ConcreteChunkingService();
+  const contextRepresentationService = new ConcreteContextRepresentationService(
+    contextRepresentationStore
+  );
   const promotionOrchestratorService = new ConcretePromotionOrchestratorService(
     stagingNoteRepository,
     canonicalNoteService,
@@ -185,7 +192,8 @@ export function buildServiceContainer(
     auditHistoryService,
     lexicalIndex,
     vectorIndex,
-    embeddingProvider
+    embeddingProvider,
+    contextRepresentationService
   );
   const retrieveContextService = new ConcreteRetrieveContextService({
     lexicalIndex,
@@ -286,6 +294,7 @@ export function buildServiceContainer(
       contextPacketService,
       decisionSummaryService,
       contextNamespaceService,
+      contextRepresentationService,
       temporalRefreshService
     },
     orchestrator,
@@ -294,6 +303,7 @@ export function buildServiceContainer(
       closeIfSupported(auditLog);
       closeIfSupported(metadataControlStore);
       closeIfSupported(contextNamespaceStore);
+      closeIfSupported(contextRepresentationStore);
       closeIfSupported(issuedTokenStore);
       closeIfSupported(revocationStore);
     }
