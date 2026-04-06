@@ -15,6 +15,7 @@ import {
 } from "@multi-agent-brain/contracts";
 import type { QueryIntent } from "@multi-agent-brain/domain";
 import { ContextPacketService } from "./context-packet-service.js";
+import { RetrievalTraceService } from "./retrieval-trace-service.js";
 import { LexicalRetrievalService } from "./lexical-retrieval-service.js";
 import { QueryIntentService } from "./query-intent-service.js";
 import { RankingFusionService } from "./ranking-fusion-service.js";
@@ -28,6 +29,7 @@ export class RetrieveContextService {
   private readonly vectorRetrievalService: VectorRetrievalService;
   private readonly rankingFusionService: RankingFusionService;
   private readonly contextPacketService: ContextPacketService;
+  private readonly retrievalTraceService: RetrievalTraceService;
 
   constructor(input: {
     lexicalIndex: LexicalIndex;
@@ -51,6 +53,7 @@ export class RetrieveContextService {
     );
     this.rankingFusionService = new RankingFusionService();
     this.contextPacketService = new ContextPacketService(input.metadataControlStore);
+    this.retrievalTraceService = new RetrievalTraceService();
     this.auditHistoryService = input.auditHistoryService;
     this.rerankerProvider = input.rerankerProvider;
     this.paidEscalationProvider = input.paidEscalationProvider;
@@ -170,6 +173,18 @@ export class RetrieveContextService {
         }
       });
 
+      const trace = request.includeTrace
+        ? this.retrievalTraceService.buildFlatTrace({
+            intent,
+            lexicalCount: lexicalCandidates.length,
+            vectorCount: vectorCandidates.length,
+            fusedCount: fusedCandidates.length,
+            rerankedCount: rankedCandidates.length,
+            deliveredCount: packet.evidence.length,
+            packetEvidence: packet.evidence
+          })
+        : undefined;
+
       return {
         ok: true,
         data: {
@@ -180,7 +195,8 @@ export class RetrieveContextService {
             reranked: rankedCandidates.length,
             delivered: packet.evidence.length
           },
-          provenance: packet.evidence
+          provenance: packet.evidence,
+          trace
         },
         warnings: collectWarnings(
           warnings,

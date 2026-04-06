@@ -21,6 +21,7 @@ export * from "./services/promotion-orchestrator-service.js";
 export * from "./services/query-intent-service.js";
 export * from "./services/ranking-fusion-service.js";
 export * from "./services/retrieval-candidate.js";
+export * from "./services/retrieval-trace-service.js";
 export * from "./services/retrieve-context-service.js";
 export * from "./services/staging-draft-service.js";
 export * from "./services/temporal-refresh-service.js";

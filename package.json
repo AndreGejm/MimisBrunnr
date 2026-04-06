@@ -13,7 +13,7 @@
     "api": "pnpm --filter @multi-agent-brain/brain-api serve",
     "mcp": "pnpm --filter @multi-agent-brain/brain-mcp serve",
     "test:transport": "node --test tests/e2e/transport-adapters.test.mjs tests/e2e/mcp-adapter.test.mjs",
-    "test:e2e": "pnpm build && node --test tests/e2e/context-authority-contracts.test.mjs tests/e2e/context-namespace.test.mjs tests/e2e/service-boundaries-and-regression.test.mjs tests/e2e/transport-adapters.test.mjs tests/e2e/mcp-adapter.test.mjs tests/e2e/local-model-providers.test.mjs",
+    "test:e2e": "pnpm build && node --test tests/e2e/context-authority-contracts.test.mjs tests/e2e/context-namespace.test.mjs tests/e2e/retrieval-trace.test.mjs tests/e2e/service-boundaries-and-regression.test.mjs tests/e2e/transport-adapters.test.mjs tests/e2e/mcp-adapter.test.mjs tests/e2e/local-model-providers.test.mjs",
     "test": "pnpm test:e2e",
     "docker:up": "docker compose -f docker/compose.local.yml up --build",
     "docker:down": "docker compose -f docker/compose.local.yml down --volumes"
