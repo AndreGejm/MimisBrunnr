@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as domain from "../../packages/domain/dist/index.js";
+import { createContextNodeDescriptor } from "../../packages/contracts/dist/index.js";
 
 test("context node descriptors preserve authority and freshness fields", async () => {
   assert.equal(typeof domain.createContextAuthorityStateSet, "function");
-  const descriptor = {
+  assert.equal(typeof createContextNodeDescriptor, "function");
+  const descriptor = createContextNodeDescriptor({
     uri: "mab://context_brain/note/test-note",
     ownerScope: "context_brain",
     contextKind: "note",
@@ -22,7 +24,7 @@ test("context node descriptors preserve authority and freshness fields", async (
     supersessionStatus: "active",
     createdAt: "2026-04-06T00:00:00.000Z",
     updatedAt: "2026-04-06T00:00:00.000Z"
-  };
+  });
 
   assert.equal(descriptor.authorityState, "canonical");
   assert.equal(descriptor.freshness.freshnessClass, "current");
