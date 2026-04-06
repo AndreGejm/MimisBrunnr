@@ -21,6 +21,7 @@ export * from "./providers/ollama-embedding-provider.js";
 export * from "./providers/ollama-local-reasoning-provider.js";
 export * from "./providers/ollama-reranker-provider.js";
 export * from "./sqlite/sqlite-audit-log.js";
+export * from "./sqlite/sqlite-issued-token-store.js";
 export * from "./sqlite/sqlite-metadata-control-store.js";
 export * from "./transport/request-validation.js";
 export * from "./transport/auth-control-validation.js";

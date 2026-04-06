@@ -62,6 +62,56 @@ test("brain-cli exposes auth registry status for operators", async () => {
   assert.equal(payload.auth.mode, "enforced");
   assert.equal(payload.auth.issuedTokenSupport.enabled, true);
   assert.equal(payload.auth.actorCounts.total, 1);
+  assert.equal(payload.issuedTokens.total, 0);
+});
+
+test("brain-cli lists recorded issued actor tokens through the operator control surface", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-issued-tokens-"));
+  const env = {
+    ...cliEnvironment(root),
+    MAB_AUTH_ISSUER_SECRET: "cli-issued-secret"
+  };
+
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const issueResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    [
+      "issue-auth-token",
+      "--json",
+      JSON.stringify({
+        actorId: "cli-issued-actor",
+        actorRole: "operator",
+        source: "brain-cli",
+        ttlMinutes: 60
+      })
+    ],
+    env
+  );
+
+  assert.equal(issueResult.exitCode, 0, issueResult.stderr);
+
+  const listResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    [
+      "auth-issued-tokens",
+      "--json",
+      JSON.stringify({
+        includeRevoked: true
+      })
+    ],
+    env
+  );
+
+  assert.equal(listResult.exitCode, 0, listResult.stderr);
+  const payload = JSON.parse(listResult.stdout);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.summary.total, 1);
+  assert.equal(payload.issuedTokens.length, 1);
+  assert.equal(payload.issuedTokens[0].actorId, "cli-issued-actor");
+  assert.equal(payload.issuedTokens[0].lifecycleStatus, "active");
 });
 
 test("brain-cli can introspect issued actor tokens against the current auth policy", async () => {
@@ -693,6 +743,7 @@ test("brain-api exposes auth registry status through the system auth route", asy
   assert.equal(payload.auth.mode, "enforced");
   assert.equal(payload.auth.issuedTokenSupport.enabled, true);
   assert.equal(payload.auth.actorCounts.total, 1);
+  assert.equal(payload.issuedTokens.total, 0);
 });
 
 test("brain-api can issue short-lived actor tokens through the protected auth route", async (t) => {
@@ -727,7 +778,11 @@ test("brain-api can issue short-lived actor tokens through the protected auth ro
           authToken: "operator-http-secret",
           source: "brain-api-admin",
           allowedTransports: ["http"],
-          allowedAdminActions: ["issue_auth_token", "inspect_auth_token"]
+          allowedAdminActions: [
+            "issue_auth_token",
+            "inspect_auth_token",
+            "view_issued_tokens"
+          ]
         },
         {
           actorId: "validate-note-http",
@@ -773,6 +828,26 @@ test("brain-api can issue short-lived actor tokens through the protected auth ro
   assert.equal(payload.ok, true);
   assert.match(payload.issuedToken, /^mab1\./);
   assert.equal(payload.claims.actorId, "validate-note-http");
+
+  const issuedTokensResponse = await fetch(
+    "http://127.0.0.1:18192/v1/system/auth/issued-tokens?includeRevoked=true",
+    {
+      headers: {
+        "x-brain-actor-id": "operator-http",
+        "x-brain-actor-role": "operator",
+        "x-brain-source": "brain-api-admin",
+        "x-brain-actor-token": "operator-http-secret"
+      }
+    }
+  );
+
+  assert.equal(issuedTokensResponse.status, 200);
+  const issuedTokensPayload = await issuedTokensResponse.json();
+  assert.equal(issuedTokensPayload.ok, true);
+  assert.equal(issuedTokensPayload.summary.total, 1);
+  assert.equal(issuedTokensPayload.issuedTokens.length, 1);
+  assert.equal(issuedTokensPayload.issuedTokens[0].actorId, "validate-note-http");
+  assert.equal(issuedTokensPayload.issuedTokens[0].lifecycleStatus, "active");
 });
 
 test("brain-api can introspect actor tokens through the protected auth route", async (t) => {

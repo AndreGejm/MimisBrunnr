@@ -38,6 +38,7 @@ const COMMAND_NAMES = new Set<OrchestratorCommand>([
 
 const ADMIN_ACTION_NAMES = new Set<AdministrativeAction>([
   "view_auth_status",
+  "view_issued_tokens",
   "issue_auth_token",
   "inspect_auth_token",
   "revoke_auth_token",
@@ -69,6 +70,13 @@ export interface RevokeActorTokenControlRequest {
   token?: string;
   tokenId?: string;
   reason?: string;
+}
+
+export interface ListIssuedActorTokensControlRequest {
+  actorId?: string;
+  asOf?: string;
+  includeRevoked?: boolean;
+  limit?: number;
 }
 
 export function validateIssueActorTokenControlRequest(
@@ -140,6 +148,17 @@ export function validateRevokeActorTokenControlRequest(
   };
 }
 
+export function validateListIssuedActorTokensControlRequest(
+  payload: JsonRecord
+): ListIssuedActorTokensControlRequest {
+  return {
+    actorId: optionalString(payload.actorId, "actorId"),
+    asOf: optionalString(payload.asOf, "asOf"),
+    includeRevoked: optionalBoolean(payload.includeRevoked, "includeRevoked"),
+    limit: optionalInteger(payload.limit, "limit", 1)
+  };
+}
+
 function requireString(value: unknown, field: string): string {
   if (typeof value !== "string" || value.trim() === "") {
     throw validationError(field, "must be a non-empty string");
@@ -192,6 +211,18 @@ function optionalInteger(
   }
 
   return requireInteger(value, field, min);
+}
+
+function optionalBoolean(value: unknown, field: string): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "boolean") {
+    throw validationError(field, "must be a boolean");
+  }
+
+  return value;
 }
 
 function requireEnum<T extends string>(

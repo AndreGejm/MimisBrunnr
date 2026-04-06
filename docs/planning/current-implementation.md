@@ -83,8 +83,9 @@ The running architecture is a local-first monorepo with clear boundaries:
 - actor-registry-backed authn/authz across CLI, HTTP, MCP, and orchestrator command dispatch
 - file-backed actor-registry loading with rotated credential windows and entry validity support
 - issuer-secret-backed short-lived issued tokens for registered actors
+- persisted issued-token lifecycle storage and listing through SQLite
 - file-backed issued-token revocation support for immediate denylisting of minted actor tokens
-- protected operator auth-control surfaces for auth status, token issuance, token introspection, and token revocation
+- protected operator auth-control surfaces for auth status, issued-token listing, token issuance, token introspection, and token revocation
 - promotion event recording
 - audit-history queries
 - a documented Git-centric versioning contract with runtime release metadata surfaces
@@ -118,6 +119,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 
 - `version`
 - `auth-status`
+- `auth-issued-tokens`
 - `auth-introspect-token`
 - `revoke-auth-token`
 - `freshness-status`
@@ -138,6 +140,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - `GET /health/live`
 - `GET /health/ready`
 - `GET /v1/system/auth`
+- `GET /v1/system/auth/issued-tokens`
 - `GET /v1/system/freshness`
 - `GET /v1/system/version`
 - `POST /v1/system/auth/issue-token`
@@ -171,7 +174,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 
 These areas have enabling structure but are not fully complete:
 
-- shared-rollout auth hardening beyond the file-backed actor registry, rotated credentials, issued tokens, issued-token revocation, protected local operator control surfaces, and basic token lifecycle operations
+- shared-rollout auth hardening beyond the file-backed actor registry, rotated credentials, issued tokens, persisted issued-token lifecycle reporting, issued-token revocation, protected local operator control surfaces, and basic token lifecycle operations
 - richer temporal-validity governance beyond validity windows, refresh-candidate reporting, bounded batch refresh-draft creation, idempotent refresh-draft reuse, explicit refresh-draft creation, freshness warnings, and stale ranking
 
 See [`backlog.md`](./backlog.md) for the linked backlog items.

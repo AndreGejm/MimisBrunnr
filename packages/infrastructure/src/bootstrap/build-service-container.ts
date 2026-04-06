@@ -54,6 +54,7 @@ import { OllamaEmbeddingProvider } from "../providers/ollama-embedding-provider.
 import { OllamaLocalReasoningProvider } from "../providers/ollama-local-reasoning-provider.js";
 import { OllamaRerankerProvider } from "../providers/ollama-reranker-provider.js";
 import { SqliteAuditLog } from "../sqlite/sqlite-audit-log.js";
+import { SqliteIssuedTokenStore } from "../sqlite/sqlite-issued-token-store.js";
 import { SqliteMetadataControlStore } from "../sqlite/sqlite-metadata-control-store.js";
 import { SqliteRevocationStore } from "../sqlite/sqlite-revocation-store.js";
 import { QdrantVectorIndex } from "../vector/qdrant-vector-index.js";
@@ -64,6 +65,7 @@ export interface ServicePortRegistry {
   canonicalNoteRepository: CanonicalNoteRepository;
   stagingNoteRepository: StagingNoteRepository;
   metadataControlStore: MetadataControlStore;
+  issuedTokenStore: SqliteIssuedTokenStore;
   revocationStore: SqliteRevocationStore;
   auditLog: AuditLog;
   lexicalIndex?: LexicalIndex;
@@ -105,6 +107,7 @@ export function buildServiceContainer(
   const canonicalNoteRepository = new FileSystemCanonicalNoteRepository(env.vaultRoot);
   const stagingNoteRepository = new FileSystemStagingNoteRepository(env.stagingRoot);
   const metadataControlStore = new SqliteMetadataControlStore(env.sqlitePath);
+  const issuedTokenStore = new SqliteIssuedTokenStore(env.sqlitePath);
   const revocationStore = new SqliteRevocationStore(env.sqlitePath);
   const auditLog = new SqliteAuditLog(env.sqlitePath);
   const lexicalIndex = new SqliteFtsIndex(env.sqlitePath);
@@ -253,6 +256,7 @@ export function buildServiceContainer(
       canonicalNoteRepository,
       stagingNoteRepository,
       metadataControlStore,
+      issuedTokenStore,
       revocationStore,
       auditLog,
       lexicalIndex,
@@ -281,6 +285,7 @@ export function buildServiceContainer(
       closeIfSupported(lexicalIndex);
       closeIfSupported(auditLog);
       closeIfSupported(metadataControlStore);
+      closeIfSupported(issuedTokenStore);
       closeIfSupported(revocationStore);
     }
   };

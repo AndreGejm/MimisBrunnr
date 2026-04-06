@@ -25,6 +25,7 @@ import {
   FileIssuedTokenRevocationStore,
   issueActorAccessToken,
   loadEnvironment,
+  validateListIssuedActorTokensControlRequest,
   validateInspectActorTokenControlRequest,
   validateIssueActorTokenControlRequest,
   validateRevokeActorTokenControlRequest,
@@ -35,6 +36,7 @@ import {
 type CommandName =
   | "version"
   | "auth-status"
+  | "auth-issued-tokens"
   | "auth-introspect-token"
   | "freshness-status"
   | "issue-auth-token"
@@ -51,7 +53,7 @@ type CommandName =
   | "query-history";
 type RoutedCommandName = Exclude<
   CommandName,
-  "version" | "auth-status" | "auth-introspect-token" | "freshness-status" | "issue-auth-token"
+  "version" | "auth-status" | "auth-issued-tokens" | "auth-introspect-token" | "freshness-status" | "issue-auth-token"
   | "revoke-auth-token"
 >;
 
@@ -72,6 +74,7 @@ interface ParsedCli {
 const COMMANDS: ReadonlyArray<CommandName> = [
   "version",
   "auth-status",
+  "auth-issued-tokens",
   "auth-introspect-token",
   "freshness-status",
   "issue-auth-token",
@@ -154,24 +157,42 @@ async function main(): Promise<void> {
   }
 
   if (parsed.command === "auth-status") {
-    const env = loadEnvironment();
-    const policy = new ActorAuthorizationPolicy({
-      mode: env.auth.mode,
-      allowAnonymousInternal: env.auth.allowAnonymousInternal,
-      registry: env.auth.actorRegistry,
-      issuerSecret: env.auth.issuerSecret,
-      issuedTokenRequireRegistryMatch: env.auth.issuedTokenRequireRegistryMatch,
-      revokedIssuedTokenIds: env.auth.revokedIssuedTokenIds
-    });
-    writeJson(
-      {
-        ok: true,
-        auth: policy.getRegistrySummary()
-      },
-      parsed.options.pretty
-    );
-    process.exitCode = 0;
-    return;
+    const container = buildServiceContainer(loadEnvironment());
+    try {
+      writeJson(
+        {
+          ok: true,
+          auth: container.authPolicy.getRegistrySummary(),
+          issuedTokens: container.ports.issuedTokenStore.getIssuedTokenSummary()
+        },
+        parsed.options.pretty
+      );
+      process.exitCode = 0;
+      return;
+    } finally {
+      container.dispose();
+    }
+  }
+
+  if (parsed.command === "auth-issued-tokens") {
+    const container = buildServiceContainer(loadEnvironment());
+    try {
+      const request = validateListIssuedActorTokensControlRequest(
+        await loadOptionalCommandPayload(parsed.options)
+      );
+      writeJson(
+        {
+          ok: true,
+          issuedTokens: container.ports.issuedTokenStore.listIssuedTokens(request),
+          summary: container.ports.issuedTokenStore.getIssuedTokenSummary(request.asOf)
+        },
+        parsed.options.pretty
+      );
+      process.exitCode = 0;
+      return;
+    } finally {
+      container.dispose();
+    }
   }
 
   if (parsed.command === "auth-introspect-token") {
@@ -226,80 +247,102 @@ async function main(): Promise<void> {
   }
 
   if (parsed.command === "issue-auth-token") {
-    const env = loadEnvironment();
-    if (!env.auth.issuerSecret) {
-      throw new Error(
-        "MAB_AUTH_ISSUER_SECRET must be configured to issue actor access tokens."
-      );
-    }
+    const container = buildServiceContainer(loadEnvironment());
+    try {
+      if (!container.env.auth.issuerSecret) {
+        throw new Error(
+          "MAB_AUTH_ISSUER_SECRET must be configured to issue actor access tokens."
+        );
+      }
 
-    const request = validateIssueActorTokenControlRequest(
-      await loadCommandPayload(parsed.options)
-    );
-    writeJson(
-      {
-        ok: true,
-        issuedToken: issueActorAccessToken(
-          {
-            actorId: request.actorId,
-            actorRole: request.actorRole,
-            source: request.source,
-            allowedTransports: request.allowedTransports,
-            allowedCommands: request.allowedCommands,
-            allowedAdminActions: request.allowedAdminActions,
-            validFrom: request.validFrom,
-            validUntil: request.validUntil,
-            issuedAt: new Date().toISOString()
-          },
-          env.auth.issuerSecret
-        ),
-        claims: request
-      },
-      parsed.options.pretty
-    );
-    process.exitCode = 0;
-    return;
+      const request = validateIssueActorTokenControlRequest(
+        await loadCommandPayload(parsed.options)
+      );
+      const issuedAt = new Date().toISOString();
+      const validUntil =
+        request.validUntil ??
+        (request.ttlMinutes !== undefined
+          ? new Date(Date.now() + request.ttlMinutes * 60_000).toISOString()
+          : undefined);
+      const issuedToken = issueActorAccessToken(
+        {
+          actorId: request.actorId,
+          actorRole: request.actorRole,
+          source: request.source,
+          allowedTransports: request.allowedTransports,
+          allowedCommands: request.allowedCommands,
+          allowedAdminActions: request.allowedAdminActions,
+          allowedCorpora: request.allowedCorpora,
+          validFrom: request.validFrom,
+          validUntil,
+          issuedAt
+        },
+        container.env.auth.issuerSecret
+      );
+      const inspection = container.authPolicy.inspectToken(issuedToken);
+      if (inspection.tokenKind === "issued" && inspection.claims?.tokenId) {
+        container.ports.issuedTokenStore.recordIssuedToken(inspection.claims);
+      }
+
+      writeJson(
+        {
+          ok: true,
+          issuedToken,
+          claims: {
+            ...request,
+            issuedAt,
+            validUntil
+          }
+        },
+        parsed.options.pretty
+      );
+      process.exitCode = 0;
+      return;
+    } finally {
+      container.dispose();
+    }
   }
 
   if (parsed.command === "revoke-auth-token") {
-    const env = loadEnvironment();
-    if (!env.auth.issuedTokenRevocationPath) {
-      throw new Error(
-        "MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_PATH must be configured to revoke actor access tokens."
+    const container = buildServiceContainer(loadEnvironment());
+    try {
+      if (!container.env.auth.issuedTokenRevocationPath) {
+        throw new Error(
+          "MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_PATH must be configured to revoke actor access tokens."
+        );
+      }
+
+      const request = validateRevokeActorTokenControlRequest(
+        await loadCommandPayload(parsed.options)
       );
+      const revocationStore = await FileIssuedTokenRevocationStore.create(
+        container.env.auth.issuedTokenRevocationPath,
+        container.authPolicy.getRevokedIssuedTokenIds()
+      );
+      const tokenId = resolveIssuedTokenIdForRevocation(request, container.authPolicy);
+      const revocation = await revocationStore.revokeTokenId(tokenId);
+      container.authPolicy.revokeIssuedTokenId(tokenId);
+      const ledgerRevocation = container.ports.issuedTokenStore.markTokenRevoked(
+        tokenId,
+        request.reason
+      );
+
+      writeJson(
+        {
+          ok: true,
+          revokedTokenId: tokenId,
+          alreadyRevoked: revocation.alreadyRevoked,
+          persisted: revocation.persisted,
+          recordedTokenFound: ledgerRevocation.found,
+          reason: request.reason
+        },
+        parsed.options.pretty
+      );
+      process.exitCode = 0;
+      return;
+    } finally {
+      container.dispose();
     }
-
-    const policy = new ActorAuthorizationPolicy({
-      mode: env.auth.mode,
-      allowAnonymousInternal: env.auth.allowAnonymousInternal,
-      registry: env.auth.actorRegistry,
-      issuerSecret: env.auth.issuerSecret,
-      issuedTokenRequireRegistryMatch: env.auth.issuedTokenRequireRegistryMatch,
-      revokedIssuedTokenIds: env.auth.revokedIssuedTokenIds
-    });
-    const request = validateRevokeActorTokenControlRequest(
-      await loadCommandPayload(parsed.options)
-    );
-    const revocationStore = await FileIssuedTokenRevocationStore.create(
-      env.auth.issuedTokenRevocationPath,
-      policy.getRevokedIssuedTokenIds()
-    );
-    const tokenId = resolveIssuedTokenIdForRevocation(request, policy);
-    const revocation = await revocationStore.revokeTokenId(tokenId);
-    policy.revokeIssuedTokenId(tokenId);
-
-    writeJson(
-      {
-        ok: true,
-        revokedTokenId: tokenId,
-        alreadyRevoked: revocation.alreadyRevoked,
-        persisted: revocation.persisted,
-        reason: request.reason
-      },
-      parsed.options.pretty
-    );
-    process.exitCode = 0;
-    return;
   }
 
   const container = buildServiceContainer(loadEnvironment());
@@ -602,6 +645,7 @@ brain-cli <command> [--input <file> | --stdin | --json <payload>] [--pretty | --
 Commands:
   version              Print the runtime release metadata used for this build
   auth-status          Print the effective actor-registry and issued-token summary
+  auth-issued-tokens   List recorded issued actor tokens and their lifecycle state
   auth-introspect-token  Inspect a static or issued actor token against the current auth policy
   freshness-status     Print temporal-validity summary data and refresh candidates
   issue-auth-token     Mint a short-lived issued actor token from JSON input
@@ -619,6 +663,7 @@ Commands:
 
 Notes:
   - version, --version, and auth-status do not require an input payload.
+  - auth-issued-tokens accepts optional JSON input with actorId, asOf, includeRevoked, and limit.
   - auth-introspect-token expects JSON input with token and optional asOf, expectedTransport, expectedCommand, or expectedAdministrativeAction.
   - freshness-status accepts optional JSON input with asOf, expiringWithinDays, corpusId, and limitPerCategory.
   - create-refresh-draft expects JSON input with noteId and optional asOf, expiringWithinDays, or bodyHints.

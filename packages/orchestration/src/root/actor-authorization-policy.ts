@@ -144,6 +144,7 @@ const COMMAND_ROLE_POLICY: Record<OrchestratorCommand, ReadonlySet<ActorRole>> =
 
 const ADMIN_ACTION_ROLE_POLICY: Record<AdministrativeAction, ReadonlySet<ActorRole>> = {
   view_auth_status: new Set(["operator", "system"]),
+  view_issued_tokens: new Set(["operator", "system"]),
   issue_auth_token: new Set(["operator", "system"]),
   inspect_auth_token: new Set(["operator", "system"]),
   revoke_auth_token: new Set(["operator", "system"]),

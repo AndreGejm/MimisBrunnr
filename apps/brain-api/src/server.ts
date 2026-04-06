@@ -22,6 +22,7 @@ import {
   issueActorAccessToken,
   loadEnvironment,
   runRuntimeHealthChecks,
+  validateListIssuedActorTokensControlRequest,
   validateRevokeActorTokenControlRequest,
   TransportValidationError,
   validateInspectActorTokenControlRequest,
@@ -61,6 +62,7 @@ const ROUTES: Record<string, { method: "GET" | "POST"; name?: RouteName; healthM
   "/health/live": { method: "GET", healthMode: "live" },
   "/health/ready": { method: "GET", healthMode: "ready" },
   "/v1/system/auth": { method: "GET" },
+  "/v1/system/auth/issued-tokens": { method: "GET" },
   "/v1/system/auth/issue-token": { method: "POST" },
   "/v1/system/auth/introspect-token": { method: "POST" },
   "/v1/system/auth/revoke-token": { method: "POST" },
@@ -191,7 +193,22 @@ async function handleRequest(
     );
     sendJson(response, 200, {
       ok: true,
-      auth: container.authPolicy.getRegistrySummary()
+      auth: container.authPolicy.getRegistrySummary(),
+      issuedTokens: container.ports.issuedTokenStore.getIssuedTokenSummary()
+    });
+    return;
+  }
+
+  if (url.pathname === "/v1/system/auth/issued-tokens") {
+    container.authPolicy.authorizeAdministrativeAction(
+      "view_issued_tokens",
+      buildAdministrativeActorContext("view_issued_tokens", request.headers)
+    );
+    const query = parseIssuedTokensQuery(url.searchParams);
+    sendJson(response, 200, {
+      ok: true,
+      issuedTokens: container.ports.issuedTokenStore.listIssuedTokens(query),
+      summary: container.ports.issuedTokenStore.getIssuedTokenSummary(query.asOf)
     });
     return;
   }
@@ -214,30 +231,38 @@ async function handleRequest(
 
     const body = await readJsonBody(request);
     const validated = validateIssueActorTokenControlRequest(body);
+    const issuedAt = new Date().toISOString();
     const validUntil =
       validated.validUntil ??
       (validated.ttlMinutes !== undefined
         ? new Date(Date.now() + validated.ttlMinutes * 60_000).toISOString()
         : undefined);
+    const issuedToken = issueActorAccessToken(
+      {
+        actorId: validated.actorId,
+        actorRole: validated.actorRole,
+        source: validated.source,
+        allowedTransports: validated.allowedTransports,
+        allowedCommands: validated.allowedCommands,
+        allowedAdminActions: validated.allowedAdminActions,
+        allowedCorpora: validated.allowedCorpora,
+        validFrom: validated.validFrom,
+        validUntil,
+        issuedAt
+      },
+      container.env.auth.issuerSecret
+    );
+    const inspection = container.authPolicy.inspectToken(issuedToken);
+    if (inspection.tokenKind === "issued" && inspection.claims?.tokenId) {
+      container.ports.issuedTokenStore.recordIssuedToken(inspection.claims);
+    }
 
     sendJson(response, 200, {
       ok: true,
-      issuedToken: issueActorAccessToken(
-        {
-          actorId: validated.actorId,
-          actorRole: validated.actorRole,
-          source: validated.source,
-          allowedTransports: validated.allowedTransports,
-          allowedCommands: validated.allowedCommands,
-          allowedAdminActions: validated.allowedAdminActions,
-          validFrom: validated.validFrom,
-          validUntil,
-          issuedAt: new Date().toISOString()
-        },
-        container.env.auth.issuerSecret
-      ),
+      issuedToken,
       claims: {
         ...validated,
+        issuedAt,
         validUntil
       }
     });
@@ -292,12 +317,17 @@ async function handleRequest(
     );
     const revocation = await revocationStore.revokeTokenId(tokenId);
     container.authPolicy.revokeIssuedTokenId(tokenId);
+    const ledgerRevocation = container.ports.issuedTokenStore.markTokenRevoked(
+      tokenId,
+      validated.reason
+    );
 
     sendJson(response, 200, {
       ok: true,
       revokedTokenId: tokenId,
       alreadyRevoked: revocation.alreadyRevoked,
       persisted: revocation.persisted,
+      recordedTokenFound: ledgerRevocation.found,
       reason: validated.reason
     });
     return;
@@ -456,6 +486,7 @@ function buildActorContext(
 function buildAdministrativeActorContext(
   administrativeAction:
     | "view_auth_status"
+    | "view_issued_tokens"
     | "issue_auth_token"
     | "inspect_auth_token"
     | "revoke_auth_token"
@@ -524,6 +555,20 @@ function parseFreshnessQuery(searchParams: URLSearchParams): {
   };
 }
 
+function parseIssuedTokensQuery(searchParams: URLSearchParams): {
+  actorId?: string;
+  asOf?: string;
+  includeRevoked?: boolean;
+  limit?: number;
+} {
+  return validateListIssuedActorTokensControlRequest({
+    actorId: searchParams.get("actorId") ?? undefined,
+    asOf: searchParams.get("asOf") ?? undefined,
+    includeRevoked: parseOptionalBooleanQuery(searchParams, "includeRevoked"),
+    limit: parseOptionalPositiveIntegerQuery(searchParams, "limit")
+  });
+}
+
 function resolveIssuedTokenIdForRevocation(
   request: ReturnType<typeof validateRevokeActorTokenControlRequest>,
   authPolicy: ReturnType<typeof buildServiceContainer>["authPolicy"]
@@ -567,6 +612,27 @@ function parseOptionalPositiveIntegerQuery(
   }
 
   return parsed;
+}
+
+function parseOptionalBooleanQuery(
+  searchParams: URLSearchParams,
+  field: string
+): boolean | undefined {
+  const raw = searchParams.get(field);
+  if (raw === null) {
+    return undefined;
+  }
+
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+
+  throw new TransportValidationError(
+    `Invalid query parameter '${field}': must be 'true' or 'false'.`,
+    {
+      field,
+      problem: "must be 'true' or 'false'"
+    }
+  );
 }
 
 function mapServiceErrorToStatus(error: ServiceError): number {
