@@ -31,29 +31,30 @@ test("brain-cli exposes shared release metadata through the version command", as
 });
 
 test("brain-cli exposes auth registry status for operators", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-auth-status-"));
+  const env = cliEnvironment(root, {
+    MAB_AUTH_MODE: "enforced",
+    MAB_AUTH_ISSUER_SECRET: "cli-issuer-secret",
+    MAB_AUTH_ACTOR_REGISTRY_JSON: JSON.stringify([
+      {
+        actorId: "operator-cli",
+        actorRole: "operator",
+        source: "brain-cli",
+        allowedTransports: ["cli"],
+        allowedCommands: ["query_history"],
+        authTokens: [
+          {
+            token: "current-operator-token",
+            validUntil: new Date(Date.now() + 3_600_000).toISOString()
+          }
+        ]
+      }
+    ])
+  });
   const result = await runNodeCommand(
     path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
     ["auth-status"],
-    {
-      ...process.env,
-      MAB_AUTH_MODE: "enforced",
-      MAB_AUTH_ISSUER_SECRET: "cli-issuer-secret",
-      MAB_AUTH_ACTOR_REGISTRY_JSON: JSON.stringify([
-        {
-          actorId: "operator-cli",
-          actorRole: "operator",
-          source: "brain-cli",
-          allowedTransports: ["cli"],
-          allowedCommands: ["query_history"],
-          authTokens: [
-            {
-              token: "current-operator-token",
-              validUntil: new Date(Date.now() + 3_600_000).toISOString()
-            }
-          ]
-        }
-      ])
-    }
+    env
   );
 
   assert.equal(result.exitCode, 0, result.stderr);
@@ -63,6 +64,8 @@ test("brain-cli exposes auth registry status for operators", async () => {
   assert.equal(payload.auth.issuedTokenSupport.enabled, true);
   assert.equal(payload.auth.actorCounts.total, 1);
   assert.equal(payload.issuedTokens.total, 0);
+
+  await rm(root, { recursive: true, force: true });
 });
 
 test("brain-cli lists recorded issued actor tokens through the operator control surface", async (t) => {
@@ -169,6 +172,75 @@ test("brain-cli can introspect issued actor tokens against the current auth poli
   assert.equal(payload.inspection.authorization.transportAllowed, true);
   assert.equal(payload.inspection.authorization.commandAllowed, true);
   assert.equal(payload.inspection.matchedActor.actorId, "validate-note-http");
+});
+
+test("brain-cli lists and reads namespace nodes through the shared context namespace service", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-namespace-"));
+  const canonical = await seedCanonicalTemporalNote(root, {
+    title: "CLI Namespace Canonical Node",
+    scope: "cli-namespace",
+    validFrom: addDaysIso(currentDateIso(), -14),
+    validUntil: addDaysIso(currentDateIso(), 14)
+  });
+  const staging = await seedStagingDraft(root, {
+    title: "CLI Namespace Staging Node",
+    scope: "cli-namespace"
+  });
+
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const listResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    [
+      "list-context-tree",
+      "--json",
+      JSON.stringify({
+        ownerScope: "context_brain",
+        authorityStates: ["canonical", "staging"]
+      })
+    ],
+    cliEnvironment(root)
+  );
+
+  assert.equal(listResult.exitCode, 0, listResult.stderr);
+  const listPayload = JSON.parse(listResult.stdout);
+  assert.equal(listPayload.ok, true);
+  assert.ok(
+    listPayload.data.nodes.some(
+      (node) =>
+        node.uri === `mab://context_brain/note/${canonical.noteId}` &&
+        node.authorityState === "canonical"
+    )
+  );
+  assert.ok(
+    listPayload.data.nodes.some(
+      (node) =>
+        node.uri === `mab://context_brain/note/${staging.draftNoteId}` &&
+        node.authorityState === "staging"
+    )
+  );
+
+  const readResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    [
+      "read-context-node",
+      "--json",
+      JSON.stringify({
+        uri: `mab://context_brain/note/${canonical.noteId}`
+      })
+    ],
+    cliEnvironment(root)
+  );
+
+  assert.equal(readResult.exitCode, 0, readResult.stderr);
+  const readPayload = JSON.parse(readResult.stdout);
+  assert.equal(readPayload.ok, true);
+  assert.equal(readPayload.data.node.uri, `mab://context_brain/note/${canonical.noteId}`);
+  assert.equal(readPayload.data.node.authorityState, "canonical");
+  assert.equal(readPayload.data.node.sourceType, "canonical_note");
+  assert.equal(readPayload.data.node.ownerScope, "context_brain");
 });
 
 test("brain-cli exposes temporal freshness status and refresh candidates for operators", async (t) => {
@@ -1779,6 +1851,94 @@ test("brain-api accepts centrally issued actor tokens for registered actors", as
   assert.equal(payload.valid, true);
 });
 
+test("brain-api lists and reads namespace nodes through the shared context namespace service", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-namespace-"));
+  const { createBrainApiServer } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+    ).href
+  );
+
+  const api = createBrainApiServer({
+    nodeEnv: "test",
+    vaultRoot: path.join(root, "vault", "canonical"),
+    stagingRoot: path.join(root, "vault", "staging"),
+    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    qdrantUrl: "http://127.0.0.1:6333",
+    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    embeddingProvider: "hash",
+    reasoningProvider: "heuristic",
+    draftingProvider: "disabled",
+    rerankerProvider: "local",
+    apiHost: "127.0.0.1",
+    apiPort: 18183,
+    logLevel: "error"
+  });
+
+  const canonical = await seedCanonicalTemporalNote(root, {
+    title: "API Namespace Canonical Node",
+    scope: "api-namespace",
+    validFrom: addDaysIso(currentDateIso(), -14),
+    validUntil: addDaysIso(currentDateIso(), 14)
+  });
+  const staging = await seedStagingDraft(root, {
+    title: "API Namespace Staging Node",
+    scope: "api-namespace"
+  });
+
+  t.after(async () => {
+    await api.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await api.listen();
+
+  const treeResponse = await fetch("http://127.0.0.1:18183/v1/context/tree", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      ownerScope: "context_brain",
+      authorityStates: ["canonical", "staging"]
+    })
+  });
+
+  assert.equal(treeResponse.status, 200);
+  const treePayload = await treeResponse.json();
+  assert.equal(treePayload.ok, true);
+  assert.ok(
+    treePayload.data.nodes.some(
+      (node) =>
+        node.uri === `mab://context_brain/note/${canonical.noteId}` &&
+        node.authorityState === "canonical"
+    )
+  );
+  assert.ok(
+    treePayload.data.nodes.some(
+      (node) =>
+        node.uri === `mab://context_brain/note/${staging.draftNoteId}` &&
+        node.authorityState === "staging"
+    )
+  );
+
+  const nodeResponse = await fetch("http://127.0.0.1:18183/v1/context/node", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      uri: `mab://context_brain/note/${canonical.noteId}`
+    })
+  });
+
+  assert.equal(nodeResponse.status, 200);
+  const nodePayload = await nodeResponse.json();
+  assert.equal(nodePayload.ok, true);
+  assert.equal(nodePayload.data.node.uri, `mab://context_brain/note/${canonical.noteId}`);
+  assert.equal(nodePayload.data.node.authorityState, "canonical");
+});
+
 test("brain-api exposes coding execution through the root orchestrator", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-coding-"));
   const repoRoot = path.join(root, "repo");
@@ -1982,6 +2142,51 @@ async function seedCanonicalTemporalNotes(root, inputs) {
     }
 
     return seeded;
+  } finally {
+    container.dispose();
+  }
+}
+
+async function seedStagingDraft(root, input) {
+  const { buildServiceContainer } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "packages", "infrastructure", "dist", "index.js")
+    ).href
+  );
+
+  const container = buildServiceContainer({
+    nodeEnv: "test",
+    vaultRoot: path.join(root, "vault", "canonical"),
+    stagingRoot: path.join(root, "vault", "staging"),
+    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    qdrantUrl: "http://127.0.0.1:6333",
+    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    embeddingProvider: "hash",
+    reasoningProvider: "heuristic",
+    draftingProvider: "disabled",
+    rerankerProvider: "local",
+    logLevel: "error"
+  });
+
+  try {
+    const draft = await container.services.stagingDraftService.createDraft({
+      actor: testActor("writer"),
+      targetCorpus: "context_brain",
+      noteType: "reference",
+      title: input.title,
+      sourcePrompt: `Seed staging draft for ${input.title}`,
+      supportingSources: [],
+      bodyHints: [
+        `This staging draft exists only to exercise the namespace browse surface for ${input.title}.`,
+        `It should remain a staging authority node for scope ${input.scope}.`
+      ],
+      frontmatterOverrides: {
+        scope: input.scope
+      }
+    });
+
+    assert.equal(draft.ok, true);
+    return { draftNoteId: draft.data.draftNoteId };
   } finally {
     container.dispose();
   }

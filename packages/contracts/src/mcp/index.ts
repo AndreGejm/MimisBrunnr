@@ -7,3 +7,5 @@ export * from "./promote-note.tool.js";
 export * from "./query-history.tool.js";
 export * from "./fetch-decision-summary.tool.js";
 export * from "./inspect-gap.tool.js";
+export * from "./list-context-tree.tool.js";
+export * from "./read-context-node.tool.js";

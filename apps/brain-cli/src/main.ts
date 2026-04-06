@@ -12,8 +12,10 @@ import type {
   DraftNoteRequest,
   ExecuteCodingTaskRequest,
   GetDecisionSummaryRequest,
+  ListContextTreeRequest,
   PromoteNoteRequest,
   QueryHistoryRequest,
+  ReadContextNodeRequest,
   RetrieveContextRequest,
   TransportKind,
   ValidateNoteRequest
@@ -43,6 +45,8 @@ type CommandName =
   | "revoke-auth-token"
   | "execute-coding-task"
   | "search-context"
+  | "list-context-tree"
+  | "read-context-node"
   | "get-context-packet"
   | "fetch-decision-summary"
   | "draft-note"
@@ -81,6 +85,8 @@ const COMMANDS: ReadonlyArray<CommandName> = [
   "revoke-auth-token",
   "execute-coding-task",
   "search-context",
+  "list-context-tree",
+  "read-context-node",
   "get-context-packet",
   "fetch-decision-summary",
   "draft-note",
@@ -94,6 +100,8 @@ const COMMANDS: ReadonlyArray<CommandName> = [
 const DEFAULT_ACTOR_ROLE: Record<RoutedCommandName, ActorRole> = {
   "execute-coding-task": "operator",
   "search-context": "retrieval",
+  "list-context-tree": "retrieval",
+  "read-context-node": "retrieval",
   "get-context-packet": "retrieval",
   "fetch-decision-summary": "retrieval",
   "draft-note": "writer",
@@ -120,6 +128,8 @@ const TRANSPORTS: ReadonlyArray<TransportKind> = [
 const COMMAND_NAMES: ReadonlyArray<string> = [
   "execute_coding_task",
   "search_context",
+  "list_context_tree",
+  "read_context_node",
   "get_context_packet",
   "fetch_decision_summary",
   "draft_note",
@@ -379,6 +389,14 @@ async function runCommand(
     case "search-context":
       return container.orchestrator.searchContext(
         request as unknown as RetrieveContextRequest
+      );
+    case "list-context-tree":
+      return container.services.contextNamespaceService.listTree(
+        request as unknown as ListContextTreeRequest
+      );
+    case "read-context-node":
+      return container.services.contextNamespaceService.readNode(
+        request as unknown as ReadContextNodeRequest
       );
     case "get-context-packet":
       return container.orchestrator.getContextPacket(
@@ -652,6 +670,8 @@ Commands:
   revoke-auth-token    Revoke a previously issued actor token through the local revocation store
   execute-coding-task  Run a coding-domain task through the vendored safety-gated runtime
   search-context   Run bounded retrieval through retrieveContextService
+  list-context-tree  List namespace nodes through the shared context namespace service
+  read-context-node  Read a namespace node through the shared context namespace service
   get-context-packet  Assemble a bounded packet directly from ranked candidates
   fetch-decision-summary  Retrieve a bounded decision-focused packet
   draft-note       Create a staging draft through stagingDraftService

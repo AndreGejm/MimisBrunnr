@@ -9,8 +9,10 @@ import type {
   DraftNoteRequest,
   ExecuteCodingTaskRequest,
   GetDecisionSummaryRequest,
+  ListContextTreeRequest,
   PromoteNoteRequest,
   QueryHistoryRequest,
+  ReadContextNodeRequest,
   RetrieveContextRequest,
   ServiceError,
   ValidateNoteRequest
@@ -41,13 +43,17 @@ type RouteName =
   | "create-refresh-drafts"
   | "validate-note"
   | "promote-note"
-  | "query-history";
+  | "query-history"
+  | "list-context-tree"
+  | "read-context-node";
 
 type JsonRecord = Record<string, unknown>;
 
 const DEFAULT_ACTOR_ROLE: Record<RouteName, ActorRole> = {
   "execute-coding-task": "operator",
   "search-context": "retrieval",
+  "list-context-tree": "retrieval",
+  "read-context-node": "retrieval",
   "get-context-packet": "retrieval",
   "fetch-decision-summary": "retrieval",
   "draft-note": "writer",
@@ -70,6 +76,8 @@ const ROUTES: Record<string, { method: "GET" | "POST"; name?: RouteName; healthM
   "/v1/system/version": { method: "GET" },
   "/v1/coding/execute": { method: "POST", name: "execute-coding-task" },
   "/v1/context/search": { method: "POST", name: "search-context" },
+  "/v1/context/tree": { method: "POST", name: "list-context-tree" },
+  "/v1/context/node": { method: "POST", name: "read-context-node" },
   "/v1/context/packet": { method: "POST", name: "get-context-packet" },
   "/v1/context/decision-summary": { method: "POST", name: "fetch-decision-summary" },
   "/v1/notes/drafts": { method: "POST", name: "draft-note" },
@@ -374,6 +382,20 @@ async function handleRequest(
     case "search-context": {
       const result = await container.orchestrator.searchContext(
         normalizedRequest as unknown as RetrieveContextRequest
+      );
+      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
+      return;
+    }
+    case "list-context-tree": {
+      const result = await container.services.contextNamespaceService.listTree(
+        normalizedRequest as unknown as ListContextTreeRequest
+      );
+      sendJson(response, 200, result);
+      return;
+    }
+    case "read-context-node": {
+      const result = await container.services.contextNamespaceService.readNode(
+        normalizedRequest as unknown as ReadContextNodeRequest
       );
       sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
       return;

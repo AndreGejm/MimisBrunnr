@@ -29,6 +29,21 @@ const NOTE_LIFECYCLE_STATES = new Set([
   "rejected",
   "archived"
 ]);
+const CONTEXT_OWNER_SCOPES = new Set([
+  "context_brain",
+  "general_notes",
+  "imports",
+  "sessions",
+  "system"
+]);
+const CONTEXT_AUTHORITY_STATES = new Set([
+  "canonical",
+  "staging",
+  "derived",
+  "imported",
+  "session",
+  "extracted"
+]);
 const QUERY_INTENTS = new Set([
   "fact_lookup",
   "decision_lookup",
@@ -108,6 +123,22 @@ export function validateTransportRequest(
         tagFilters: optionalStringArray(payload.tagFilters, "tagFilters"),
         includeSuperseded: optionalBoolean(payload.includeSuperseded, "includeSuperseded"),
         requireEvidence: optionalBoolean(payload.requireEvidence, "requireEvidence")
+      };
+    case "list-context-tree":
+      return {
+        actor,
+        ownerScope: optionalEnum(payload.ownerScope, "ownerScope", CONTEXT_OWNER_SCOPES),
+        authorityStates: optionalEnumArray(
+          payload.authorityStates,
+          "authorityStates",
+          CONTEXT_AUTHORITY_STATES
+        ),
+        parentUri: optionalString(payload.parentUri, "parentUri")
+      };
+    case "read-context-node":
+      return {
+        actor,
+        uri: requireString(payload.uri, "uri")
       };
     case "get-context-packet":
       return {

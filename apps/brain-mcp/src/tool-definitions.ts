@@ -71,6 +71,38 @@ export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
     }
   },
   {
+    name: "list_context_tree",
+    title: "List Context Tree",
+    description: "List namespace nodes without mutating authority state.",
+    defaultActorRole: "retrieval",
+    inputSchema: {
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        ownerScope: { type: "string" },
+        authorityStates: {
+          type: "array",
+          items: { type: "string" }
+        },
+        parentUri: { type: "string" }
+      }
+    }
+  },
+  {
+    name: "read_context_node",
+    title: "Read Context Node",
+    description: "Read a namespace node without mutating authority state.",
+    defaultActorRole: "retrieval",
+    inputSchema: {
+      type: "object",
+      required: ["uri"],
+      additionalProperties: true,
+      properties: {
+        uri: { type: "string" }
+      }
+    }
+  },
+  {
     name: "get_context_packet",
     title: "Get Context Packet",
     description: "Assemble a bounded context packet directly from ranked candidates and a retrieval budget.",
