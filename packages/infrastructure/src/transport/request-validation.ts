@@ -52,6 +52,7 @@ const QUERY_INTENTS = new Set([
   "status_timeline",
   "debugging"
 ]);
+const RETRIEVAL_STRATEGIES = new Set(["flat", "hierarchical"]);
 const CODING_TASK_TYPES = new Set([
   "triage",
   "review",
@@ -118,6 +119,7 @@ export function validateTransportRequest(
         query: requireString(payload.query, "query"),
         budget: validateBudget(payload.budget, "budget"),
         corpusIds: requireEnumArray(payload.corpusIds, "corpusIds", CORPORA, { minItems: 1 }),
+        strategy: optionalEnum(payload.strategy, "strategy", RETRIEVAL_STRATEGIES),
         intentHint: optionalEnum(payload.intentHint, "intentHint", QUERY_INTENTS),
         noteTypePriority: optionalEnumArray(payload.noteTypePriority, "noteTypePriority", NOTE_TYPES),
         tagFilters: optionalStringArray(payload.tagFilters, "tagFilters"),

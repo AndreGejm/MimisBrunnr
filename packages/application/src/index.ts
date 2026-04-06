@@ -17,6 +17,7 @@ export * from "./services/context-namespace-service.js";
 export * from "./services/context-representation-service.js";
 export * from "./services/context-packet-service.js";
 export * from "./services/decision-summary-service.js";
+export * from "./services/hierarchical-retrieval-service.js";
 export * from "./services/lexical-retrieval-service.js";
 export * from "./services/note-validation-service.js";
 export * from "./services/promotion-orchestrator-service.js";

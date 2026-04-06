@@ -1,5 +1,9 @@
 import type { RetrievalTraceRef } from "@multi-agent-brain/contracts";
-import type { ContextPacketSource, QueryIntent } from "@multi-agent-brain/domain";
+import type {
+  ContextPacketSource,
+  QueryIntent,
+  RetrievalTraceStrategy
+} from "@multi-agent-brain/domain";
 
 export interface BuildRetrievalTraceInput {
   intent: QueryIntent;
@@ -13,12 +17,19 @@ export interface BuildRetrievalTraceInput {
 
 export class RetrievalTraceService {
   buildFlatTrace(input: BuildRetrievalTraceInput): RetrievalTraceRef {
+    return this.buildTrace(input, "flat");
+  }
+
+  buildTrace(
+    input: BuildRetrievalTraceInput,
+    strategy: RetrievalTraceStrategy
+  ): RetrievalTraceRef {
     const selectedEvidenceNoteIds = uniqueStrings(
       input.packetEvidence.map((candidate) => candidate.noteId)
     ).slice(0, 8);
 
     return {
-      strategy: "flat",
+      strategy,
       events: [
         {
           stage: "intent",

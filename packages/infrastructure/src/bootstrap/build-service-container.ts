@@ -26,6 +26,7 @@ import {
   ContextRepresentationService as ConcreteContextRepresentationService,
   ContextPacketService as ConcreteContextPacketService,
   DecisionSummaryService as ConcreteDecisionSummaryService,
+  HierarchicalRetrievalService as ConcreteHierarchicalRetrievalService,
   NoteValidationService as ConcreteNoteValidationService,
   PromotionOrchestratorService as ConcretePromotionOrchestratorService,
   RetrieveContextService as ConcreteRetrieveContextService,
@@ -183,6 +184,16 @@ export function buildServiceContainer(
   const contextRepresentationService = new ConcreteContextRepresentationService(
     contextRepresentationStore
   );
+  const hierarchicalRetrievalService = new ConcreteHierarchicalRetrievalService({
+    lexicalIndex,
+    metadataControlStore,
+    vectorIndex,
+    embeddingProvider,
+    localReasoningProvider,
+    paidEscalationProvider,
+    rerankerProvider,
+    auditHistoryService
+  });
   const promotionOrchestratorService = new ConcretePromotionOrchestratorService(
     stagingNoteRepository,
     canonicalNoteService,
@@ -203,7 +214,8 @@ export function buildServiceContainer(
     localReasoningProvider,
     paidEscalationProvider,
     rerankerProvider,
-    auditHistoryService
+    auditHistoryService,
+    hierarchicalRetrievalService
   });
   const contextPacketService = new ConcreteContextPacketService(metadataControlStore);
   const decisionSummaryService = new ConcreteDecisionSummaryService(
