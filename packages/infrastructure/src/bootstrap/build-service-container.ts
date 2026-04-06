@@ -22,6 +22,7 @@ import {
   AuditHistoryService as ConcreteAuditHistoryService,
   CanonicalNoteService as ConcreteCanonicalNoteService,
   ChunkingService as ConcreteChunkingService,
+  ContextNamespaceService as ConcreteContextNamespaceService,
   ContextPacketService as ConcreteContextPacketService,
   DecisionSummaryService as ConcreteDecisionSummaryService,
   NoteValidationService as ConcreteNoteValidationService,
@@ -54,6 +55,7 @@ import { OllamaEmbeddingProvider } from "../providers/ollama-embedding-provider.
 import { OllamaLocalReasoningProvider } from "../providers/ollama-local-reasoning-provider.js";
 import { OllamaRerankerProvider } from "../providers/ollama-reranker-provider.js";
 import { SqliteAuditLog } from "../sqlite/sqlite-audit-log.js";
+import { SqliteContextNamespaceStore } from "../sqlite/sqlite-context-namespace-store.js";
 import { SqliteIssuedTokenStore } from "../sqlite/sqlite-issued-token-store.js";
 import { SqliteMetadataControlStore } from "../sqlite/sqlite-metadata-control-store.js";
 import { SqliteRevocationStore } from "../sqlite/sqlite-revocation-store.js";
@@ -88,6 +90,7 @@ export interface ServiceRegistry {
   retrieveContextService: RetrieveContextService;
   contextPacketService: ConcreteContextPacketService;
   decisionSummaryService: ConcreteDecisionSummaryService;
+  contextNamespaceService: ConcreteContextNamespaceService;
   temporalRefreshService: TemporalRefreshService;
 }
 
@@ -111,6 +114,7 @@ export function buildServiceContainer(
   const revocationStore = new SqliteRevocationStore(env.sqlitePath);
   const auditLog = new SqliteAuditLog(env.sqlitePath);
   const lexicalIndex = new SqliteFtsIndex(env.sqlitePath);
+  const contextNamespaceStore = new SqliteContextNamespaceStore(env.sqlitePath);
   const vectorIndex = new QdrantVectorIndex({
     baseUrl: env.qdrantUrl,
     collectionName: env.qdrantCollection
@@ -198,6 +202,9 @@ export function buildServiceContainer(
     retrieveContextService,
     auditHistoryService
   );
+  const contextNamespaceService = new ConcreteContextNamespaceService(
+    contextNamespaceStore
+  );
   const temporalRefreshService = new ConcreteTemporalRefreshService(
     metadataControlStore,
     canonicalNoteService,
@@ -278,6 +285,7 @@ export function buildServiceContainer(
       retrieveContextService,
       contextPacketService,
       decisionSummaryService,
+      contextNamespaceService,
       temporalRefreshService
     },
     orchestrator,
@@ -285,6 +293,7 @@ export function buildServiceContainer(
       closeIfSupported(lexicalIndex);
       closeIfSupported(auditLog);
       closeIfSupported(metadataControlStore);
+      closeIfSupported(contextNamespaceStore);
       closeIfSupported(issuedTokenStore);
       closeIfSupported(revocationStore);
     }
