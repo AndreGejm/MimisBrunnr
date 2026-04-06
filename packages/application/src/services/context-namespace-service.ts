@@ -9,7 +9,6 @@ import type { ContextNamespaceStore } from "../ports/context-namespace-store.js"
 export interface ListContextTreeRequest {
   ownerScope?: ContextOwnerScope;
   authorityStates?: ContextAuthorityState[];
-  parentUri?: string;
 }
 
 export interface ListContextTreeResponse {
@@ -24,8 +23,7 @@ export class ContextNamespaceService {
   ): Promise<ServiceResult<ListContextTreeResponse, "forbidden">> {
     const nodes = await this.namespaceStore.listNodes({
       ownerScope: input.ownerScope,
-      authorityStates: input.authorityStates,
-      parentUri: input.parentUri
+      authorityStates: input.authorityStates
     });
 
     return {

@@ -4,21 +4,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import {
-  CanonicalNoteService,
-  ContextNamespaceService,
-  NoteValidationService,
-  StagingDraftService
-} from "../../packages/application/dist/index.js";
-import {
-  FileSystemCanonicalNoteRepository,
-  FileSystemStagingNoteRepository,
-  SqliteContextNamespaceStore,
-  SqliteMetadataControlStore
-} from "../../packages/infrastructure/dist/index.js";
+import { buildServiceContainer } from "../../packages/infrastructure/dist/index.js";
 
 test("namespace service keeps canonical and staging notes distinct", async (t) => {
-  const { services } = await createHarness(t);
+  const { container } = await createHarness(t);
+  assert.ok(container.services.contextNamespaceService);
+
+  const { services } = container;
   const canonical = await createCanonicalNote(services);
   const staging = await createStagingDraft(services);
 
@@ -48,39 +40,31 @@ test("namespace service keeps canonical and staging notes distinct", async (t) =
 
 async function createHarness(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), "mab-context-namespace-"));
-  const vaultRoot = path.join(root, "vault", "canonical");
-  const stagingRoot = path.join(root, "vault", "staging");
-  const sqlitePath = path.join(root, "state", "context-namespace.sqlite");
-
-  const canonicalNoteRepository = new FileSystemCanonicalNoteRepository(vaultRoot);
-  const stagingNoteRepository = new FileSystemStagingNoteRepository(stagingRoot);
-  const metadataControlStore = new SqliteMetadataControlStore(sqlitePath);
-  const noteValidationService = new NoteValidationService();
-  const canonicalNoteService = new CanonicalNoteService(
-    canonicalNoteRepository,
-    metadataControlStore
-  );
-  const stagingDraftService = new StagingDraftService(
-    stagingNoteRepository,
-    metadataControlStore,
-    noteValidationService
-  );
-  const contextNamespaceStore = new SqliteContextNamespaceStore(sqlitePath);
-  const contextNamespaceService = new ContextNamespaceService(contextNamespaceStore);
+  const container = buildServiceContainer({
+    nodeEnv: "test",
+    vaultRoot: path.join(root, "vault", "canonical"),
+    stagingRoot: path.join(root, "vault", "staging"),
+    sqlitePath: path.join(root, "state", "context-namespace.sqlite"),
+    qdrantUrl: "http://127.0.0.1:6333",
+    qdrantCollection: `context_namespace_${randomUUID().slice(0, 8)}`,
+    embeddingProvider: "hash",
+    reasoningProvider: "heuristic",
+    draftingProvider: "disabled",
+    rerankerProvider: "local",
+    apiHost: "127.0.0.1",
+    apiPort: 8080,
+    logLevel: "error"
+  });
 
   t.after(async () => {
-    contextNamespaceStore.close?.();
-    metadataControlStore.close?.();
+    container.dispose?.();
     await rm(root, { recursive: true, force: true });
   });
 
   return {
     root,
-    services: {
-      canonicalNoteService,
-      stagingDraftService,
-      contextNamespaceService
-    }
+    container,
+    services: container.services
   };
 }
 
