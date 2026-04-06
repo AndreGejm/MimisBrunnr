@@ -144,6 +144,61 @@ test("promotion of a current-state context note creates a deterministic snapshot
   assert.ok(snapshot.frontmatter.tags.includes("topic/current-state-snapshot"));
 });
 
+test("promotion succeeds when derived representations fail to regenerate", async (t) => {
+  const { container } = await createHarness(t);
+
+  const draft = await createDraft(container, {
+    actorRole: "writer",
+    targetCorpus: "context_brain",
+    noteType: "decision",
+    title: "Derived Representation Failure Tolerance",
+    sourcePrompt: "Draft a policy note for the regression test.",
+    bodyHints: ["Promotion must remain authoritative even if derived rows fail."],
+    frontmatterOverrides: {
+      scope: "representation"
+    }
+  });
+
+  let regenerationCalls = 0;
+  const promotionService = new application.PromotionOrchestratorService(
+    container.ports.stagingNoteRepository,
+    container.services.canonicalNoteService,
+    container.services.noteValidationService,
+    container.ports.metadataControlStore,
+    container.services.chunkingService,
+    container.services.auditHistoryService,
+    container.ports.lexicalIndex,
+    container.ports.vectorIndex,
+    container.ports.embeddingProvider,
+    {
+      async regenerateForCanonicalNote() {
+        regenerationCalls += 1;
+        throw new Error("derived representation failure");
+      }
+    }
+  );
+
+  const promoted = await promotionService.promoteDraft({
+    actor: actor("orchestrator"),
+    draftNoteId: draft.draftNoteId,
+    targetCorpus: "context_brain",
+    promoteAsCurrentState: false
+  });
+
+  assert.equal(promoted.ok, true);
+  assert.equal(regenerationCalls, 1);
+
+  const promotedDraft = await container.ports.stagingNoteRepository.getById(draft.draftNoteId);
+  assert.ok(promotedDraft);
+  assert.equal(promotedDraft.lifecycleState, "promoted");
+
+  const canonicalNote = await container.services.canonicalNoteService.getCanonicalNote(
+    promoted.data.promotedNoteId
+  );
+  assert.equal(canonicalNote.ok, true);
+  assert.equal(canonicalNote.data.frontmatter.title, "Derived Representation Failure Tolerance");
+});
+
 test("promotion outbox replays failed cross-store sync work after a transient index failure", async (t) => {
   const { container } = await createHarness(t);
   assert.ok(container.ports.lexicalIndex, "expected lexical index to be available");

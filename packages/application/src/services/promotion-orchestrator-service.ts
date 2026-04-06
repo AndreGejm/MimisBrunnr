@@ -400,12 +400,14 @@ export class PromotionOrchestratorService {
       await this.metadataControlStore.upsertNote(
         mapDraftMetadataRecord(promotedDraft)
       );
-      if (!promotedCanonicalNote) {
-        throw new Error("Promoted canonical note was not captured during promotion processing.");
-      }
-
-      await this.contextRepresentationService?.regenerateForCanonicalNote(promotedCanonicalNote);
       await this.metadataControlStore.completePromotionOutboxEntry(outboxId);
+
+      if (promotedCanonicalNote && this.contextRepresentationService) {
+        try {
+          await this.contextRepresentationService.regenerateForCanonicalNote(promotedCanonicalNote);
+        } catch {
+        }
+      }
 
       return {
         ok: true,
