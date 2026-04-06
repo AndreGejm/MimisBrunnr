@@ -182,6 +182,58 @@ test("brain-cli creates governed refresh drafts for expired current-state notes"
   assert.deepEqual(payload.data.frontmatter.supersedes, [seeded.noteId]);
 });
 
+test("brain-cli creates a bounded batch of refresh drafts from current freshness candidates", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-refresh-drafts-"));
+  await seedCanonicalTemporalNotes(root, [
+    {
+      title: "CLI Batch Refresh A",
+      scope: "cli-batch-refresh-a",
+      validFrom: addDaysIso(currentDateIso(), -14),
+      validUntil: addDaysIso(currentDateIso(), -1)
+    },
+    {
+      title: "CLI Batch Refresh B",
+      scope: "cli-batch-refresh-b",
+      validFrom: addDaysIso(currentDateIso(), -10),
+      validUntil: addDaysIso(currentDateIso(), -1)
+    },
+    {
+      title: "CLI Batch Refresh C",
+      scope: "cli-batch-refresh-c",
+      validFrom: addDaysIso(currentDateIso(), -5),
+      validUntil: addDaysIso(currentDateIso(), 2)
+    }
+  ]);
+
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const result = await runNodeCommand(
+    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    [
+      "create-refresh-drafts",
+      "--json",
+      JSON.stringify({
+        expiringWithinDays: 14,
+        maxDrafts: 2,
+        bodyHints: ["Refresh these stale notes in batch."]
+      })
+    ],
+    cliEnvironment(root)
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.data.createdCount, 2);
+  assert.equal(payload.data.drafts.length, 2);
+  assert.equal(payload.data.candidatesRemaining, 1);
+  assert.ok(
+    payload.data.skipped.some((item) => /maxDrafts limit/i.test(item.reason))
+  );
+});
+
 test("brain-cli can mint issued actor access tokens when the issuer secret is configured", async () => {
   const result = await runNodeCommand(
     path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
@@ -1796,6 +1848,11 @@ async function seedTemporalValidityNote(sqlitePath, input) {
 }
 
 async function seedCanonicalTemporalNote(root, input) {
+  const [seeded] = await seedCanonicalTemporalNotes(root, [input]);
+  return seeded;
+}
+
+async function seedCanonicalTemporalNotes(root, inputs) {
   const { buildServiceContainer } = await import(
     pathToFileURL(
       path.join(process.cwd(), "packages", "infrastructure", "dist", "index.js")
@@ -1816,35 +1873,40 @@ async function seedCanonicalTemporalNote(root, input) {
     logLevel: "error"
   });
   try {
-    const draft = await container.services.stagingDraftService.createDraft({
-      actor: testActor("writer"),
-      targetCorpus: "context_brain",
-      noteType: "reference",
-      title: input.title,
-      sourcePrompt: `Refresh seed for ${input.title}`,
-      supportingSources: [],
-      bodyHints: [
-        "This canonical note exists only to exercise the refresh workflow.",
-        "It should become a governed staging refresh draft when its validity expires."
-      ],
-      frontmatterOverrides: {
-        scope: input.scope,
-        validFrom: input.validFrom,
-        validUntil: input.validUntil
-      }
-    });
+    const seeded = [];
+    for (const input of inputs) {
+      const draft = await container.services.stagingDraftService.createDraft({
+        actor: testActor("writer"),
+        targetCorpus: "context_brain",
+        noteType: "reference",
+        title: input.title,
+        sourcePrompt: `Refresh seed for ${input.title}`,
+        supportingSources: [],
+        bodyHints: [
+          `This canonical note exists only to exercise the refresh workflow for ${input.title}.`,
+          `It should become a governed staging refresh draft for scope ${input.scope} when its validity expires.`
+        ],
+        frontmatterOverrides: {
+          scope: input.scope,
+          validFrom: input.validFrom,
+          validUntil: input.validUntil
+        }
+      });
 
-    assert.equal(draft.ok, true);
+      assert.equal(draft.ok, true);
 
-    const promoted = await container.services.promotionOrchestratorService.promoteDraft({
-      actor: testActor("orchestrator"),
-      draftNoteId: draft.data.draftNoteId,
-      targetCorpus: "context_brain",
-      promoteAsCurrentState: true
-    });
+      const promoted = await container.services.promotionOrchestratorService.promoteDraft({
+        actor: testActor("orchestrator"),
+        draftNoteId: draft.data.draftNoteId,
+        targetCorpus: "context_brain",
+        promoteAsCurrentState: true
+      });
 
-    assert.equal(promoted.ok, true);
-    return { noteId: promoted.data.promotedNoteId };
+      assert.equal(promoted.ok, true);
+      seeded.push({ noteId: promoted.data.promotedNoteId });
+    }
+
+    return seeded;
   } finally {
     container.dispose();
   }

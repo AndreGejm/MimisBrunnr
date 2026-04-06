@@ -46,6 +46,11 @@ const CODING_TASK_TYPES = new Set([
   "propose_fix"
 ]);
 const STALENESS_CLASSES = new Set(["current", "stale", "superseded"]);
+const TEMPORAL_REFRESH_STATES = new Set([
+  "expired",
+  "future_dated",
+  "expiring_soon"
+]);
 
 export class TransportValidationError extends Error {
   constructor(
@@ -135,6 +140,21 @@ export function validateTransportRequest(
         noteId: requireString(payload.noteId, "noteId"),
         asOf: optionalString(payload.asOf, "asOf"),
         expiringWithinDays: optionalInteger(payload.expiringWithinDays, "expiringWithinDays", { min: 1 }),
+        bodyHints: optionalStringArray(payload.bodyHints, "bodyHints")
+      };
+    case "create-refresh-drafts":
+      return {
+        actor,
+        asOf: optionalString(payload.asOf, "asOf"),
+        expiringWithinDays: optionalInteger(payload.expiringWithinDays, "expiringWithinDays", { min: 1 }),
+        corpusId: optionalEnum(payload.corpusId, "corpusId", CORPORA),
+        limitPerCategory: optionalInteger(payload.limitPerCategory, "limitPerCategory", { min: 1 }),
+        maxDrafts: optionalInteger(payload.maxDrafts, "maxDrafts", { min: 1 }),
+        sourceStates: optionalEnumArray(
+          payload.sourceStates,
+          "sourceStates",
+          TEMPORAL_REFRESH_STATES
+        ),
         bodyHints: optionalStringArray(payload.bodyHints, "bodyHints")
       };
     case "validate-note":

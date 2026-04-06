@@ -7,6 +7,7 @@ import type {
   ActorContext,
   ActorRole,
   AssembleContextPacketRequest,
+  CreateRefreshDraftBatchRequest,
   CreateRefreshDraftRequest,
   DraftNoteRequest,
   ExecuteCodingTaskRequest,
@@ -44,6 +45,7 @@ type CommandName =
   | "fetch-decision-summary"
   | "draft-note"
   | "create-refresh-draft"
+  | "create-refresh-drafts"
   | "validate-note"
   | "promote-note"
   | "query-history";
@@ -80,6 +82,7 @@ const COMMANDS: ReadonlyArray<CommandName> = [
   "fetch-decision-summary",
   "draft-note",
   "create-refresh-draft",
+  "create-refresh-drafts",
   "validate-note",
   "promote-note",
   "query-history"
@@ -92,6 +95,7 @@ const DEFAULT_ACTOR_ROLE: Record<RoutedCommandName, ActorRole> = {
   "fetch-decision-summary": "retrieval",
   "draft-note": "writer",
   "create-refresh-draft": "operator",
+  "create-refresh-drafts": "operator",
   "validate-note": "orchestrator",
   "promote-note": "orchestrator",
   "query-history": "operator"
@@ -117,6 +121,7 @@ const COMMAND_NAMES: ReadonlyArray<string> = [
   "fetch_decision_summary",
   "draft_note",
   "create_refresh_draft",
+  "create_refresh_drafts",
   "validate_note",
   "promote_note",
   "query_history"
@@ -351,6 +356,10 @@ async function runCommand(
     case "create-refresh-draft":
       return container.orchestrator.createRefreshDraft(
         request as unknown as CreateRefreshDraftRequest
+      );
+    case "create-refresh-drafts":
+      return container.orchestrator.createRefreshDraftBatch(
+        request as unknown as CreateRefreshDraftBatchRequest
       );
     case "validate-note":
       return container.orchestrator.validateNote(
@@ -603,6 +612,7 @@ Commands:
   fetch-decision-summary  Retrieve a bounded decision-focused packet
   draft-note       Create a staging draft through stagingDraftService
   create-refresh-draft  Create a governed refresh draft for an existing current-state note
+  create-refresh-drafts  Create a bounded batch of governed refresh drafts from freshness candidates
   validate-note    Run deterministic schema validation
   promote-note     Promote a staging draft through the orchestrator
   query-history    Query bounded audit history
@@ -612,6 +622,7 @@ Notes:
   - auth-introspect-token expects JSON input with token and optional asOf, expectedTransport, expectedCommand, or expectedAdministrativeAction.
   - freshness-status accepts optional JSON input with asOf, expiringWithinDays, corpusId, and limitPerCategory.
   - create-refresh-draft expects JSON input with noteId and optional asOf, expiringWithinDays, or bodyHints.
+  - create-refresh-drafts accepts optional JSON input with asOf, expiringWithinDays, corpusId, limitPerCategory, maxDrafts, sourceStates, and bodyHints.
   - issue-auth-token expects JSON input with actorId, actorRole, and optional source, allowedTransports, allowedCommands, allowedAdminActions, validFrom, validUntil, or ttlMinutes.
   - revoke-auth-token expects JSON input with tokenId or a valid issued token, and optional reason.
   - Input payloads are JSON objects shaped like the existing service contracts.

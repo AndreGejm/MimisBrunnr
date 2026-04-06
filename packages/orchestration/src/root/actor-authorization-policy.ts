@@ -136,6 +136,7 @@ const COMMAND_ROLE_POLICY: Record<OrchestratorCommand, ReadonlySet<ActorRole>> =
   fetch_decision_summary: new Set(["retrieval", "operator", "orchestrator", "system"]),
   draft_note: new Set(["writer", "operator", "orchestrator", "system"]),
   create_refresh_draft: new Set(["operator", "orchestrator", "system"]),
+  create_refresh_drafts: new Set(["operator", "orchestrator", "system"]),
   validate_note: new Set(["operator", "orchestrator", "system"]),
   promote_note: new Set(["operator", "orchestrator", "system"]),
   query_history: new Set(["operator", "orchestrator", "system"])

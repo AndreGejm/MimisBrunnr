@@ -169,6 +169,32 @@ export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
     }
   },
   {
+    name: "create_refresh_drafts",
+    title: "Create Refresh Drafts",
+    description: "Create a bounded batch of governed staging refresh drafts from current temporal-validity candidates.",
+    defaultActorRole: "operator",
+    inputSchema: {
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        actor: { type: "object" },
+        asOf: { type: "string" },
+        expiringWithinDays: { type: "number" },
+        corpusId: { type: "string", enum: ["context_brain", "general_notes"] },
+        limitPerCategory: { type: "number" },
+        maxDrafts: { type: "number" },
+        sourceStates: {
+          type: "array",
+          items: {
+            type: "string",
+            enum: ["expired", "future_dated", "expiring_soon"]
+          }
+        },
+        bodyHints: { type: "array", items: { type: "string" } }
+      }
+    }
+  },
+  {
     name: "draft_note",
     title: "Draft Note",
     description: "Create a staging draft through the writer-only drafting service.",

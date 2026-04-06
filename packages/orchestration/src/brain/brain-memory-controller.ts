@@ -6,6 +6,7 @@ import type {
   TemporalRefreshService
 } from "@multi-agent-brain/application";
 import type {
+  CreateRefreshDraftBatchRequest,
   CreateRefreshDraftRequest,
   DraftNoteRequest,
   PromoteNoteRequest,
@@ -43,6 +44,12 @@ export class BrainMemoryController {
     request: CreateRefreshDraftRequest
   ) {
     return this.temporalRefreshService.createRefreshDraft(request);
+  }
+
+  async createRefreshDraftBatch(
+    request: CreateRefreshDraftBatchRequest
+  ) {
+    return this.temporalRefreshService.createRefreshDraftBatch(request);
   }
 
   async queryHistory(

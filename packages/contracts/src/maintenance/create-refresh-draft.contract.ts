@@ -1,5 +1,9 @@
 import type { ActorContext } from "../common/actor-context.js";
-import type { NoteFrontmatter, NoteId } from "./create-refresh-draft.imports.js";
+import type {
+  CorpusId,
+  NoteFrontmatter,
+  NoteId
+} from "./create-refresh-draft.imports.js";
 
 export type TemporalRefreshState =
   | "expired"
@@ -23,5 +27,38 @@ export interface CreateRefreshDraftResponse {
   frontmatter: NoteFrontmatter;
   body: string;
   reusedExistingDraft: boolean;
+  warnings: string[];
+}
+
+export interface CreateRefreshDraftBatchRequest {
+  actor: ActorContext;
+  asOf?: string;
+  expiringWithinDays?: number;
+  corpusId?: CorpusId;
+  limitPerCategory?: number;
+  maxDrafts?: number;
+  sourceStates?: TemporalRefreshState[];
+  bodyHints?: string[];
+}
+
+export interface CreateRefreshDraftBatchSkippedItem {
+  noteId: NoteId;
+  sourceState: TemporalRefreshState;
+  reason: string;
+}
+
+export interface CreateRefreshDraftBatchResponse {
+  asOf: string;
+  expiringWithinDays: number;
+  corpusId?: CorpusId;
+  limitPerCategory: number;
+  maxDrafts: number;
+  sourceStates: TemporalRefreshState[];
+  candidatesConsidered: number;
+  candidatesRemaining: number;
+  createdCount: number;
+  reusedCount: number;
+  drafts: CreateRefreshDraftResponse[];
+  skipped: CreateRefreshDraftBatchSkippedItem[];
   warnings: string[];
 }

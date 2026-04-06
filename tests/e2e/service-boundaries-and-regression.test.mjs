@@ -501,6 +501,71 @@ test("temporal refresh service reuses an existing open refresh draft for the sam
   assert.equal(refreshDrafts.length, 1);
 });
 
+test("temporal refresh service can create a bounded batch of refresh drafts from current candidates", async (t) => {
+  const { container } = await createHarness(t);
+  const today = currentDateIso();
+
+  const expiredA = await createAndPromote(container, {
+    title: "Batch Refresh Expired A",
+    noteType: "reference",
+    bodyHints: ["Expired notes should be refreshable in a bounded batch."],
+    scope: "temporal-refresh-batch-a",
+    promoteAsCurrentState: true,
+    frontmatterOverrides: {
+      validFrom: addDaysIso(today, -30),
+      validUntil: addDaysIso(today, -2)
+    }
+  });
+  const expiredB = await createAndPromote(container, {
+    title: "Batch Refresh Expired B",
+    noteType: "reference",
+    bodyHints: ["A second expired note should be included in the same batch."],
+    scope: "temporal-refresh-batch-b",
+    promoteAsCurrentState: true,
+    frontmatterOverrides: {
+      validFrom: addDaysIso(today, -20),
+      validUntil: addDaysIso(today, -1)
+    }
+  });
+  const expiringSoon = await createAndPromote(container, {
+    title: "Batch Refresh Expiring Soon",
+    noteType: "reference",
+    bodyHints: ["Expiring-soon notes should remain visible after expired ones."],
+    scope: "temporal-refresh-batch-c",
+    promoteAsCurrentState: true,
+    frontmatterOverrides: {
+      validFrom: addDaysIso(today, -5),
+      validUntil: addDaysIso(today, 2)
+    }
+  });
+
+  const batch = await container.orchestrator.createRefreshDraftBatch({
+    actor: actor("operator"),
+    asOf: today,
+    expiringWithinDays: 14,
+    maxDrafts: 2
+  });
+
+  assert.equal(batch.ok, true);
+  assert.equal(batch.data.candidatesConsidered, 3);
+  assert.equal(batch.data.candidatesRemaining, 1);
+  assert.equal(batch.data.createdCount, 2);
+  assert.equal(batch.data.reusedCount, 0);
+  assert.equal(batch.data.drafts.length, 2);
+  assert.ok(
+    batch.data.drafts.every((draft) =>
+      [expiredA.promotedNoteId, expiredB.promotedNoteId].includes(draft.sourceNoteId)
+    )
+  );
+  assert.ok(
+    batch.data.skipped.some(
+      (item) =>
+        item.noteId === expiringSoon.promotedNoteId &&
+        /maxDrafts limit/i.test(item.reason)
+    )
+  );
+});
+
 test("retrieval packets stay within explicit source and raw-excerpt budgets", async (t) => {
   const { container } = await createHarness(t);
 

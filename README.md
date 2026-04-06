@@ -16,6 +16,7 @@ Implemented today:
 - SQLite FTS lexical retrieval and Qdrant vector retrieval
 - runtime freshness reporting plus operator-visible refresh candidates and retrieval warnings for expired, expiring, or not-yet-valid evidence
 - governed refresh-draft creation that reuses an existing open refresh draft for the same stale canonical note
+- bounded batch refresh-draft creation across CLI, HTTP, and MCP for expired, future-dated, and expiring-soon current-state notes
 - Git-centric release metadata exposed through CLI, HTTP, MCP, and health surfaces
 - bounded context packet assembly and decision-summary generation
 - deterministic validation and promotion for staged notes

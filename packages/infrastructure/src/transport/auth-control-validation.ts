@@ -30,6 +30,7 @@ const COMMAND_NAMES = new Set<OrchestratorCommand>([
   "fetch_decision_summary",
   "draft_note",
   "create_refresh_draft",
+  "create_refresh_drafts",
   "validate_note",
   "promote_note",
   "query_history"

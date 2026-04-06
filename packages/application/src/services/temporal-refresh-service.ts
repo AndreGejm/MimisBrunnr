@@ -3,6 +3,8 @@ import type { StagingDraftService } from "./staging-draft-service.js";
 import type { MetadataControlStore } from "../ports/metadata-control-store.js";
 import type { AuditHistoryService } from "./audit-history-service.js";
 import type {
+  CreateRefreshDraftBatchRequest,
+  CreateRefreshDraftBatchResponse,
   CreateRefreshDraftRequest,
   CreateRefreshDraftResponse,
   ServiceResult
@@ -19,6 +21,13 @@ type TemporalRefreshErrorCode =
   | "write_failed";
 
 const ALLOWED_REFRESH_ACTOR_ROLES = new Set(["operator", "orchestrator", "system"]);
+const DEFAULT_BATCH_LIMIT_PER_CATEGORY = 5;
+const DEFAULT_BATCH_MAX_DRAFTS = 10;
+const DEFAULT_BATCH_SOURCE_STATES: CreateRefreshDraftResponse["sourceState"][] = [
+  "expired",
+  "future_dated",
+  "expiring_soon"
+];
 
 export class TemporalRefreshService {
   constructor(
@@ -182,6 +191,104 @@ export class TemporalRefreshService {
     };
   }
 
+  async createRefreshDraftBatch(
+    request: CreateRefreshDraftBatchRequest
+  ): Promise<ServiceResult<CreateRefreshDraftBatchResponse, TemporalRefreshErrorCode>> {
+    if (!ALLOWED_REFRESH_ACTOR_ROLES.has(request.actor.actorRole)) {
+      return {
+        ok: false,
+        error: {
+          code: "forbidden",
+          message: `Actor role '${request.actor.actorRole}' cannot create temporal refresh drafts.`
+        }
+      };
+    }
+
+    const report = await this.metadataControlStore.getTemporalValidityReport({
+      asOf: request.asOf,
+      expiringWithinDays: request.expiringWithinDays,
+      corpusId: request.corpusId,
+      limitPerCategory:
+        request.limitPerCategory ?? DEFAULT_BATCH_LIMIT_PER_CATEGORY
+    });
+    const sourceStates =
+      request.sourceStates?.length
+        ? request.sourceStates
+        : DEFAULT_BATCH_SOURCE_STATES;
+    const orderedCandidates = flattenTemporalCandidates(report, sourceStates);
+
+    if (orderedCandidates.length === 0) {
+      return {
+        ok: false,
+        error: {
+          code: "validation_failed",
+          message:
+            "No expired, future-dated, or expiring-soon current-state notes matched the requested refresh criteria."
+        }
+      };
+    }
+
+    const maxDrafts = request.maxDrafts ?? DEFAULT_BATCH_MAX_DRAFTS;
+    const selectedCandidates = orderedCandidates.slice(0, maxDrafts);
+    const deferredCandidates = orderedCandidates.slice(selectedCandidates.length);
+    const drafts: CreateRefreshDraftResponse[] = [];
+    const skipped = deferredCandidates.map((candidate) => ({
+      noteId: candidate.noteId,
+      sourceState: candidate.state,
+      reason: "Skipped because the batch reached its maxDrafts limit."
+    }));
+    const warningSet = new Set<string>();
+
+    for (const candidate of selectedCandidates) {
+      const result = await this.createRefreshDraft({
+        actor: request.actor,
+        noteId: candidate.noteId,
+        asOf: report.asOf,
+        expiringWithinDays: report.expiringWithinDays,
+        bodyHints: request.bodyHints
+      });
+
+      if (!result.ok) {
+        skipped.push({
+          noteId: candidate.noteId,
+          sourceState: candidate.state,
+          reason: result.error.message
+        });
+        continue;
+      }
+
+      drafts.push(result.data);
+      for (const warning of result.data.warnings) {
+        warningSet.add(warning);
+      }
+    }
+
+    if (deferredCandidates.length > 0) {
+      warningSet.add(
+        `${deferredCandidates.length} additional refresh candidate(s) were left pending because the batch maxDrafts limit was reached.`
+      );
+    }
+
+    return {
+      ok: true,
+      data: {
+        asOf: report.asOf,
+        expiringWithinDays: report.expiringWithinDays,
+        corpusId: request.corpusId,
+        limitPerCategory: report.limitPerCategory,
+        maxDrafts,
+        sourceStates,
+        candidatesConsidered: orderedCandidates.length,
+        candidatesRemaining: deferredCandidates.length,
+        createdCount: drafts.filter((draft) => !draft.reusedExistingDraft).length,
+        reusedCount: drafts.filter((draft) => draft.reusedExistingDraft).length,
+        drafts,
+        skipped,
+        warnings: [...warningSet]
+      }
+    };
+  }
+
   private async findExistingRefreshDraft(
     corpusId: NoteFrontmatter["corpusId"],
     sourceNoteId: NoteFrontmatter["noteId"]
@@ -202,6 +309,38 @@ export class TemporalRefreshService {
         return left.noteId.localeCompare(right.noteId);
       })[0];
   }
+}
+
+function flattenTemporalCandidates(
+  report: {
+    expiredCurrentState: Array<{
+      noteId: NoteFrontmatter["noteId"];
+      state: CreateRefreshDraftResponse["sourceState"];
+    }>;
+    futureDatedCurrentState: Array<{
+      noteId: NoteFrontmatter["noteId"];
+      state: CreateRefreshDraftResponse["sourceState"];
+    }>;
+    expiringSoonCurrentState: Array<{
+      noteId: NoteFrontmatter["noteId"];
+      state: CreateRefreshDraftResponse["sourceState"];
+    }>;
+  },
+  sourceStates: ReadonlyArray<CreateRefreshDraftResponse["sourceState"]>
+) {
+  const candidatesByState = {
+    expired: report.expiredCurrentState,
+    future_dated: report.futureDatedCurrentState,
+    expiring_soon: report.expiringSoonCurrentState
+  } satisfies Record<
+    CreateRefreshDraftResponse["sourceState"],
+    Array<{
+      noteId: NoteFrontmatter["noteId"];
+      state: CreateRefreshDraftResponse["sourceState"];
+    }>
+  >;
+
+  return sourceStates.flatMap((state) => candidatesByState[state]);
 }
 
 function buildRefreshTitle(title: string): string {

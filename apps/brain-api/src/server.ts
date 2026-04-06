@@ -4,6 +4,7 @@ import type {
   ActorContext,
   ActorRole,
   AssembleContextPacketRequest,
+  CreateRefreshDraftBatchRequest,
   CreateRefreshDraftRequest,
   DraftNoteRequest,
   ExecuteCodingTaskRequest,
@@ -36,6 +37,7 @@ type RouteName =
   | "fetch-decision-summary"
   | "draft-note"
   | "create-refresh-draft"
+  | "create-refresh-drafts"
   | "validate-note"
   | "promote-note"
   | "query-history";
@@ -49,6 +51,7 @@ const DEFAULT_ACTOR_ROLE: Record<RouteName, ActorRole> = {
   "fetch-decision-summary": "retrieval",
   "draft-note": "writer",
   "create-refresh-draft": "operator",
+  "create-refresh-drafts": "operator",
   "validate-note": "orchestrator",
   "promote-note": "orchestrator",
   "query-history": "operator"
@@ -69,6 +72,7 @@ const ROUTES: Record<string, { method: "GET" | "POST"; name?: RouteName; healthM
   "/v1/context/decision-summary": { method: "POST", name: "fetch-decision-summary" },
   "/v1/notes/drafts": { method: "POST", name: "draft-note" },
   "/v1/system/freshness/refresh-draft": { method: "POST", name: "create-refresh-draft" },
+  "/v1/system/freshness/refresh-drafts": { method: "POST", name: "create-refresh-drafts" },
   "/v1/notes/validate": { method: "POST", name: "validate-note" },
   "/v1/notes/promote": { method: "POST", name: "promote-note" },
   "/v1/history/query": { method: "POST", name: "query-history" }
@@ -368,6 +372,13 @@ async function handleRequest(
     case "create-refresh-draft": {
       const result = await container.orchestrator.createRefreshDraft(
         normalizedRequest as unknown as CreateRefreshDraftRequest
+      );
+      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
+      return;
+    }
+    case "create-refresh-drafts": {
+      const result = await container.orchestrator.createRefreshDraftBatch(
+        normalizedRequest as unknown as CreateRefreshDraftBatchRequest
       );
       sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
       return;

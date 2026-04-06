@@ -1,6 +1,7 @@
 import type {
   AssembleContextPacketRequest,
   AssembleContextPacketResponse,
+  CreateRefreshDraftBatchRequest,
   CreateRefreshDraftRequest,
   DraftNoteRequest,
   ExecuteCodingTaskRequest,
@@ -69,6 +70,14 @@ export class MultiAgentOrchestrator {
     return this.brainController.createRefreshDraft(request);
   }
 
+  async createRefreshDraftBatch(
+    request: CreateRefreshDraftBatchRequest
+  ) {
+    this.assertAuthorized("create_refresh_drafts", request.actor);
+    this.assertBrainRoute("create_refresh_drafts");
+    return this.brainController.createRefreshDraftBatch(request);
+  }
+
   validateNote(request: ValidateNoteRequest): ValidateNoteResponse {
     this.assertAuthorized("validate_note", request.actor);
     this.assertBrainRoute("validate_note");
@@ -110,6 +119,7 @@ export class MultiAgentOrchestrator {
       | "fetch_decision_summary"
       | "draft_note"
       | "create_refresh_draft"
+      | "create_refresh_drafts"
       | "validate_note"
       | "promote_note"
       | "query_history"
