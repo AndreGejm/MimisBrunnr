@@ -93,6 +93,14 @@ test("brain-mcp serves initialize, tools/list, list_context_tree, read_context_n
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "execute_coding_task"));
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "list_context_tree"));
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "read_context_node"));
+  const listContextTreeTool = listResponse.result.tools.find(
+    (tool) => tool.name === "list_context_tree"
+  );
+  assert.ok(listContextTreeTool);
+  assert.deepEqual(
+    Object.keys(listContextTreeTool.inputSchema.properties).sort(),
+    ["authorityStates", "ownerScope"]
+  );
 
   writeMcpMessage(child.stdin, {
     jsonrpc: "2.0",

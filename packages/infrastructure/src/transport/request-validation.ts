@@ -132,8 +132,7 @@ export function validateTransportRequest(
           payload.authorityStates,
           "authorityStates",
           CONTEXT_AUTHORITY_STATES
-        ),
-        parentUri: optionalString(payload.parentUri, "parentUri")
+        )
       };
     case "read-context-node":
       return {

@@ -83,8 +83,7 @@ export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
         authorityStates: {
           type: "array",
           items: { type: "string" }
-        },
-        parentUri: { type: "string" }
+        }
       }
     }
   },

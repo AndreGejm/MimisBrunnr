@@ -9,7 +9,6 @@ export interface ListContextTreeRequest {
   actor: ActorContext;
   ownerScope?: ContextOwnerScope;
   authorityStates?: ContextAuthorityState[];
-  parentUri?: string;
 }
 
 export interface ListContextTreeResponse {
