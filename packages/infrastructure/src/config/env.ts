@@ -59,6 +59,8 @@ export interface AppEnvironment {
     actorRegistry: ActorRegistryEntry[];
     issuerSecret?: string;
     issuedTokenRequireRegistryMatch: boolean;
+    issuedTokenRevocationPath?: string;
+    revokedIssuedTokenIds: string[];
   };
 }
 
@@ -99,6 +101,8 @@ function coalesceString(...values: Array<string | undefined>): string | undefine
 
 export function loadEnvironment(env: NodeJS.ProcessEnv = process.env): AppEnvironment {
   const actorRegistryPath = env.MAB_AUTH_ACTOR_REGISTRY_PATH?.trim() || undefined;
+  const issuedTokenRevocationPath =
+    env.MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_PATH?.trim() || undefined;
   return normalizeEnvironment({
     nodeEnv: (env.MAB_NODE_ENV as AppEnvironment["nodeEnv"]) ?? "development",
     release: loadReleaseMetadata(env),
@@ -153,6 +157,11 @@ export function loadEnvironment(env: NodeJS.ProcessEnv = process.env): AppEnviro
       issuedTokenRequireRegistryMatch: parseBoolean(
         env.MAB_AUTH_ISSUED_TOKEN_REQUIRE_REGISTRY_MATCH,
         true
+      ),
+      issuedTokenRevocationPath,
+      revokedIssuedTokenIds: mergeRevokedIssuedTokenIds(
+        loadRevokedIssuedTokenIdsFromPath(issuedTokenRevocationPath),
+        parseRevokedIssuedTokenIds(env.MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_JSON)
       )
     }
   });
@@ -211,7 +220,10 @@ export function normalizeEnvironment(input: Partial<AppEnvironment>): AppEnviron
       actorRegistry: input.auth?.actorRegistry ?? [],
       issuerSecret: input.auth?.issuerSecret?.trim() || undefined,
       issuedTokenRequireRegistryMatch:
-        input.auth?.issuedTokenRequireRegistryMatch ?? true
+        input.auth?.issuedTokenRequireRegistryMatch ?? true,
+      issuedTokenRevocationPath:
+        input.auth?.issuedTokenRevocationPath?.trim() || undefined,
+      revokedIssuedTokenIds: input.auth?.revokedIssuedTokenIds ?? []
     }
   };
 
@@ -239,6 +251,18 @@ function parseActorRegistry(value: string | undefined): ActorRegistryEntry[] {
 
   const parsed = JSON.parse(value) as unknown;
   return parseActorRegistryValue(parsed, "MAB_AUTH_ACTOR_REGISTRY_JSON");
+}
+
+function parseRevokedIssuedTokenIds(value: string | undefined): string[] {
+  if (!value?.trim()) {
+    return [];
+  }
+
+  const parsed = JSON.parse(value) as unknown;
+  return parseRevokedIssuedTokenIdValue(
+    parsed,
+    "MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_JSON"
+  );
 }
 
 function buildRoleBindingsFromProcessEnvironment(
@@ -440,6 +464,27 @@ function loadActorRegistryFromPath(filePath: string | undefined): ActorRegistryE
   );
 }
 
+function loadRevokedIssuedTokenIdsFromPath(filePath: string | undefined): string[] {
+  if (!filePath) {
+    return [];
+  }
+
+  try {
+    const raw = readFileSync(filePath, "utf8");
+    const parsed = JSON.parse(raw) as unknown;
+    return parseRevokedIssuedTokenIdValue(
+      parsed,
+      `MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_PATH (${filePath})`
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
 function parseActorRegistryValue(
   parsed: unknown,
   sourceLabel: string
@@ -463,6 +508,37 @@ function parseActorRegistryValue(
   return entries.map((entry, index) => normalizeActorRegistryEntry(entry, index));
 }
 
+function parseRevokedIssuedTokenIdValue(
+  parsed: unknown,
+  sourceLabel: string
+): string[] {
+  const tokenIds = Array.isArray(parsed)
+    ? parsed
+    : parsed &&
+        typeof parsed === "object" &&
+        !Array.isArray(parsed) &&
+        "tokenIds" in parsed &&
+        Array.isArray((parsed as { tokenIds?: unknown }).tokenIds)
+      ? ((parsed as { tokenIds: unknown[] }).tokenIds)
+      : undefined;
+
+  if (!tokenIds) {
+    throw new Error(
+      `${sourceLabel} must be either a JSON array or an object with a 'tokenIds' array.`
+    );
+  }
+
+  return tokenIds.map((tokenId, index) => {
+    if (typeof tokenId !== "string" || tokenId.trim() === "") {
+      throw new Error(
+        `${sourceLabel} tokenIds[${index}] must be a non-empty string.`
+      );
+    }
+
+    return tokenId.trim();
+  });
+}
+
 function mergeActorRegistryEntries(
   baseEntries: ReadonlyArray<ActorRegistryEntry>,
   overrideEntries: ReadonlyArray<ActorRegistryEntry>
@@ -478,6 +554,13 @@ function mergeActorRegistryEntries(
   }
 
   return [...merged.values()];
+}
+
+function mergeRevokedIssuedTokenIds(
+  baseTokenIds: ReadonlyArray<string>,
+  overrideTokenIds: ReadonlyArray<string>
+): string[] {
+  return [...new Set([...baseTokenIds, ...overrideTokenIds])];
 }
 
 function normalizeActorTokenCredentials(

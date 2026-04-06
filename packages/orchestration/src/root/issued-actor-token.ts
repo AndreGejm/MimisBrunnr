@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { ActorRole, TransportKind } from "@multi-agent-brain/contracts";
 import type { OrchestratorCommand } from "../routing/task-family-router.js";
 import type { AdministrativeAction } from "./administrative-action.js";
@@ -6,12 +6,14 @@ import type { AdministrativeAction } from "./administrative-action.js";
 const TOKEN_PREFIX = "mab1";
 
 export interface IssuedActorTokenClaims {
+  tokenId?: string;
   actorId: string;
   actorRole: ActorRole;
   source?: string;
   allowedTransports?: TransportKind[];
   allowedCommands?: OrchestratorCommand[];
   allowedAdminActions?: AdministrativeAction[];
+  allowedCorpora?: string[];
   validFrom?: string;
   validUntil?: string;
   issuedAt: string;
@@ -21,7 +23,10 @@ export function issueActorAccessToken(
   claims: IssuedActorTokenClaims,
   issuerSecret: string
 ): string {
-  const normalizedClaims = normalizeClaims(claims);
+  const normalizedClaims = normalizeClaims({
+    ...claims,
+    tokenId: claims.tokenId?.trim() || randomUUID()
+  });
   const payload = Buffer.from(JSON.stringify(normalizedClaims), "utf8").toString(
     "base64url"
   );
@@ -63,6 +68,7 @@ export function verifyActorAccessToken(
 
 function normalizeClaims(claims: IssuedActorTokenClaims): IssuedActorTokenClaims {
   return {
+    tokenId: claims.tokenId?.trim() || undefined,
     actorId: claims.actorId.trim(),
     actorRole: claims.actorRole,
     source: claims.source?.trim() || undefined,
@@ -74,6 +80,9 @@ function normalizeClaims(claims: IssuedActorTokenClaims): IssuedActorTokenClaims
       : undefined,
     allowedAdminActions: claims.allowedAdminActions?.length
       ? [...claims.allowedAdminActions]
+      : undefined,
+    allowedCorpora: claims.allowedCorpora?.length
+      ? [...claims.allowedCorpora]
       : undefined,
     validFrom: claims.validFrom?.trim() || undefined,
     validUntil: claims.validUntil?.trim() || undefined,

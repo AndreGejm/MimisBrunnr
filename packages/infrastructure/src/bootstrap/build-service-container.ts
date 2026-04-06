@@ -55,6 +55,7 @@ import { OllamaLocalReasoningProvider } from "../providers/ollama-local-reasonin
 import { OllamaRerankerProvider } from "../providers/ollama-reranker-provider.js";
 import { SqliteAuditLog } from "../sqlite/sqlite-audit-log.js";
 import { SqliteMetadataControlStore } from "../sqlite/sqlite-metadata-control-store.js";
+import { SqliteRevocationStore } from "../sqlite/sqlite-revocation-store.js";
 import { QdrantVectorIndex } from "../vector/qdrant-vector-index.js";
 import { FileSystemCanonicalNoteRepository } from "../vault/file-system-canonical-note-repository.js";
 import { FileSystemStagingNoteRepository } from "../vault/file-system-staging-note-repository.js";
@@ -63,6 +64,7 @@ export interface ServicePortRegistry {
   canonicalNoteRepository: CanonicalNoteRepository;
   stagingNoteRepository: StagingNoteRepository;
   metadataControlStore: MetadataControlStore;
+  revocationStore: SqliteRevocationStore;
   auditLog: AuditLog;
   lexicalIndex?: LexicalIndex;
   vectorIndex?: VectorIndex;
@@ -103,6 +105,7 @@ export function buildServiceContainer(
   const canonicalNoteRepository = new FileSystemCanonicalNoteRepository(env.vaultRoot);
   const stagingNoteRepository = new FileSystemStagingNoteRepository(env.stagingRoot);
   const metadataControlStore = new SqliteMetadataControlStore(env.sqlitePath);
+  const revocationStore = new SqliteRevocationStore(env.sqlitePath);
   const auditLog = new SqliteAuditLog(env.sqlitePath);
   const lexicalIndex = new SqliteFtsIndex(env.sqlitePath);
   const vectorIndex = new QdrantVectorIndex({
@@ -204,7 +207,9 @@ export function buildServiceContainer(
     allowAnonymousInternal: env.auth.allowAnonymousInternal,
     registry: env.auth.actorRegistry,
     issuerSecret: env.auth.issuerSecret,
-    issuedTokenRequireRegistryMatch: env.auth.issuedTokenRequireRegistryMatch
+    issuedTokenRequireRegistryMatch: env.auth.issuedTokenRequireRegistryMatch,
+    revokedIssuedTokenIds: env.auth.revokedIssuedTokenIds,
+    isTokenRevoked: (tokenId) => revocationStore.isTokenRevoked(tokenId)
   });
 
   const brainDomainController = new BrainDomainController(
@@ -248,6 +253,7 @@ export function buildServiceContainer(
       canonicalNoteRepository,
       stagingNoteRepository,
       metadataControlStore,
+      revocationStore,
       auditLog,
       lexicalIndex,
       vectorIndex,
@@ -275,6 +281,7 @@ export function buildServiceContainer(
       closeIfSupported(lexicalIndex);
       closeIfSupported(auditLog);
       closeIfSupported(metadataControlStore);
+      closeIfSupported(revocationStore);
     }
   };
 }

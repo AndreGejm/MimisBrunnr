@@ -21,10 +21,12 @@ import {
   ActorAuthorizationError,
   ActorAuthorizationPolicy,
   buildServiceContainer,
+  FileIssuedTokenRevocationStore,
   issueActorAccessToken,
   loadEnvironment,
   validateInspectActorTokenControlRequest,
   validateIssueActorTokenControlRequest,
+  validateRevokeActorTokenControlRequest,
   TransportValidationError,
   validateTransportRequest
 } from "@multi-agent-brain/infrastructure";
@@ -35,6 +37,7 @@ type CommandName =
   | "auth-introspect-token"
   | "freshness-status"
   | "issue-auth-token"
+  | "revoke-auth-token"
   | "execute-coding-task"
   | "search-context"
   | "get-context-packet"
@@ -47,6 +50,7 @@ type CommandName =
 type RoutedCommandName = Exclude<
   CommandName,
   "version" | "auth-status" | "auth-introspect-token" | "freshness-status" | "issue-auth-token"
+  | "revoke-auth-token"
 >;
 
 type JsonRecord = Record<string, unknown>;
@@ -69,6 +73,7 @@ const COMMANDS: ReadonlyArray<CommandName> = [
   "auth-introspect-token",
   "freshness-status",
   "issue-auth-token",
+  "revoke-auth-token",
   "execute-coding-task",
   "search-context",
   "get-context-packet",
@@ -150,7 +155,8 @@ async function main(): Promise<void> {
       allowAnonymousInternal: env.auth.allowAnonymousInternal,
       registry: env.auth.actorRegistry,
       issuerSecret: env.auth.issuerSecret,
-      issuedTokenRequireRegistryMatch: env.auth.issuedTokenRequireRegistryMatch
+      issuedTokenRequireRegistryMatch: env.auth.issuedTokenRequireRegistryMatch,
+      revokedIssuedTokenIds: env.auth.revokedIssuedTokenIds
     });
     writeJson(
       {
@@ -170,7 +176,8 @@ async function main(): Promise<void> {
       allowAnonymousInternal: env.auth.allowAnonymousInternal,
       registry: env.auth.actorRegistry,
       issuerSecret: env.auth.issuerSecret,
-      issuedTokenRequireRegistryMatch: env.auth.issuedTokenRequireRegistryMatch
+      issuedTokenRequireRegistryMatch: env.auth.issuedTokenRequireRegistryMatch,
+      revokedIssuedTokenIds: env.auth.revokedIssuedTokenIds
     });
     const request = validateInspectActorTokenControlRequest(
       await loadCommandPayload(parsed.options)
@@ -242,6 +249,47 @@ async function main(): Promise<void> {
           env.auth.issuerSecret
         ),
         claims: request
+      },
+      parsed.options.pretty
+    );
+    process.exitCode = 0;
+    return;
+  }
+
+  if (parsed.command === "revoke-auth-token") {
+    const env = loadEnvironment();
+    if (!env.auth.issuedTokenRevocationPath) {
+      throw new Error(
+        "MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_PATH must be configured to revoke actor access tokens."
+      );
+    }
+
+    const policy = new ActorAuthorizationPolicy({
+      mode: env.auth.mode,
+      allowAnonymousInternal: env.auth.allowAnonymousInternal,
+      registry: env.auth.actorRegistry,
+      issuerSecret: env.auth.issuerSecret,
+      issuedTokenRequireRegistryMatch: env.auth.issuedTokenRequireRegistryMatch,
+      revokedIssuedTokenIds: env.auth.revokedIssuedTokenIds
+    });
+    const request = validateRevokeActorTokenControlRequest(
+      await loadCommandPayload(parsed.options)
+    );
+    const revocationStore = await FileIssuedTokenRevocationStore.create(
+      env.auth.issuedTokenRevocationPath,
+      policy.getRevokedIssuedTokenIds()
+    );
+    const tokenId = resolveIssuedTokenIdForRevocation(request, policy);
+    const revocation = await revocationStore.revokeTokenId(tokenId);
+    policy.revokeIssuedTokenId(tokenId);
+
+    writeJson(
+      {
+        ok: true,
+        revokedTokenId: tokenId,
+        alreadyRevoked: revocation.alreadyRevoked,
+        persisted: revocation.persisted,
+        reason: request.reason
       },
       parsed.options.pretty
     );
@@ -548,6 +596,7 @@ Commands:
   auth-introspect-token  Inspect a static or issued actor token against the current auth policy
   freshness-status     Print temporal-validity summary data and refresh candidates
   issue-auth-token     Mint a short-lived issued actor token from JSON input
+  revoke-auth-token    Revoke a previously issued actor token through the local revocation store
   execute-coding-task  Run a coding-domain task through the vendored safety-gated runtime
   search-context   Run bounded retrieval through retrieveContextService
   get-context-packet  Assemble a bounded packet directly from ranked candidates
@@ -564,6 +613,7 @@ Notes:
   - freshness-status accepts optional JSON input with asOf, expiringWithinDays, corpusId, and limitPerCategory.
   - create-refresh-draft expects JSON input with noteId and optional asOf, expiringWithinDays, or bodyHints.
   - issue-auth-token expects JSON input with actorId, actorRole, and optional source, allowedTransports, allowedCommands, allowedAdminActions, validFrom, validUntil, or ttlMinutes.
+  - revoke-auth-token expects JSON input with tokenId or a valid issued token, and optional reason.
   - Input payloads are JSON objects shaped like the existing service contracts.
   - Actor context is optional in the payload; the CLI injects command-safe defaults.
   - execute-coding-task defaults repoRoot to the current working directory when omitted.
@@ -684,4 +734,20 @@ function requireCliCorpus(
   }
 
   return normalized as "context_brain" | "general_notes";
+}
+
+function resolveIssuedTokenIdForRevocation(
+  request: ReturnType<typeof validateRevokeActorTokenControlRequest>,
+  authPolicy: ActorAuthorizationPolicy
+): string {
+  if (request.tokenId) {
+    return request.tokenId;
+  }
+
+  const inspection = authPolicy.inspectToken(request.token ?? "");
+  if (inspection.tokenKind !== "issued" || !inspection.claims?.tokenId) {
+    throw new Error("revoke-auth-token requires a valid issued actor token or tokenId.");
+  }
+
+  return inspection.claims.tokenId;
 }

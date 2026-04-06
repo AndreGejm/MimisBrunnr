@@ -1,4 +1,5 @@
 export * from "./bootstrap/build-service-container.js";
+export * from "./auth/file-issued-token-revocation-store.js";
 export * from "./coding/python-coding-controller-bridge.js";
 export * from "./config/env.js";
 export * from "./config/release-metadata.js";

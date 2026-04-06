@@ -16,4 +16,5 @@ export interface ActorContext {
   initiatedAt: string;
   toolName?: string;
   authToken?: string;
+  allowedCorpora?: string[];
 }

@@ -210,6 +210,81 @@ test("brain-cli can mint issued actor access tokens when the issuer secret is co
   assert.equal(payload.claims.actorId, "validate-note-http");
 });
 
+test("brain-cli can revoke issued actor tokens through the file-backed revocation store", async (t) => {
+  const { issueActorAccessToken } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "packages", "infrastructure", "dist", "index.js")
+    ).href
+  );
+
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-revoke-token-"));
+  const revocationPath = path.join(root, "config", "revoked-issued-token-ids.json");
+  const issuedToken = issueActorAccessToken(
+    {
+      actorId: "validate-note-http",
+      actorRole: "orchestrator",
+      source: "brain-api",
+      allowedTransports: ["http"],
+      allowedCommands: ["validate_note"],
+      validUntil: new Date(Date.now() + 3_600_000).toISOString(),
+      issuedAt: new Date().toISOString()
+    },
+    "cli-issuer-secret"
+  );
+
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const revokeResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    [
+      "revoke-auth-token",
+      "--json",
+      JSON.stringify({
+        token: issuedToken,
+        reason: "test revocation"
+      })
+    ],
+    {
+      ...process.env,
+      MAB_AUTH_ISSUER_SECRET: "cli-issuer-secret",
+      MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_PATH: revocationPath
+    }
+  );
+
+  assert.equal(revokeResult.exitCode, 0, revokeResult.stderr);
+  const revokePayload = JSON.parse(revokeResult.stdout);
+  assert.equal(revokePayload.ok, true);
+  assert.equal(typeof revokePayload.revokedTokenId, "string");
+  assert.equal(revokePayload.persisted, true);
+
+  const introspectResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    [
+      "auth-introspect-token",
+      "--json",
+      JSON.stringify({
+        token: issuedToken,
+        expectedTransport: "http",
+        expectedCommand: "validate_note"
+      })
+    ],
+    {
+      ...process.env,
+      MAB_AUTH_ISSUER_SECRET: "cli-issuer-secret",
+      MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_PATH: revocationPath
+    }
+  );
+
+  assert.equal(introspectResult.exitCode, 0, introspectResult.stderr);
+  const introspectPayload = JSON.parse(introspectResult.stdout);
+  assert.equal(introspectPayload.ok, true);
+  assert.equal(introspectPayload.inspection.tokenKind, "issued");
+  assert.equal(introspectPayload.inspection.valid, false);
+  assert.equal(introspectPayload.inspection.reason, "revoked_issued_token");
+});
+
 test("brain-cli drafts notes through the staging service with JSON input", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-"));
   t.after(async () => {
@@ -748,6 +823,157 @@ test("brain-api can introspect actor tokens through the protected auth route", a
   assert.equal(payload.inspection.authorization.transportAllowed, true);
   assert.equal(payload.inspection.authorization.commandAllowed, true);
   assert.equal(payload.inspection.matchedActor.actorId, "validate-note-http");
+});
+
+test("brain-api revokes issued actor tokens and rejects them immediately afterward", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-revoke-token-"));
+  const revocationPath = path.join(root, "config", "revoked-issued-token-ids.json");
+  const { createBrainApiServer } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+    ).href
+  );
+  const { issueActorAccessToken } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "packages", "infrastructure", "dist", "index.js")
+    ).href
+  );
+
+  const issuerSecret = "api-revoke-secret";
+  const api = createBrainApiServer({
+    nodeEnv: "test",
+    vaultRoot: path.join(root, "vault", "canonical"),
+    stagingRoot: path.join(root, "vault", "staging"),
+    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    qdrantUrl: "http://127.0.0.1:6333",
+    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    embeddingProvider: "hash",
+    reasoningProvider: "heuristic",
+    draftingProvider: "disabled",
+    rerankerProvider: "local",
+    apiHost: "127.0.0.1",
+    apiPort: 18194,
+    logLevel: "error",
+    auth: {
+      mode: "enforced",
+      allowAnonymousInternal: true,
+      actorRegistry: [
+        {
+          actorId: "operator-http",
+          actorRole: "operator",
+          authToken: "operator-http-secret",
+          source: "brain-api-admin",
+          allowedTransports: ["http"],
+          allowedAdminActions: ["revoke_auth_token"]
+        },
+        {
+          actorId: "validate-note-http",
+          actorRole: "orchestrator",
+          source: "brain-api",
+          allowedTransports: ["http"],
+          allowedCommands: ["validate_note"]
+        }
+      ],
+      issuerSecret,
+      issuedTokenRequireRegistryMatch: true,
+      issuedTokenRevocationPath: revocationPath,
+      revokedIssuedTokenIds: []
+    }
+  });
+
+  t.after(async () => {
+    await api.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await api.listen();
+
+  const issuedToken = issueActorAccessToken(
+    {
+      actorId: "validate-note-http",
+      actorRole: "orchestrator",
+      source: "brain-api",
+      allowedTransports: ["http"],
+      allowedCommands: ["validate_note"],
+      validUntil: new Date(Date.now() + 3_600_000).toISOString(),
+      issuedAt: new Date().toISOString()
+    },
+    issuerSecret
+  );
+
+  const revokeResponse = await fetch("http://127.0.0.1:18194/v1/system/auth/revoke-token", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-brain-actor-id": "operator-http",
+      "x-brain-actor-role": "operator",
+      "x-brain-source": "brain-api-admin",
+      "x-brain-actor-token": "operator-http-secret"
+    },
+    body: JSON.stringify({
+      token: issuedToken,
+      reason: "compromised"
+    })
+  });
+
+  assert.equal(revokeResponse.status, 200);
+  const revokePayload = await revokeResponse.json();
+  assert.equal(revokePayload.ok, true);
+  assert.equal(typeof revokePayload.revokedTokenId, "string");
+  assert.equal(revokePayload.persisted, true);
+
+  const validateResponse = await fetch("http://127.0.0.1:18194/v1/notes/validate", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-brain-actor-token": issuedToken
+    },
+    body: JSON.stringify({
+      actor: {
+        actorId: "validate-note-http",
+        actorRole: "orchestrator",
+        source: "brain-api",
+        authToken: issuedToken
+      },
+      targetCorpus: "context_brain",
+      notePath: "context_brain/decision/revoked-token-note.md",
+      validationMode: "promotion",
+      frontmatter: {
+        noteId: randomUUID(),
+        title: "Revoked Token Note",
+        project: "multi-agent-brain",
+        type: "decision",
+        status: "promoted",
+        updated: currentDateIso(),
+        summary: "Revoked issued tokens should fail immediately.",
+        tags: ["project/multi-agent-brain", "domain/orchestration", "status/promoted"],
+        scope: "auth",
+        corpusId: "context_brain",
+        currentState: false
+      },
+      body: [
+        "## Context",
+        "",
+        "Revoked auth context.",
+        "",
+        "## Decision",
+        "",
+        "Revoked auth decision.",
+        "",
+        "## Rationale",
+        "",
+        "Revoked auth rationale.",
+        "",
+        "## Consequences",
+        "",
+        "Revoked auth consequences."
+      ].join("\n")
+    })
+  });
+
+  assert.equal(validateResponse.status, 401);
+  const validatePayload = await validateResponse.json();
+  assert.equal(validatePayload.error.code, "unauthorized");
 });
 
 test("brain-api exposes temporal freshness reports through the system freshness route", async (t) => {

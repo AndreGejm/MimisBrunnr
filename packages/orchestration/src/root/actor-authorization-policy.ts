@@ -40,6 +40,8 @@ export interface ActorAuthorizationOptions {
   registry?: ReadonlyArray<ActorRegistryEntry>;
   issuerSecret?: string;
   issuedTokenRequireRegistryMatch?: boolean;
+  revokedIssuedTokenIds?: ReadonlyArray<string>;
+  isTokenRevoked?: (tokenId: string) => boolean;
 }
 
 export interface ActorRegistryEntryStatus {
@@ -86,6 +88,7 @@ export interface ActorRegistrySummary {
   issuedTokenSupport: {
     enabled: boolean;
     requireRegistryMatch: boolean;
+    revokedTokenCount: number;
   };
   actorCounts: {
     total: number;
@@ -142,6 +145,7 @@ const ADMIN_ACTION_ROLE_POLICY: Record<AdministrativeAction, ReadonlySet<ActorRo
   view_auth_status: new Set(["operator", "system"]),
   issue_auth_token: new Set(["operator", "system"]),
   inspect_auth_token: new Set(["operator", "system"]),
+  revoke_auth_token: new Set(["operator", "system"]),
   view_freshness_status: new Set(["operator", "orchestrator", "system"])
 };
 
@@ -170,6 +174,8 @@ export class ActorAuthorizationPolicy {
   private readonly registry: ReadonlyMap<string, NormalizedActorRegistryEntry>;
   private readonly issuerSecret?: string;
   private readonly issuedTokenRequireRegistryMatch: boolean;
+  private readonly revokedIssuedTokenIds: Set<string>;
+  private readonly isTokenRevokedCallback?: (tokenId: string) => boolean;
 
   constructor(options: ActorAuthorizationOptions = {}) {
     this.mode = options.mode ?? "permissive";
@@ -177,9 +183,37 @@ export class ActorAuthorizationPolicy {
     this.issuerSecret = options.issuerSecret?.trim() || undefined;
     this.issuedTokenRequireRegistryMatch =
       options.issuedTokenRequireRegistryMatch ?? true;
+    this.revokedIssuedTokenIds = new Set(
+      (options.revokedIssuedTokenIds ?? [])
+        .map((tokenId) => tokenId.trim())
+        .filter(Boolean)
+    );
+    this.isTokenRevokedCallback = options.isTokenRevoked;
     this.registry = new Map(
       (options.registry ?? []).map((entry) => [entry.actorId, normalizeEntry(entry)])
     );
+  }
+
+  revokeIssuedTokenId(tokenId: string): boolean {
+    const normalized = tokenId.trim();
+    if (!normalized) {
+      throw new Error("Issued token ID is required.");
+    }
+
+    const alreadyRevoked = this.revokedIssuedTokenIds.has(normalized);
+    this.revokedIssuedTokenIds.add(normalized);
+    return !alreadyRevoked;
+  }
+
+  isTokenRevoked(tokenId: string): boolean {
+    const normalized = tokenId.trim();
+    if (this.revokedIssuedTokenIds.has(normalized)) return true;
+    if (this.isTokenRevokedCallback && this.isTokenRevokedCallback(normalized)) return true;
+    return false;
+  }
+
+  getRevokedIssuedTokenIds(): string[] {
+    return [...this.revokedIssuedTokenIds].sort();
   }
 
   authorize(command: OrchestratorCommand, actor: ActorContext): void {
@@ -258,7 +292,8 @@ export class ActorAuthorizationPolicy {
       allowAnonymousInternal: this.allowAnonymousInternal,
       issuedTokenSupport: {
         enabled: Boolean(this.issuerSecret),
-        requireRegistryMatch: this.issuedTokenRequireRegistryMatch
+        requireRegistryMatch: this.issuedTokenRequireRegistryMatch,
+        revokedTokenCount: this.revokedIssuedTokenIds.size
       },
       actorCounts: {
         total: actors.length,
@@ -382,6 +417,8 @@ export class ActorAuthorizationPolicy {
           (registryEntry !== undefined &&
             registryEntry.actorRole === claims.actorRole &&
             (!claims.source || !registryEntry.source || registryEntry.source === claims.source));
+        const revoked =
+          Boolean(claims.tokenId) && this.isTokenRevoked(claims.tokenId as string);
         const transportAllowed =
           options.expectedTransport === undefined ||
           !claims.allowedTransports?.length ||
@@ -400,6 +437,7 @@ export class ActorAuthorizationPolicy {
           tokenKind: "issued",
           valid:
             validWindow &&
+            !revoked &&
             registryMatch &&
             transportAllowed &&
             commandAllowed &&
@@ -408,6 +446,8 @@ export class ActorAuthorizationPolicy {
               (registryEntry.enabled && lifecycleStatus === "active")),
           reason: !validWindow
             ? "inactive_issued_token"
+            : revoked
+              ? "revoked_issued_token"
             : !registryMatch
               ? "registry_mismatch"
               : !transportAllowed
@@ -481,6 +521,9 @@ export class ActorAuthorizationPolicy {
           parseValidityInstant(claims.validUntil, "issued token validUntil")
         )
       ) {
+        return false;
+      }
+      if (claims.tokenId && this.isTokenRevoked(claims.tokenId)) {
         return false;
       }
     } catch {

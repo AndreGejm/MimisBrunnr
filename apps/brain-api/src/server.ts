@@ -17,9 +17,11 @@ import type {
 import {
   ActorAuthorizationError,
   buildServiceContainer,
+  FileIssuedTokenRevocationStore,
   issueActorAccessToken,
   loadEnvironment,
   runRuntimeHealthChecks,
+  validateRevokeActorTokenControlRequest,
   TransportValidationError,
   validateInspectActorTokenControlRequest,
   validateIssueActorTokenControlRequest,
@@ -58,6 +60,7 @@ const ROUTES: Record<string, { method: "GET" | "POST"; name?: RouteName; healthM
   "/v1/system/auth": { method: "GET" },
   "/v1/system/auth/issue-token": { method: "POST" },
   "/v1/system/auth/introspect-token": { method: "POST" },
+  "/v1/system/auth/revoke-token": { method: "POST" },
   "/v1/system/freshness": { method: "GET" },
   "/v1/system/version": { method: "GET" },
   "/v1/coding/execute": { method: "POST", name: "execute-coding-task" },
@@ -256,6 +259,46 @@ async function handleRequest(
     return;
   }
 
+  if (url.pathname === "/v1/system/auth/revoke-token") {
+    container.authPolicy.authorizeAdministrativeAction(
+      "revoke_auth_token",
+      buildAdministrativeActorContext("revoke_auth_token", request.headers)
+    );
+    if (!container.env.auth.issuedTokenRevocationPath) {
+      sendJson(response, 422, {
+        ok: false,
+        error: {
+          code: "validation_failed",
+          message:
+            "MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_PATH must be configured to revoke actor access tokens."
+        }
+      });
+      return;
+    }
+
+    const body = await readJsonBody(request);
+    const validated = validateRevokeActorTokenControlRequest(body);
+    const revocationStore = await FileIssuedTokenRevocationStore.create(
+      container.env.auth.issuedTokenRevocationPath,
+      container.authPolicy.getRevokedIssuedTokenIds()
+    );
+    const tokenId = resolveIssuedTokenIdForRevocation(
+      validated,
+      container.authPolicy
+    );
+    const revocation = await revocationStore.revokeTokenId(tokenId);
+    container.authPolicy.revokeIssuedTokenId(tokenId);
+
+    sendJson(response, 200, {
+      ok: true,
+      revokedTokenId: tokenId,
+      alreadyRevoked: revocation.alreadyRevoked,
+      persisted: revocation.persisted,
+      reason: validated.reason
+    });
+    return;
+  }
+
   if (url.pathname === "/v1/system/freshness") {
     container.authPolicy.authorizeAdministrativeAction(
       "view_freshness_status",
@@ -404,6 +447,7 @@ function buildAdministrativeActorContext(
     | "view_auth_status"
     | "issue_auth_token"
     | "inspect_auth_token"
+    | "revoke_auth_token"
     | "view_freshness_status",
   headers: IncomingMessage["headers"]
 ): ActorContext {
@@ -467,6 +511,28 @@ function parseFreshnessQuery(searchParams: URLSearchParams): {
     limitPerCategory,
     corpusId: corpusId ?? undefined
   };
+}
+
+function resolveIssuedTokenIdForRevocation(
+  request: ReturnType<typeof validateRevokeActorTokenControlRequest>,
+  authPolicy: ReturnType<typeof buildServiceContainer>["authPolicy"]
+): string {
+  if (request.tokenId) {
+    return request.tokenId;
+  }
+
+  const inspection = authPolicy.inspectToken(request.token ?? "");
+  if (inspection.tokenKind !== "issued" || !inspection.claims?.tokenId) {
+    throw new TransportValidationError(
+      "Invalid auth control field 'token': must be a valid issued actor token.",
+      {
+        field: "token",
+        problem: "must be a valid issued actor token"
+      }
+    );
+  }
+
+  return inspection.claims.tokenId;
 }
 
 function parseOptionalPositiveIntegerQuery(

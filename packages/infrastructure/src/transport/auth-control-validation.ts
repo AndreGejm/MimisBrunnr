@@ -39,6 +39,7 @@ const ADMIN_ACTION_NAMES = new Set<AdministrativeAction>([
   "view_auth_status",
   "issue_auth_token",
   "inspect_auth_token",
+  "revoke_auth_token",
   "view_freshness_status"
 ]);
 
@@ -49,6 +50,7 @@ export interface IssueActorTokenControlRequest {
   allowedTransports?: TransportKind[];
   allowedCommands?: OrchestratorCommand[];
   allowedAdminActions?: AdministrativeAction[];
+  allowedCorpora?: string[];
   validFrom?: string;
   validUntil?: string;
   ttlMinutes?: number;
@@ -60,6 +62,12 @@ export interface InspectActorTokenControlRequest {
   expectedTransport?: TransportKind;
   expectedCommand?: OrchestratorCommand;
   expectedAdministrativeAction?: AdministrativeAction;
+}
+
+export interface RevokeActorTokenControlRequest {
+  token?: string;
+  tokenId?: string;
+  reason?: string;
 }
 
 export function validateIssueActorTokenControlRequest(
@@ -84,6 +92,7 @@ export function validateIssueActorTokenControlRequest(
       "allowedAdminActions",
       ADMIN_ACTION_NAMES
     ),
+    allowedCorpora: optionalStringArray(payload.allowedCorpora, "allowedCorpora"),
     validFrom: optionalString(payload.validFrom, "validFrom"),
     validUntil: optionalString(payload.validUntil, "validUntil"),
     ttlMinutes: optionalInteger(payload.ttlMinutes, "ttlMinutes", 1)
@@ -114,6 +123,22 @@ export function validateInspectActorTokenControlRequest(
   };
 }
 
+export function validateRevokeActorTokenControlRequest(
+  payload: JsonRecord
+): RevokeActorTokenControlRequest {
+  const token = optionalString(payload.token, "token");
+  const tokenId = optionalString(payload.tokenId, "tokenId");
+  if (!token && !tokenId) {
+    throw validationError("token", "token or tokenId must be supplied");
+  }
+
+  return {
+    token,
+    tokenId,
+    reason: optionalString(payload.reason, "reason")
+  };
+}
+
 function requireString(value: unknown, field: string): string {
   if (typeof value !== "string" || value.trim() === "") {
     throw validationError(field, "must be a non-empty string");
@@ -128,6 +153,21 @@ function optionalString(value: unknown, field: string): string | undefined {
   }
 
   return requireString(value, field);
+}
+
+function optionalStringArray(
+  value: unknown,
+  field: string
+): string[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value)) {
+    throw validationError(field, "must be an array");
+  }
+
+  return value.map((item, index) => requireString(item, `${field}[${index}]`));
 }
 
 function requireInteger(value: unknown, field: string, min: number): number {
