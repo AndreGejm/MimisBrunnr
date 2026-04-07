@@ -7,6 +7,7 @@ import type {
   ActorContext,
   ActorRole,
   AssembleContextPacketRequest,
+  CreateSessionArchiveRequest,
   CreateRefreshDraftBatchRequest,
   CreateRefreshDraftRequest,
   DraftNoteRequest,
@@ -56,7 +57,8 @@ type CommandName =
   | "validate-note"
   | "promote-note"
   | "import-resource"
-  | "query-history";
+  | "query-history"
+  | "create-session-archive";
 type RoutedCommandName = Exclude<
   CommandName,
   "version" | "auth-status" | "auth-issued-tokens" | "auth-introspect-token" | "freshness-status" | "issue-auth-token"
@@ -97,7 +99,8 @@ const COMMANDS: ReadonlyArray<CommandName> = [
   "validate-note",
   "promote-note",
   "import-resource",
-  "query-history"
+  "query-history",
+  "create-session-archive"
 ];
 
 const DEFAULT_ACTOR_ROLE: Record<RoutedCommandName, ActorRole> = {
@@ -113,7 +116,8 @@ const DEFAULT_ACTOR_ROLE: Record<RoutedCommandName, ActorRole> = {
   "validate-note": "orchestrator",
   "promote-note": "orchestrator",
   "import-resource": "operator",
-  "query-history": "operator"
+  "query-history": "operator",
+  "create-session-archive": "operator"
 };
 const ACTOR_ROLES: ReadonlyArray<ActorRole> = [
   "retrieval",
@@ -142,7 +146,8 @@ const COMMAND_NAMES: ReadonlyArray<string> = [
   "validate_note",
   "promote_note",
   "import_resource",
-  "query_history"
+  "query_history",
+  "create_session_archive"
 ];
 const CORPORA: ReadonlyArray<"context_brain" | "general_notes"> = [
   "context_brain",
@@ -443,6 +448,10 @@ async function runCommand(
       return container.orchestrator.queryHistory(
         request as unknown as QueryHistoryRequest
       );
+    case "create-session-archive":
+      return container.orchestrator.createSessionArchive(
+        request as unknown as CreateSessionArchiveRequest
+      );
   }
 }
 
@@ -690,6 +699,7 @@ Commands:
   promote-note     Promote a staging draft through the orchestrator
   import-resource  Record a controlled import job without writing canonical memory
   query-history    Query bounded audit history
+  create-session-archive  Persist an immutable non-authoritative session transcript archive
 
 Notes:
   - version, --version, and auth-status do not require an input payload.
@@ -698,6 +708,7 @@ Notes:
   - freshness-status accepts optional JSON input with asOf, expiringWithinDays, corpusId, and limitPerCategory.
   - create-refresh-draft expects JSON input with noteId and optional asOf, expiringWithinDays, or bodyHints.
   - create-refresh-drafts accepts optional JSON input with asOf, expiringWithinDays, corpusId, limitPerCategory, maxDrafts, sourceStates, and bodyHints.
+  - create-session-archive expects JSON input with sessionId and a non-empty messages array of { role, content } objects.
   - issue-auth-token expects JSON input with actorId, actorRole, and optional source, allowedTransports, allowedCommands, allowedAdminActions, validFrom, validUntil, or ttlMinutes.
   - revoke-auth-token expects JSON input with tokenId or a valid issued token, and optional reason.
   - Input payloads are JSON objects shaped like the existing service contracts.

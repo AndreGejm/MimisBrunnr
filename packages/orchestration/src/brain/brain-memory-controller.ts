@@ -2,10 +2,12 @@ import type {
   AuditHistoryService,
   NoteValidationService,
   PromotionOrchestratorService,
+  SessionArchiveService,
   StagingDraftService,
   TemporalRefreshService
 } from "@multi-agent-brain/application";
 import type {
+  CreateSessionArchiveRequest,
   CreateRefreshDraftBatchRequest,
   CreateRefreshDraftRequest,
   DraftNoteRequest,
@@ -20,6 +22,7 @@ export class BrainMemoryController {
     private readonly stagingDraftService: StagingDraftService,
     private readonly noteValidationService: NoteValidationService,
     private readonly promotionOrchestratorService: PromotionOrchestratorService,
+    private readonly sessionArchiveService: SessionArchiveService,
     private readonly auditHistoryService: AuditHistoryService,
     private readonly temporalRefreshService: TemporalRefreshService
   ) {}
@@ -50,6 +53,12 @@ export class BrainMemoryController {
     request: CreateRefreshDraftBatchRequest
   ) {
     return this.temporalRefreshService.createRefreshDraftBatch(request);
+  }
+
+  async createSessionArchive(
+    request: CreateSessionArchiveRequest
+  ) {
+    return this.sessionArchiveService.createArchive(request);
   }
 
   async queryHistory(

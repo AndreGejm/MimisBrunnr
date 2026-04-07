@@ -1,6 +1,7 @@
 import type {
   AssembleContextPacketRequest,
   AssembleContextPacketResponse,
+  CreateSessionArchiveRequest,
   CreateRefreshDraftBatchRequest,
   CreateRefreshDraftRequest,
   DraftNoteRequest,
@@ -61,6 +62,14 @@ export class MultiAgentOrchestrator {
     this.assertAuthorized("draft_note", request.actor);
     this.assertBrainRoute("draft_note");
     return this.brainController.draftNote(request);
+  }
+
+  async createSessionArchive(
+    request: CreateSessionArchiveRequest
+  ) {
+    this.assertAuthorized("create_session_archive", request.actor);
+    this.assertBrainRoute("create_session_archive");
+    return this.brainController.createSessionArchive(request);
   }
 
   async createRefreshDraft(
@@ -127,6 +136,7 @@ export class MultiAgentOrchestrator {
       | "get_context_packet"
       | "fetch_decision_summary"
       | "draft_note"
+      | "create_session_archive"
       | "create_refresh_draft"
       | "create_refresh_drafts"
       | "import_resource"

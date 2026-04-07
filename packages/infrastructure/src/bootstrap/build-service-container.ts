@@ -13,6 +13,7 @@ import type {
   PromotionOrchestratorService,
   RetrieveContextService,
   RerankerProvider,
+  SessionArchiveStore,
   StagingDraftService,
   TemporalRefreshService,
   StagingNoteRepository,
@@ -31,6 +32,7 @@ import {
   NoteValidationService as ConcreteNoteValidationService,
   PromotionOrchestratorService as ConcretePromotionOrchestratorService,
   RetrieveContextService as ConcreteRetrieveContextService,
+  SessionArchiveService as ConcreteSessionArchiveService,
   StagingDraftService as ConcreteStagingDraftService,
   TemporalRefreshService as ConcreteTemporalRefreshService
 } from "@multi-agent-brain/application";
@@ -64,6 +66,7 @@ import { SqliteImportJobStore } from "../sqlite/sqlite-import-job-store.js";
 import { SqliteIssuedTokenStore } from "../sqlite/sqlite-issued-token-store.js";
 import { SqliteMetadataControlStore } from "../sqlite/sqlite-metadata-control-store.js";
 import { SqliteRevocationStore } from "../sqlite/sqlite-revocation-store.js";
+import { SqliteSessionArchiveStore } from "../sqlite/sqlite-session-archive-store.js";
 import { QdrantVectorIndex } from "../vector/qdrant-vector-index.js";
 import { FileSystemCanonicalNoteRepository } from "../vault/file-system-canonical-note-repository.js";
 import { FileSystemStagingNoteRepository } from "../vault/file-system-staging-note-repository.js";
@@ -72,6 +75,7 @@ export interface ServicePortRegistry {
   canonicalNoteRepository: CanonicalNoteRepository;
   stagingNoteRepository: StagingNoteRepository;
   metadataControlStore: MetadataControlStore;
+  sessionArchiveStore: SessionArchiveStore;
   issuedTokenStore: SqliteIssuedTokenStore;
   revocationStore: SqliteRevocationStore;
   auditLog: AuditLog;
@@ -98,6 +102,7 @@ export interface ServiceRegistry {
   importOrchestrationService: ConcreteImportOrchestrationService;
   contextNamespaceService: ConcreteContextNamespaceService;
   contextRepresentationService: ConcreteContextRepresentationService;
+  sessionArchiveService: ConcreteSessionArchiveService;
   temporalRefreshService: TemporalRefreshService;
 }
 
@@ -117,6 +122,7 @@ export function buildServiceContainer(
   const canonicalNoteRepository = new FileSystemCanonicalNoteRepository(env.vaultRoot);
   const stagingNoteRepository = new FileSystemStagingNoteRepository(env.stagingRoot);
   const metadataControlStore = new SqliteMetadataControlStore(env.sqlitePath);
+  const sessionArchiveStore = new SqliteSessionArchiveStore(env.sqlitePath);
   const issuedTokenStore = new SqliteIssuedTokenStore(env.sqlitePath);
   const revocationStore = new SqliteRevocationStore(env.sqlitePath);
   const auditLog = new SqliteAuditLog(env.sqlitePath);
@@ -232,6 +238,9 @@ export function buildServiceContainer(
   const contextNamespaceService = new ConcreteContextNamespaceService(
     contextNamespaceStore
   );
+  const sessionArchiveService = new ConcreteSessionArchiveService(
+    sessionArchiveStore
+  );
   const temporalRefreshService = new ConcreteTemporalRefreshService(
     metadataControlStore,
     canonicalNoteService,
@@ -259,6 +268,7 @@ export function buildServiceContainer(
       stagingDraftService,
       noteValidationService,
       promotionOrchestratorService,
+      sessionArchiveService,
       auditHistoryService,
       temporalRefreshService
     ),
@@ -291,6 +301,7 @@ export function buildServiceContainer(
       canonicalNoteRepository,
       stagingNoteRepository,
       metadataControlStore,
+      sessionArchiveStore,
       issuedTokenStore,
       revocationStore,
       auditLog,
@@ -316,6 +327,7 @@ export function buildServiceContainer(
       importOrchestrationService,
       contextNamespaceService,
       contextRepresentationService,
+      sessionArchiveService,
       temporalRefreshService
     },
     orchestrator,
@@ -323,6 +335,7 @@ export function buildServiceContainer(
       closeIfSupported(lexicalIndex);
       closeIfSupported(auditLog);
       closeIfSupported(metadataControlStore);
+      closeIfSupported(sessionArchiveStore);
       closeIfSupported(contextNamespaceStore);
       closeIfSupported(contextRepresentationStore);
       closeIfSupported(importJobStore);

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import process from "node:process";
 import type {
   ActorContext,
+  CreateSessionArchiveRequest,
   CreateRefreshDraftBatchRequest,
   CreateRefreshDraftRequest,
   GetContextPacketToolRequest,
@@ -309,6 +310,10 @@ async function runTool(name: string, request: JsonRecord): Promise<unknown> {
     case "query_history":
       return container.orchestrator.queryHistory(
         request as unknown as QueryHistoryRequest
+      );
+    case "create_session_archive":
+      return container.orchestrator.createSessionArchive(
+        request as unknown as CreateSessionArchiveRequest
       );
     default:
       return {

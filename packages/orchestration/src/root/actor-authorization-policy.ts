@@ -135,6 +135,7 @@ const COMMAND_ROLE_POLICY: Record<OrchestratorCommand, ReadonlySet<ActorRole>> =
   get_context_packet: new Set(["retrieval", "operator", "orchestrator", "system"]),
   fetch_decision_summary: new Set(["retrieval", "operator", "orchestrator", "system"]),
   draft_note: new Set(["writer", "operator", "orchestrator", "system"]),
+  create_session_archive: new Set(["operator", "system"]),
   create_refresh_draft: new Set(["operator", "orchestrator", "system"]),
   create_refresh_drafts: new Set(["operator", "orchestrator", "system"]),
   import_resource: new Set(["operator", "orchestrator", "system"]),

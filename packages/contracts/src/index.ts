@@ -6,6 +6,7 @@ export * from "./common/retrieval-trace-ref.js";
 export * from "./common/provenance-ref.js";
 export * from "./common/service-result.js";
 export * from "./drafting/draft-note.contract.js";
+export * from "./history/create-session-archive.contract.js";
 export * from "./history/get-decision-summary.contract.js";
 export * from "./history/query-history.contract.js";
 export * from "./maintenance/create-refresh-draft.contract.js";

@@ -53,6 +53,12 @@ const QUERY_INTENTS = new Set([
   "debugging"
 ]);
 const RETRIEVAL_STRATEGIES = new Set(["flat", "hierarchical"]);
+const SESSION_ARCHIVE_MESSAGE_ROLES = new Set([
+  "system",
+  "user",
+  "assistant",
+  "tool"
+]);
 const CODING_TASK_TYPES = new Set([
   "triage",
   "review",
@@ -221,6 +227,12 @@ export function validateTransportRequest(
         sourcePath: requireString(payload.sourcePath, "sourcePath"),
         importKind: requireString(payload.importKind, "importKind")
       };
+    case "create-session-archive":
+      return {
+        actor,
+        sessionId: requireString(payload.sessionId, "sessionId"),
+        messages: validateSessionArchiveMessages(payload.messages, "messages")
+      };
     default:
       return payload;
   }
@@ -292,6 +304,30 @@ function validateSupportingSources(value: unknown, field: string): JsonRecord[] 
       notePath: requireString(record.notePath, `${itemField}.notePath`),
       headingPath: requireStringArray(record.headingPath, `${itemField}.headingPath`),
       excerpt: optionalString(record.excerpt, `${itemField}.excerpt`)
+    };
+  });
+}
+
+function validateSessionArchiveMessages(
+  value: unknown,
+  field: string
+): Array<{ role: string; content: string }> {
+  const messages = requireArray(value, field);
+  if (messages.length === 0) {
+    throw validationError(field, "must contain at least 1 item(s)");
+  }
+
+  return messages.map((message, index) => {
+    const itemField = `${field}[${index}]`;
+    const record = requireObject(message, itemField);
+
+    return {
+      role: requireEnum(
+        record.role,
+        `${itemField}.role`,
+        SESSION_ARCHIVE_MESSAGE_ROLES
+      ),
+      content: requireString(record.content, `${itemField}.content`)
     };
   });
 }

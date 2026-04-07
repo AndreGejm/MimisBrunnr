@@ -26,6 +26,7 @@ export * from "./sqlite/sqlite-context-representation-store.js";
 export * from "./sqlite/sqlite-import-job-store.js";
 export * from "./sqlite/sqlite-issued-token-store.js";
 export * from "./sqlite/sqlite-metadata-control-store.js";
+export * from "./sqlite/sqlite-session-archive-store.js";
 export * from "./transport/request-validation.js";
 export * from "./transport/auth-control-validation.js";
 export * from "./vector/qdrant-vector-index.js";
