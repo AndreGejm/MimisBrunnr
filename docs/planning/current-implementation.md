@@ -56,6 +56,8 @@ The running architecture is a local-first monorepo with clear boundaries:
 - chunk adjacency preservation
 - SQLite FTS lexical retrieval
 - Qdrant vector retrieval
+- `flat` retrieval remains the default baseline
+- `hierarchical` retrieval is available only through explicit strategy selection at actor/service call sites or validated transport requests
 - ranking fusion with staleness-aware behavior
 - temporal-validity-aware stale classification for expired or not-yet-valid notes
 - runtime freshness reporting and operator-visible refresh candidates for expired and expiring current-state notes
@@ -68,6 +70,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - `tagFilters` enforced across lexical retrieval, vector retrieval, and fusion
 - explicit degraded-mode vector health surfaced in retrieval warnings and runtime health reporting
 - direct context-packet transport exposure
+- retrieval traces with strategy labels and packet-diff metadata for side-by-side flat versus hierarchical evaluation
 - decision-summary generation
 - runtime schema validation at CLI, HTTP, and MCP ingress
 - `GET /v1/system/version` plus release metadata embedded in health reports
@@ -176,6 +179,7 @@ These areas have enabling structure but are not fully complete:
 
 - shared-rollout auth hardening beyond the file-backed actor registry, rotated credentials, issued tokens, persisted issued-token lifecycle reporting, issued-token revocation, protected local operator control surfaces, and basic token lifecycle operations
 - richer temporal-validity governance beyond validity windows, refresh-candidate reporting, bounded batch refresh-draft creation, idempotent refresh-draft reuse, explicit refresh-draft creation, freshness warnings, and stale ranking
+- hierarchical retrieval rollout beyond the current `flat` default, explicit opt-in strategy selection, trace metadata, packet-diff checks, and the documented rollback path back to `flat`
 
 See [`backlog.md`](./backlog.md) for the linked backlog items.
 
