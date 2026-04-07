@@ -4,6 +4,7 @@ import type {
   ActorContext,
   ActorRole,
   AssembleContextPacketRequest,
+  CreateSessionArchiveRequest,
   CreateRefreshDraftBatchRequest,
   CreateRefreshDraftRequest,
   DraftNoteRequest,
@@ -44,6 +45,7 @@ type RouteName =
   | "validate-note"
   | "promote-note"
   | "query-history"
+  | "create-session-archive"
   | "list-context-tree"
   | "read-context-node";
 
@@ -61,7 +63,8 @@ const DEFAULT_ACTOR_ROLE: Record<RouteName, ActorRole> = {
   "create-refresh-drafts": "operator",
   "validate-note": "orchestrator",
   "promote-note": "orchestrator",
-  "query-history": "operator"
+  "query-history": "operator",
+  "create-session-archive": "operator"
 };
 
 const ROUTES: Record<string, { method: "GET" | "POST"; name?: RouteName; healthMode?: "live" | "ready" }> = {
@@ -85,7 +88,8 @@ const ROUTES: Record<string, { method: "GET" | "POST"; name?: RouteName; healthM
   "/v1/system/freshness/refresh-drafts": { method: "POST", name: "create-refresh-drafts" },
   "/v1/notes/validate": { method: "POST", name: "validate-note" },
   "/v1/notes/promote": { method: "POST", name: "promote-note" },
-  "/v1/history/query": { method: "POST", name: "query-history" }
+  "/v1/history/query": { method: "POST", name: "query-history" },
+  "/v1/history/session-archives": { method: "POST", name: "create-session-archive" }
 };
 
 export interface BrainApiServer {
@@ -452,6 +456,13 @@ async function handleRequest(
     case "query-history": {
       const result = await container.orchestrator.queryHistory(
         normalizedRequest as unknown as QueryHistoryRequest
+      );
+      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
+      return;
+    }
+    case "create-session-archive": {
+      const result = await container.orchestrator.createSessionArchive(
+        normalizedRequest as unknown as CreateSessionArchiveRequest
       );
       sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
       return;

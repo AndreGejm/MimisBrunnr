@@ -326,6 +326,37 @@ export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
         limit: { type: "number" }
       }
     }
+  },
+  {
+    name: "create_session_archive",
+    title: "Create Session Archive",
+    description: "Persist an immutable non-authoritative session archive without creating drafts or canonical notes.",
+    defaultActorRole: "operator",
+    inputSchema: {
+      type: "object",
+      required: ["sessionId", "messages"],
+      additionalProperties: true,
+      properties: {
+        actor: { type: "object" },
+        sessionId: { type: "string" },
+        messages: {
+          type: "array",
+          minItems: 1,
+          items: {
+            type: "object",
+            required: ["role", "content"],
+            additionalProperties: false,
+            properties: {
+              role: {
+                type: "string",
+                enum: ["system", "user", "assistant", "tool"]
+              },
+              content: { type: "string" }
+            }
+          }
+        }
+      }
+    }
   }
 ];
 

@@ -1,6 +1,7 @@
 import type {
   AssembleContextPacketRequest,
   AssembleContextPacketResponse,
+  CreateSessionArchiveRequest,
   CreateRefreshDraftBatchRequest,
   CreateRefreshDraftRequest,
   DraftNoteRequest,
@@ -42,6 +43,12 @@ export class BrainDomainController {
     request: DraftNoteRequest
   ) {
     return this.memoryController.draftNote(request);
+  }
+
+  async createSessionArchive(
+    request: CreateSessionArchiveRequest
+  ) {
+    return this.memoryController.createSessionArchive(request);
   }
 
   async createRefreshDraft(
