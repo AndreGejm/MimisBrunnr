@@ -1,0 +1,17 @@
+services:
+  brain-mcp-session:
+    build:
+      context: ..
+      dockerfile: docker/brain-mcp.Dockerfile
+    env_file:
+      - ./brain-mcp-session.env
+    stdin_open: true
+    tty: false
+    extra_hosts:
+      - "model-runner.docker.internal:host-gateway"
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${MAB_HOST_CANONICAL_ROOT:?set MAB_HOST_CANONICAL_ROOT}:/data/vault/canonical
+      - ${MAB_HOST_STAGING_ROOT:?set MAB_HOST_STAGING_ROOT}:/data/vault/staging
+      - ${MAB_HOST_STATE_ROOT:?set MAB_HOST_STATE_ROOT}:/data/state
+      - ${MAB_HOST_CONFIG_ROOT:?set MAB_HOST_CONFIG_ROOT}:/config/auth:ro

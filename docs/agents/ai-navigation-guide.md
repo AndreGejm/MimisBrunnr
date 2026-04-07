@@ -107,11 +107,10 @@ Be especially careful in these files because they affect multiple runtime surfac
 
 ## Known doc/code mismatch to keep in mind
 
-- `packages/contracts/src/mcp/index.ts` exports `inspect-gap.tool.ts`
-- the actual MCP runtime currently exposes `import_resource` and `create_session_archive`
 - some planning docs still describe older rollout assumptions
 
-If you change the MCP surface, update both the runtime and the docs, and decide whether the contracts export surface also needs to change.
+If you change the MCP surface, update the runtime, the docs, and
+`packages/contracts/src/mcp/index.ts` in the same pass.
 
 ## Practical onboarding path for agents
 

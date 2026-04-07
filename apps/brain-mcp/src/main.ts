@@ -95,14 +95,20 @@ class ContentLengthTransport {
 
 const container = buildServiceContainer(loadEnvironment());
 const transport = new ContentLengthTransport(process.stdin, process.stdout);
+const defaultSessionActor = loadDefaultSessionActor();
+let shuttingDown = false;
 
 process.once("SIGINT", () => {
-  container.dispose();
-  process.exit(0);
+  shutdown(0);
 });
 process.once("SIGTERM", () => {
-  container.dispose();
-  process.exit(0);
+  shutdown(0);
+});
+process.stdin.once("end", () => {
+  shutdown(0);
+});
+process.stdin.once("close", () => {
+  shutdown(0);
 });
 
 transport.onMessage(async (message) => {
@@ -334,6 +340,19 @@ function buildActorContext(
   const input = actor && typeof actor === "object" ? actor as Partial<ActorContext> : {};
   const now = new Date().toISOString();
 
+  if (defaultSessionActor) {
+    return {
+      actorId: defaultSessionActor.actorId,
+      actorRole: defaultSessionActor.actorRole,
+      transport: "mcp",
+      source: defaultSessionActor.source,
+      requestId: input.requestId ?? randomUUID(),
+      initiatedAt: input.initiatedAt ?? now,
+      toolName: input.toolName ?? toolName,
+      authToken: defaultSessionActor.authToken
+    };
+  }
+
   return {
     actorId: input.actorId ?? `${toolName}-mcp`,
     actorRole: input.actorRole ?? defaultRole,
@@ -370,4 +389,37 @@ function isToolError(result: unknown): boolean {
   }
 
   return "ok" in result && result.ok === false;
+}
+
+function loadDefaultSessionActor():
+  | Pick<ActorContext, "actorId" | "actorRole" | "authToken" | "source">
+  | undefined {
+  const actorId = process.env.MAB_MCP_DEFAULT_ACTOR_ID?.trim();
+  const actorRole = process.env.MAB_MCP_DEFAULT_ACTOR_ROLE?.trim() as
+    | ActorContext["actorRole"]
+    | undefined;
+  const authToken = process.env.MAB_MCP_DEFAULT_ACTOR_AUTH_TOKEN?.trim();
+  const source =
+    process.env.MAB_MCP_DEFAULT_SOURCE?.trim() || "brain-mcp-session";
+
+  if (!actorId || !actorRole || !authToken) {
+    return undefined;
+  }
+
+  return {
+    actorId,
+    actorRole,
+    authToken,
+    source
+  };
+}
+
+function shutdown(exitCode: number): void {
+  if (shuttingDown) {
+    return;
+  }
+
+  shuttingDown = true;
+  container.dispose();
+  process.exit(exitCode);
 }

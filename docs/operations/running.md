@@ -1,13 +1,14 @@
 # Running the system
 
-This repository exposes three Node entrypoints and one Docker compose profile.
+This repository exposes three Node entrypoints, one HTTP Docker compose profile,
+and one session-scoped Docker MCP profile.
 
 ## Entrypoints
 
 ### HTTP API
 
 ```bash
-pnpm api
+corepack pnpm api
 ```
 
 Entrypoint files:
@@ -20,8 +21,8 @@ The API listens on `MAB_API_HOST:MAB_API_PORT` and prints the bound address on s
 ### CLI
 
 ```bash
-pnpm cli -- version
-pnpm cli -- auth-status
+corepack pnpm cli -- version
+corepack pnpm cli -- auth-status
 ```
 
 Entrypoint file:
@@ -33,7 +34,7 @@ The CLI is JSON-in / JSON-out for command handlers that accept payloads.
 ### MCP server
 
 ```bash
-pnpm mcp
+corepack pnpm mcp
 ```
 
 Entrypoint files:
@@ -42,6 +43,9 @@ Entrypoint files:
 - `apps/brain-mcp/src/tool-definitions.ts`
 
 This is a stdio MCP server that uses Content-Length framing.
+
+If `corepack enable` cannot install a global `pnpm` shim on your machine, keep
+using the `corepack pnpm ...` form shown above.
 
 ### Docker compose profile
 
@@ -54,9 +58,26 @@ Tracked runtime assets:
 - `docker/brain-api.Dockerfile`
 - `docker/compose.local.yml`
 
+### Docker MCP session
+
+```bash
+docker run --rm -i ... multi-agent-brain-mcp-session:local
+```
+
+Tracked runtime assets:
+
+- `docker/brain-mcp.Dockerfile`
+- `docker/brain-mcp-session-entrypoint.mjs`
+- `docker/brain-mcp-session.env.example`
+- `docker/compose.mcp-session.yml`
+- `docs/operations/docker-mcp-session.md`
+
 ## Runtime behavior
 
 All three Node entrypoints build the same shared container through `packages/infrastructure/src/bootstrap/build-service-container.ts`.
+
+The Docker MCP session wrapper validates the environment before launching
+`apps/brain-mcp/dist/main.js`, but it does not replace the MCP server itself.
 
 That shared container wires:
 
@@ -104,6 +125,25 @@ Uses the same checks, but Qdrant failure is a fatal readiness issue.
 
 - `200` only for pass
 - `503` for degraded or fail
+
+## Docker MCP readiness
+
+The Docker MCP session profile does not expose HTTP health endpoints.
+
+Readiness is defined by successful preflight validation in
+`docker/brain-mcp-session-entrypoint.mjs`.
+
+Validation covers:
+
+- explicit env contract
+- mount-backed canonical, staging, state, and config paths
+- fixed session actor binding against the file-backed actor registry
+- Qdrant reachability
+- model endpoint reachability plus required model presence
+- Python runtime availability
+
+If any of those checks fail, the container exits before the MCP stdio server is
+started.
 
 ## Auth-control surfaces
 

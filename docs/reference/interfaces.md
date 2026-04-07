@@ -96,6 +96,8 @@ Commands with optional payload:
 - `freshness-status`
 - `create-refresh-drafts`
 
+From the workspace root, the verified invocation form is `corepack pnpm cli -- <command>`.
+
 ## MCP
 
 Source of truth:
@@ -157,8 +159,6 @@ Source of truth:
 
 ## Known interface consistency risks
 
-- `packages/contracts/src/mcp/index.ts` still exports `inspect-gap.tool.ts`
-- `apps/brain-mcp` currently exposes `import_resource` and `create_session_archive`, but those are not represented in that `packages/contracts/src/mcp/index.ts` export surface
 - `packages/contracts/src/retrieval/glob-context.contract.ts` and `packages/contracts/src/retrieval/grep-context.contract.ts` exist, but the tracked transport adapters do not expose matching runtime commands or routes
 
 ## What is not present
@@ -180,4 +180,4 @@ Source of truth:
 
 ### TODO gaps
 
-- If the contract export surfaces are reconciled, update the consistency-risk section
+- If the retrieval-only contract placeholders become live transport surfaces, update this file and the adapter docs together

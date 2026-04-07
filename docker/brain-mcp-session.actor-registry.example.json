@@ -1,0 +1,19 @@
+{
+  "actors": [
+    {
+      "actorId": "docker-mcp-session",
+      "actorRole": "operator",
+      "authTokens": [
+        {
+          "token": "replace-with-session-token",
+          "label": "default-session-token"
+        }
+      ],
+      "source": "brain-mcp-session",
+      "enabled": true,
+      "allowedTransports": [
+        "mcp"
+      ]
+    }
+  ]
+}

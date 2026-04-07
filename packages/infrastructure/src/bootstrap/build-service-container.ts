@@ -132,7 +132,8 @@ export function buildServiceContainer(
   const importJobStore = new SqliteImportJobStore(env.sqlitePath);
   const vectorIndex = new QdrantVectorIndex({
     baseUrl: env.qdrantUrl,
-    collectionName: env.qdrantCollection
+    collectionName: env.qdrantCollection,
+    softFail: env.qdrantSoftFail
   });
 
   const modelRoleRegistry = new ModelRoleRegistry(Object.values(env.roleBindings));
@@ -358,7 +359,9 @@ function createEmbeddingProvider(
       return new OllamaEmbeddingProvider({
         baseUrl: env.providerEndpoints.dockerOllamaBaseUrl,
         model: binding.modelId ?? env.ollamaEmbeddingModel,
-        fallback: new HashEmbeddingProvider()
+        fallback: env.disableProviderFallbacks
+          ? undefined
+          : new HashEmbeddingProvider()
       });
     default:
       throw new Error(`Unsupported embedding provider '${binding.providerId}'.`);
@@ -382,7 +385,9 @@ function createReasoningProvider(
         seed: binding.seed,
         maxOutputTokens: binding.maxOutputTokens,
         timeoutMs: binding.timeoutMs,
-        fallback: new HeuristicLocalReasoningProvider()
+        fallback: env.disableProviderFallbacks
+          ? undefined
+          : new HeuristicLocalReasoningProvider()
       });
     case "paid_openai_compat":
       if (!env.providerEndpoints.paidEscalationBaseUrl || !binding.modelId) {
@@ -397,7 +402,9 @@ function createReasoningProvider(
         seed: binding.seed,
         maxOutputTokens: binding.maxOutputTokens,
         timeoutMs: binding.timeoutMs,
-        fallback: new HeuristicLocalReasoningProvider()
+        fallback: env.disableProviderFallbacks
+          ? undefined
+          : new HeuristicLocalReasoningProvider()
       });
     default:
       throw new Error(`Unsupported reasoning provider '${binding.providerId}'.`);
@@ -442,7 +449,9 @@ function createRerankerProvider(
         seed: binding.seed,
         maxOutputTokens: binding.maxOutputTokens,
         timeoutMs: binding.timeoutMs,
-        fallback: new HeuristicRerankerProvider()
+        fallback: env.disableProviderFallbacks
+          ? undefined
+          : new HeuristicRerankerProvider()
       });
     default:
       throw new Error(`Unsupported reranker provider '${binding.providerId}'.`);

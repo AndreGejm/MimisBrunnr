@@ -55,7 +55,7 @@ test("session archive route rejects self-asserted operators and accepts authoriz
     draftingProvider: "disabled",
     rerankerProvider: "local",
     apiHost: "127.0.0.1",
-    apiPort: 18194,
+    apiPort: 0,
     logLevel: "error",
     auth: {
       mode: "enforced",
@@ -81,8 +81,9 @@ test("session archive route rejects self-asserted operators and accepts authoriz
   });
 
   await api.listen();
+  const baseUrl = apiBaseUrl(api);
 
-  const unauthorized = await fetch("http://127.0.0.1:18194/v1/history/session-archives", {
+  const unauthorized = await fetch(`${baseUrl}/v1/history/session-archives`, {
     method: "POST",
     headers: {
       "content-type": "application/json"
@@ -102,7 +103,7 @@ test("session archive route rejects self-asserted operators and accepts authoriz
   const unauthorizedPayload = await unauthorized.json();
   assert.equal(unauthorizedPayload.error.code, "unauthorized");
 
-  const authorized = await fetch("http://127.0.0.1:18194/v1/history/session-archives", {
+  const authorized = await fetch(`${baseUrl}/v1/history/session-archives`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -163,4 +164,10 @@ function actor(role) {
     initiatedAt: "2026-04-06T00:00:00.000Z",
     toolName: "session-archives-test"
   };
+}
+
+function apiBaseUrl(api) {
+  const address = api.server.address();
+  assert.ok(address && typeof address === "object" && typeof address.port === "number");
+  return `http://127.0.0.1:${address.port}`;
 }

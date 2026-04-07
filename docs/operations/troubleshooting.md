@@ -15,8 +15,42 @@ Cause:
 
 What to do:
 
-- export variables in your shell before running `pnpm api`, `pnpm cli`, or `pnpm mcp`
+- export variables in your shell before running `corepack pnpm api`, `corepack pnpm cli`, or `corepack pnpm mcp`
 - or pass them through Docker / your process manager
+
+## `corepack enable` fails or `pnpm` is unavailable
+
+Symptom:
+
+- `corepack enable` fails to install shims
+- `pnpm` is not found even though Node and Corepack are installed
+
+Cause:
+
+- your machine blocks shim installation or the configured Node tool directory is not writable
+
+What to do:
+
+- run workspace commands as `corepack pnpm ...` directly
+- example: `corepack pnpm install`, `corepack pnpm cli -- version`, `corepack pnpm test`
+
+## `docker compose -f docker/compose.mcp-session.yml config` fails immediately
+
+Symptom:
+
+- compose validation exits before starting the session container
+- the error points at unset `MAB_HOST_*` or `MAB_FIXED_SESSION_*` variables
+
+Cause:
+
+- `docker/compose.mcp-session.yml` intentionally uses required variable checks for explicit host mounts and the fixed session actor contract
+
+What to do:
+
+- copy `docker/brain-mcp-session.env.example` to `docker/brain-mcp-session.env`
+- set the host canonical, staging, state, and auth config paths explicitly
+- set the fixed session actor id, source, and token contract explicitly
+- validate again before launching the MCP client
 
 ## The app writes outside the repo on Windows
 
@@ -57,7 +91,7 @@ Cause:
 
 What to do:
 
-- inspect freshness through `GET /v1/system/freshness` or `pnpm cli -- freshness-status`
+- inspect freshness through `GET /v1/system/freshness` or `corepack pnpm cli -- freshness-status`
 - create governed refresh drafts instead of mutating canonical notes directly
 
 ## `401 unauthorized` or `403 forbidden` on API, CLI, or MCP
@@ -78,9 +112,9 @@ What to check:
 
 Helpful surfaces:
 
-- `pnpm cli -- auth-status`
-- `pnpm cli -- auth-issued-tokens`
-- `pnpm cli -- auth-introspect-token --json ...`
+- `corepack pnpm cli -- auth-status`
+- `corepack pnpm cli -- auth-issued-tokens`
+- `corepack pnpm cli -- auth-introspect-token --json ...`
 - `GET /v1/system/auth`
 - `POST /v1/system/auth/introspect-token`
 
@@ -118,7 +152,6 @@ What to check:
 Known risk areas:
 
 - transport surfaces changed faster than the old adapter READMEs and planning docs
-- `packages/contracts/src/mcp/index.ts` and `apps/brain-mcp` do not currently expose the exact same MCP tool list
 
 What to do:
 

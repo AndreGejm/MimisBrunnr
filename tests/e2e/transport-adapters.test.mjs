@@ -30,6 +30,22 @@ test("brain-cli exposes shared release metadata through the version command", as
   assert.equal(payload.release.releaseChannel, "tagged");
 });
 
+test("brain-cli accepts a leading argument separator for root workspace passthrough", async () => {
+  const result = await runNodeCommand(
+    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    ["--", "version"],
+    {
+      ...process.env,
+      MAB_RELEASE_VERSION: "0.2.1"
+    }
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.release.version, "0.2.1");
+});
+
 test("brain-cli exposes auth registry status for operators", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-auth-status-"));
   const env = cliEnvironment(root, {
@@ -647,7 +663,7 @@ test("brain-api exposes validation as a thin HTTP transport over services", asyn
     draftingProvider: "disabled",
     rerankerProvider: "local",
     apiHost: "127.0.0.1",
-    apiPort: 18181,
+    apiPort: 0,
     logLevel: "error"
   });
 
@@ -657,8 +673,9 @@ test("brain-api exposes validation as a thin HTTP transport over services", asyn
   });
 
   await api.listen();
+  const baseUrl = apiBaseUrl(api);
 
-  const liveResponse = await fetch("http://127.0.0.1:18181/health/live");
+  const liveResponse = await fetch(`${baseUrl}/health/live`);
   assert.equal(liveResponse.status, 200);
   const livePayload = await liveResponse.json();
   assert.equal(livePayload.mode, "live");
@@ -666,7 +683,7 @@ test("brain-api exposes validation as a thin HTTP transport over services", asyn
   assert.equal(typeof livePayload.release.version, "string");
 
   const noteId = randomUUID();
-  const response = await fetch("http://127.0.0.1:18181/v1/notes/validate", {
+  const response = await fetch(`${baseUrl}/v1/notes/validate`, {
     method: "POST",
     headers: {
       "content-type": "application/json"
@@ -729,7 +746,7 @@ test("brain-api exposes shared release metadata through the system version route
       MAB_DRAFTING_PROVIDER: "disabled",
       MAB_RERANKER_PROVIDER: "local",
       MAB_API_HOST: "127.0.0.1",
-      MAB_API_PORT: "18187",
+      MAB_API_PORT: "0",
       MAB_LOG_LEVEL: "error"
     })
   );
@@ -740,8 +757,9 @@ test("brain-api exposes shared release metadata through the system version route
   });
 
   await api.listen();
+  const baseUrl = apiBaseUrl(api);
 
-  const response = await fetch("http://127.0.0.1:18187/v1/system/version");
+  const response = await fetch(`${baseUrl}/v1/system/version`);
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.ok, true);
@@ -771,7 +789,7 @@ test("brain-api exposes auth registry status through the system auth route", asy
     draftingProvider: "disabled",
     rerankerProvider: "local",
     apiHost: "127.0.0.1",
-    apiPort: 18188,
+    apiPort: 0,
     logLevel: "error",
     auth: {
       mode: "enforced",
@@ -797,11 +815,12 @@ test("brain-api exposes auth registry status through the system auth route", asy
   });
 
   await api.listen();
+  const baseUrl = apiBaseUrl(api);
 
-  const unauthorized = await fetch("http://127.0.0.1:18188/v1/system/auth");
+  const unauthorized = await fetch(`${baseUrl}/v1/system/auth`);
   assert.equal(unauthorized.status, 401);
 
-  const response = await fetch("http://127.0.0.1:18188/v1/system/auth", {
+  const response = await fetch(`${baseUrl}/v1/system/auth`, {
     headers: {
       "x-brain-actor-id": "operator-http",
       "x-brain-actor-role": "operator",
@@ -838,7 +857,7 @@ test("brain-api can issue short-lived actor tokens through the protected auth ro
     draftingProvider: "disabled",
     rerankerProvider: "local",
     apiHost: "127.0.0.1",
-    apiPort: 18192,
+    apiPort: 0,
     logLevel: "error",
     auth: {
       mode: "enforced",
@@ -875,8 +894,9 @@ test("brain-api can issue short-lived actor tokens through the protected auth ro
   });
 
   await api.listen();
+  const baseUrl = apiBaseUrl(api);
 
-  const response = await fetch("http://127.0.0.1:18192/v1/system/auth/issue-token", {
+  const response = await fetch(`${baseUrl}/v1/system/auth/issue-token`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -902,7 +922,7 @@ test("brain-api can issue short-lived actor tokens through the protected auth ro
   assert.equal(payload.claims.actorId, "validate-note-http");
 
   const issuedTokensResponse = await fetch(
-    "http://127.0.0.1:18192/v1/system/auth/issued-tokens?includeRevoked=true",
+    `${baseUrl}/v1/system/auth/issued-tokens?includeRevoked=true`,
     {
       headers: {
         "x-brain-actor-id": "operator-http",
@@ -942,7 +962,7 @@ test("brain-api can introspect actor tokens through the protected auth route", a
     draftingProvider: "disabled",
     rerankerProvider: "local",
     apiHost: "127.0.0.1",
-    apiPort: 18193,
+    apiPort: 0,
     logLevel: "error",
     auth: {
       mode: "enforced",
@@ -975,8 +995,9 @@ test("brain-api can introspect actor tokens through the protected auth route", a
   });
 
   await api.listen();
+  const baseUrl = apiBaseUrl(api);
 
-  const issueResponse = await fetch("http://127.0.0.1:18193/v1/system/auth/issue-token", {
+  const issueResponse = await fetch(`${baseUrl}/v1/system/auth/issue-token`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -998,7 +1019,7 @@ test("brain-api can introspect actor tokens through the protected auth route", a
   assert.equal(issueResponse.status, 200);
   const issuedPayload = await issueResponse.json();
 
-  const response = await fetch("http://127.0.0.1:18193/v1/system/auth/introspect-token", {
+  const response = await fetch(`${baseUrl}/v1/system/auth/introspect-token`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -1051,7 +1072,7 @@ test("brain-api revokes issued actor tokens and rejects them immediately afterwa
     draftingProvider: "disabled",
     rerankerProvider: "local",
     apiHost: "127.0.0.1",
-    apiPort: 18194,
+    apiPort: 0,
     logLevel: "error",
     auth: {
       mode: "enforced",
@@ -1086,6 +1107,7 @@ test("brain-api revokes issued actor tokens and rejects them immediately afterwa
   });
 
   await api.listen();
+  const baseUrl = apiBaseUrl(api);
 
   const issuedToken = issueActorAccessToken(
     {
@@ -1100,7 +1122,7 @@ test("brain-api revokes issued actor tokens and rejects them immediately afterwa
     issuerSecret
   );
 
-  const revokeResponse = await fetch("http://127.0.0.1:18194/v1/system/auth/revoke-token", {
+  const revokeResponse = await fetch(`${baseUrl}/v1/system/auth/revoke-token`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -1121,7 +1143,7 @@ test("brain-api revokes issued actor tokens and rejects them immediately afterwa
   assert.equal(typeof revokePayload.revokedTokenId, "string");
   assert.equal(revokePayload.persisted, true);
 
-  const validateResponse = await fetch("http://127.0.0.1:18194/v1/notes/validate", {
+  const validateResponse = await fetch(`${baseUrl}/v1/notes/validate`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -1204,7 +1226,7 @@ test("brain-api exposes temporal freshness reports through the system freshness 
     draftingProvider: "disabled",
     rerankerProvider: "local",
     apiHost: "127.0.0.1",
-    apiPort: 18190,
+    apiPort: 0,
     logLevel: "error"
   });
 
@@ -1214,9 +1236,10 @@ test("brain-api exposes temporal freshness reports through the system freshness 
   });
 
   await api.listen();
+  const baseUrl = apiBaseUrl(api);
 
   const response = await fetch(
-    "http://127.0.0.1:18190/v1/system/freshness?expiringWithinDays=7&limitPerCategory=5"
+    `${baseUrl}/v1/system/freshness?expiringWithinDays=7&limitPerCategory=5`
   );
   assert.equal(response.status, 200);
   const payload = await response.json();
@@ -1257,7 +1280,7 @@ test("brain-api creates governed refresh drafts through the temporal freshness r
     draftingProvider: "disabled",
     rerankerProvider: "local",
     apiHost: "127.0.0.1",
-    apiPort: 18191,
+    apiPort: 0,
     logLevel: "error"
   });
 
@@ -1267,9 +1290,10 @@ test("brain-api creates governed refresh drafts through the temporal freshness r
   });
 
   await api.listen();
+  const baseUrl = apiBaseUrl(api);
 
   const response = await fetch(
-    "http://127.0.0.1:18191/v1/system/freshness/refresh-draft",
+    `${baseUrl}/v1/system/freshness/refresh-draft`,
     {
       method: "POST",
       headers: {
@@ -1310,7 +1334,7 @@ test("brain-api exposes direct context-packet assembly over HTTP", async (t) => 
     draftingProvider: "disabled",
     rerankerProvider: "local",
     apiHost: "127.0.0.1",
-    apiPort: 18183,
+    apiPort: 0,
     logLevel: "error"
   });
 
@@ -1320,8 +1344,9 @@ test("brain-api exposes direct context-packet assembly over HTTP", async (t) => 
   });
 
   await api.listen();
+  const baseUrl = apiBaseUrl(api);
 
-  const response = await fetch("http://127.0.0.1:18183/v1/context/packet", {
+  const response = await fetch(`${baseUrl}/v1/context/packet`, {
     method: "POST",
     headers: {
       "content-type": "application/json"
@@ -1380,7 +1405,7 @@ test("brain-api rejects malformed request payloads at ingress", async (t) => {
     draftingProvider: "disabled",
     rerankerProvider: "local",
     apiHost: "127.0.0.1",
-    apiPort: 18185,
+    apiPort: 0,
     logLevel: "error"
   });
 
@@ -1390,8 +1415,9 @@ test("brain-api rejects malformed request payloads at ingress", async (t) => {
   });
 
   await api.listen();
+  const baseUrl = apiBaseUrl(api);
 
-  const response = await fetch("http://127.0.0.1:18185/v1/context/search", {
+  const response = await fetch(`${baseUrl}/v1/context/search`, {
     method: "POST",
     headers: {
       "content-type": "application/json"
@@ -1434,7 +1460,7 @@ test("brain-api enforces registered actor tokens when auth mode is enforced", as
     draftingProvider: "disabled",
     rerankerProvider: "local",
     apiHost: "127.0.0.1",
-    apiPort: 18184,
+    apiPort: 0,
     logLevel: "error",
     auth: {
       mode: "enforced",
@@ -1458,8 +1484,9 @@ test("brain-api enforces registered actor tokens when auth mode is enforced", as
   });
 
   await api.listen();
+  const baseUrl = apiBaseUrl(api);
 
-  const unauthenticated = await fetch("http://127.0.0.1:18184/v1/notes/validate", {
+  const unauthenticated = await fetch(`${baseUrl}/v1/notes/validate`, {
     method: "POST",
     headers: {
       "content-type": "application/json"
@@ -1505,7 +1532,7 @@ test("brain-api enforces registered actor tokens when auth mode is enforced", as
   const unauthenticatedPayload = await unauthenticated.json();
   assert.equal(unauthenticatedPayload.error.code, "unauthorized");
 
-  const authenticated = await fetch("http://127.0.0.1:18184/v1/notes/validate", {
+  const authenticated = await fetch(`${baseUrl}/v1/notes/validate`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -1622,7 +1649,7 @@ test("brain-api loads a file-backed actor registry and honors rotated credential
       MAB_DRAFTING_PROVIDER: "disabled",
       MAB_RERANKER_PROVIDER: "local",
       MAB_API_HOST: "127.0.0.1",
-      MAB_API_PORT: "18186",
+      MAB_API_PORT: "0",
       MAB_LOG_LEVEL: "error",
       MAB_AUTH_MODE: "enforced",
       MAB_AUTH_ACTOR_REGISTRY_PATH: registryPath
@@ -1635,8 +1662,9 @@ test("brain-api loads a file-backed actor registry and honors rotated credential
   });
 
   await api.listen();
+  const baseUrl = apiBaseUrl(api);
 
-  const expired = await fetch("http://127.0.0.1:18186/v1/notes/validate", {
+  const expired = await fetch(`${baseUrl}/v1/notes/validate`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -1684,7 +1712,7 @@ test("brain-api loads a file-backed actor registry and honors rotated credential
   assert.equal(expiredPayload.error.code, "unauthorized");
   assert.match(expiredPayload.error.message, /expired|inactive/i);
 
-  const current = await fetch("http://127.0.0.1:18186/v1/notes/validate", {
+  const current = await fetch(`${baseUrl}/v1/notes/validate`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -1758,7 +1786,7 @@ test("brain-api accepts centrally issued actor tokens for registered actors", as
     draftingProvider: "disabled",
     rerankerProvider: "local",
     apiHost: "127.0.0.1",
-    apiPort: 18189,
+    apiPort: 0,
     logLevel: "error",
     auth: {
       mode: "enforced",
@@ -1783,6 +1811,7 @@ test("brain-api accepts centrally issued actor tokens for registered actors", as
   });
 
   await api.listen();
+  const baseUrl = apiBaseUrl(api);
 
   const issuedToken = issueActorAccessToken(
     {
@@ -1797,7 +1826,7 @@ test("brain-api accepts centrally issued actor tokens for registered actors", as
     issuerSecret
   );
 
-  const response = await fetch("http://127.0.0.1:18189/v1/notes/validate", {
+  const response = await fetch(`${baseUrl}/v1/notes/validate`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -1871,7 +1900,7 @@ test("brain-api lists and reads namespace nodes through the shared context names
     draftingProvider: "disabled",
     rerankerProvider: "local",
     apiHost: "127.0.0.1",
-    apiPort: 18183,
+    apiPort: 0,
     logLevel: "error"
   });
 
@@ -1892,8 +1921,9 @@ test("brain-api lists and reads namespace nodes through the shared context names
   });
 
   await api.listen();
+  const baseUrl = apiBaseUrl(api);
 
-  const treeResponse = await fetch("http://127.0.0.1:18183/v1/context/tree", {
+  const treeResponse = await fetch(`${baseUrl}/v1/context/tree`, {
     method: "POST",
     headers: {
       "content-type": "application/json"
@@ -1922,7 +1952,7 @@ test("brain-api lists and reads namespace nodes through the shared context names
     )
   );
 
-  const nodeResponse = await fetch("http://127.0.0.1:18183/v1/context/node", {
+  const nodeResponse = await fetch(`${baseUrl}/v1/context/node`, {
     method: "POST",
     headers: {
       "content-type": "application/json"
@@ -1968,7 +1998,7 @@ test("brain-api exposes coding execution through the root orchestrator", async (
       dockerOllamaBaseUrl: "http://127.0.0.1:1"
     },
     apiHost: "127.0.0.1",
-    apiPort: 18182,
+    apiPort: 0,
     logLevel: "error"
   });
 
@@ -1978,8 +2008,9 @@ test("brain-api exposes coding execution through the root orchestrator", async (
   });
 
   await api.listen();
+  const baseUrl = apiBaseUrl(api);
 
-  const response = await fetch("http://127.0.0.1:18182/v1/coding/execute", {
+  const response = await fetch(`${baseUrl}/v1/coding/execute`, {
     method: "POST",
     headers: {
       "content-type": "application/json"
@@ -2039,6 +2070,12 @@ function runNodeCommand(scriptPath, args, env, cwd = process.cwd()) {
       resolve({ exitCode, stdout, stderr });
     });
   });
+}
+
+function apiBaseUrl(api) {
+  const address = api.server.address();
+  assert.ok(address && typeof address === "object" && typeof address.port === "number");
+  return `http://127.0.0.1:${address.port}`;
 }
 
 function currentDateIso() {

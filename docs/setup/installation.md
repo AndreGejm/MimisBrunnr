@@ -22,11 +22,14 @@ The repo does not include a tracked Python lockfile or packaging manifest. The v
 
 ```bash
 corepack enable
-pnpm install
-pnpm build
+corepack pnpm install
+corepack pnpm build
 ```
 
 There is no tracked bootstrap script in `scripts/`; the root package scripts are the supported installation/build entrypoints.
+
+If `corepack enable` cannot install a global `pnpm` shim, run every workspace
+command as `corepack pnpm ...` directly.
 
 ## Choose a configuration profile
 
@@ -84,17 +87,18 @@ This compose profile is a deliberate runtime profile, not a restatement of the g
 After setting environment variables, run one or more of:
 
 ```bash
-pnpm cli -- version
-pnpm api
-pnpm mcp
-pnpm test:transport
-pnpm test
+corepack pnpm cli -- version
+corepack pnpm api
+corepack pnpm mcp
+corepack pnpm test:transport
+corepack pnpm test
 ```
 
 For Python runtime checks:
 
 ```bash
-python -m pytest runtimes/local_experts/tests/test_safety_gate.py -v
+py -3 -m pytest runtimes/local_experts/tests/test_safety_gate.py -v   # Windows
+python3 -m pytest runtimes/local_experts/tests/test_safety_gate.py -v # macOS/Linux
 ```
 
 ## What is not installed by default

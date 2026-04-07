@@ -28,6 +28,7 @@ The Node applications do **not** auto-load `.env`. These variables must exist in
 | `MAB_SQLITE_PATH` | SQLite path | `./state/multi-agent-brain.sqlite` |
 | `MAB_QDRANT_URL` | Qdrant base URL | `http://127.0.0.1:6333` |
 | `MAB_QDRANT_COLLECTION` | Qdrant collection | `context_brain_chunks` |
+| `MAB_QDRANT_SOFT_FAIL` | allow degraded vector behavior instead of surfacing hard failure | defaults to `true` |
 
 ## Provider selectors
 
@@ -37,6 +38,7 @@ The Node applications do **not** auto-load `.env`. These variables must exist in
 | `MAB_REASONING_PROVIDER` | reasoning provider selector | `heuristic` |
 | `MAB_DRAFTING_PROVIDER` | drafting provider selector | `ollama` |
 | `MAB_RERANKER_PROVIDER` | reranker provider selector | `ollama` |
+| `MAB_DISABLE_PROVIDER_FALLBACKS` | disable heuristic/hash fallbacks behind remote providers | defaults to `false` |
 
 Allowed selector values are defined in `packages/infrastructure/src/config/env.ts`.
 
@@ -93,6 +95,17 @@ Bridge-derived subprocess env values:
 - `OLLAMA_API_URL`
 - `CODING_MODEL`
 
+## MCP session defaults
+
+These variables are read by `apps/brain-mcp/src/main.ts`.
+
+| Variable | Purpose | Default / notes |
+| --- | --- | --- |
+| `MAB_MCP_DEFAULT_ACTOR_ID` | fixed actor ID for the whole MCP stdio session | optional; if unset, callers must provide actor identity themselves |
+| `MAB_MCP_DEFAULT_ACTOR_ROLE` | fixed actor role for the whole MCP stdio session | optional; paired with `MAB_MCP_DEFAULT_ACTOR_ID` |
+| `MAB_MCP_DEFAULT_ACTOR_AUTH_TOKEN` | fixed actor token for the whole MCP stdio session | optional; paired with `MAB_MCP_DEFAULT_ACTOR_ID` |
+| `MAB_MCP_DEFAULT_SOURCE` | fixed source label for the MCP stdio session | defaults to `brain-mcp-session` when fixed actor env is enabled |
+
 ## Auth
 
 | Variable | Purpose | Default / notes |
@@ -113,10 +126,11 @@ Accepted JSON shapes:
 
 ## Profile warning
 
-`.env.example` and `docker/compose.local.yml` represent different profiles:
+`.env.example`, `docker/compose.local.yml`, and the Docker MCP session profile represent different modes:
 
 - `.env.example` is a reference template and includes both defaults and suggested overrides
 - `docker/compose.local.yml` is an explicit model-backed container profile
+- `docker/brain-mcp-session.env.example` and `docker/compose.mcp-session.yml` describe an explicit, session-scoped MCP container profile
 
 Do not assume those files describe the same runtime behavior.
 

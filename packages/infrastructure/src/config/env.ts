@@ -31,6 +31,7 @@ export interface AppEnvironment {
   sqlitePath: string;
   qdrantUrl: string;
   qdrantCollection: string;
+  qdrantSoftFail: boolean;
   ollamaBaseUrl: string;
   ollamaEmbeddingModel: string;
   ollamaReasoningModel: string;
@@ -39,6 +40,7 @@ export interface AppEnvironment {
   reasoningProvider: "disabled" | "heuristic" | "ollama";
   draftingProvider: "disabled" | "ollama";
   rerankerProvider: "disabled" | "local" | "ollama";
+  disableProviderFallbacks: boolean;
   providerEndpoints: {
     dockerOllamaBaseUrl: string;
     paidEscalationBaseUrl?: string;
@@ -111,6 +113,7 @@ export function loadEnvironment(env: NodeJS.ProcessEnv = process.env): AppEnviro
     sqlitePath: env.MAB_SQLITE_PATH ?? DEFAULT_SQLITE_PATH,
     qdrantUrl: env.MAB_QDRANT_URL ?? "http://127.0.0.1:6333",
     qdrantCollection: env.MAB_QDRANT_COLLECTION ?? "context_brain_chunks",
+    qdrantSoftFail: parseBoolean(env.MAB_QDRANT_SOFT_FAIL, true),
     ollamaBaseUrl: env.MAB_OLLAMA_BASE_URL ?? "http://127.0.0.1:12434",
     ollamaEmbeddingModel: env.MAB_OLLAMA_EMBEDDING_MODEL ?? "docker.io/ai/qwen3-embedding:0.6B-F16",
     ollamaReasoningModel: env.MAB_OLLAMA_REASONING_MODEL ?? "qwen3:4B-F16",
@@ -119,6 +122,10 @@ export function loadEnvironment(env: NodeJS.ProcessEnv = process.env): AppEnviro
     reasoningProvider: (env.MAB_REASONING_PROVIDER as AppEnvironment["reasoningProvider"]) ?? "heuristic",
     draftingProvider: (env.MAB_DRAFTING_PROVIDER as AppEnvironment["draftingProvider"]) ?? "ollama",
     rerankerProvider: (env.MAB_RERANKER_PROVIDER as AppEnvironment["rerankerProvider"]) ?? "ollama",
+    disableProviderFallbacks: parseBoolean(
+      env.MAB_DISABLE_PROVIDER_FALLBACKS,
+      false
+    ),
     providerEndpoints: {
       dockerOllamaBaseUrl:
         env.MAB_PROVIDER_DOCKER_OLLAMA_BASE_URL ??
@@ -185,6 +192,7 @@ export function normalizeEnvironment(input: Partial<AppEnvironment>): AppEnviron
     sqlitePath: input.sqlitePath ?? DEFAULT_SQLITE_PATH,
     qdrantUrl: input.qdrantUrl ?? "http://127.0.0.1:6333",
     qdrantCollection: input.qdrantCollection ?? "context_brain_chunks",
+    qdrantSoftFail: input.qdrantSoftFail ?? true,
     ollamaBaseUrl: input.ollamaBaseUrl ?? providerEndpoints.dockerOllamaBaseUrl,
     ollamaEmbeddingModel:
       input.ollamaEmbeddingModel ?? "docker.io/ai/qwen3-embedding:0.6B-F16",
@@ -197,6 +205,7 @@ export function normalizeEnvironment(input: Partial<AppEnvironment>): AppEnviron
     reasoningProvider: input.reasoningProvider ?? "heuristic",
     draftingProvider: input.draftingProvider ?? "ollama",
     rerankerProvider: input.rerankerProvider ?? "ollama",
+    disableProviderFallbacks: input.disableProviderFallbacks ?? false,
     providerEndpoints,
     roleBindings: buildRoleBindingsFromLegacy(input, providerEndpoints.dockerOllamaBaseUrl),
     codingRuntimePythonExecutable:

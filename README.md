@@ -19,10 +19,9 @@ The tracked repository currently implements:
 The tracked repository does not currently include:
 
 - GitHub Actions or other tracked CI/CD definitions
-- Kubernetes, Helm, Terraform, or deployment descriptors beyond `docker/compose.local.yml`
+- Kubernetes, Helm, Terraform, or deployment descriptors beyond the tracked local Docker profiles
 - a tracked migration system for SQLite
 - a tracked dotenv loader for Node processes
-- a tracked Docker Compose profile for the MCP server itself
 
 ## Architecture snapshot
 
@@ -84,11 +83,14 @@ python -m pip install fastmcp httpx pytest
 
 ```bash
 corepack enable
-pnpm install
-pnpm build
+corepack pnpm install
+corepack pnpm build
 ```
 
 The root package scripts are the supported install and build entrypoints. There is no tracked bootstrap script in `scripts/`.
+
+If `corepack enable` cannot install a global `pnpm` shim on your machine, run the
+workspace commands as `corepack pnpm ...` directly.
 
 ## Configuration model
 
@@ -136,20 +138,24 @@ Why this works:
 ### Start an entrypoint
 
 ```bash
-pnpm api
-pnpm cli -- version
-pnpm mcp
+corepack pnpm api
+corepack pnpm cli -- version
+corepack pnpm mcp
 ```
 
 Entrypoints:
 
-- HTTP API: `pnpm api`
-- CLI: `pnpm cli -- <command>`
-- MCP server: `pnpm mcp`
+- HTTP API: `corepack pnpm api`
+- CLI: `corepack pnpm cli -- <command>`
+- MCP server: `corepack pnpm mcp`
 
 ## Run with Docker
 
-The tracked container profile is the local HTTP runtime in `docker/compose.local.yml`.
+The repository now tracks two Docker runtime shapes:
+
+- `docker/compose.local.yml` for the local HTTP runtime
+- `docker/brain-mcp.Dockerfile` plus `docker/brain-mcp-session-entrypoint.mjs`
+  for an on-demand stdio MCP session container
 
 ### What the compose profile starts
 
@@ -172,7 +178,7 @@ Expected model names in that Docker/Ollama-compatible endpoint:
 - `qwen3-coder`
 - `qwen3-reranker`
 
-### Start the tracked Docker profile
+### Start the tracked HTTP Docker profile
 
 ```bash
 docker compose -f docker/compose.local.yml up --build
@@ -181,8 +187,8 @@ docker compose -f docker/compose.local.yml up --build
 Or use the workspace scripts:
 
 ```bash
-pnpm docker:up
-pnpm docker:down
+corepack pnpm docker:up
+corepack pnpm docker:down
 ```
 
 Important profile note:
@@ -191,6 +197,55 @@ Important profile note:
 - generic defaults use `hash` embeddings and `heuristic` reasoning unless you override them
 - the compose profile forces the main provider selectors to the Docker/Ollama-compatible stack
 
+### Start a session-scoped Docker MCP container
+
+Tracked Docker MCP assets:
+
+- `docker/brain-mcp.Dockerfile`
+- `docker/brain-mcp-session.env.example`
+- `docker/brain-mcp-session.actor-registry.example.json`
+- `docker/compose.mcp-session.yml`
+- `docs/operations/docker-mcp-session.md`
+
+Build the image:
+
+```bash
+corepack pnpm docker:mcp:build
+```
+
+Validate the profile before connecting a client:
+
+```bash
+docker run --rm \
+  --env-file docker/brain-mcp-session.env \
+  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/vault/canonical,dst=/data/vault/canonical \
+  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/vault/staging,dst=/data/vault/staging \
+  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/state,dst=/data/state \
+  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/config/auth,dst=/config/auth,readonly \
+  --add-host host.docker.internal:host-gateway \
+  --add-host model-runner.docker.internal:host-gateway \
+  multi-agent-brain-mcp-session:local \
+  --validate-only
+```
+
+Launch the MCP session:
+
+```bash
+docker run --rm -i \
+  --env-file docker/brain-mcp-session.env \
+  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/vault/canonical,dst=/data/vault/canonical \
+  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/vault/staging,dst=/data/vault/staging \
+  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/state,dst=/data/state \
+  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/config/auth,dst=/config/auth,readonly \
+  --add-host host.docker.internal:host-gateway \
+  --add-host model-runner.docker.internal:host-gateway \
+  multi-agent-brain-mcp-session:local
+```
+
+This mode is intentionally session-scoped. It keeps canonical, staging, state,
+and auth data on the host and refuses to start if required mounts, models,
+Qdrant, or the fixed session actor contract are missing.
+
 ## MCP setup
 
 The tracked MCP adapter is a stdio server exposed by `apps/brain-mcp`.
@@ -198,14 +253,14 @@ The tracked MCP adapter is a stdio server exposed by `apps/brain-mcp`.
 ### Local stdio MCP server
 
 ```bash
-pnpm mcp
+corepack pnpm mcp
 ```
 
 Behavior:
 
 - JSON-RPC over stdio with Content-Length framing
 - shared transport validation
-- MCP-scoped actor defaults
+- optional fixed session actor defaults through `MAB_MCP_DEFAULT_*`
 - delegation into the same shared runtime used by the HTTP and CLI adapters
 
 ### Generic MCP client command configuration
@@ -216,6 +271,16 @@ If your MCP client accepts a local command, point it at the built server:
 {
   "command": "pnpm",
   "args": ["mcp"],
+  "cwd": "/absolute/path/to/multi-agent-brain"
+}
+```
+
+If your machine does not have a working global `pnpm` shim, use:
+
+```json
+{
+  "command": "corepack",
+  "args": ["pnpm", "mcp"],
   "cwd": "/absolute/path/to/multi-agent-brain"
 }
 ```
@@ -232,15 +297,18 @@ If your client prefers an explicit Node entrypoint after build, use:
 
 ### Docker plus MCP
 
-There is no tracked Docker Compose service for the MCP server today.
+The tracked Docker MCP profile is intended for on-demand session launch, not an
+always-on background container.
 
 Recommended setup:
 
-1. use `docker/compose.local.yml` for the HTTP API plus Qdrant
-2. run `pnpm mcp` locally from the repo for stdio MCP access
-3. give the MCP process the same environment profile you want it to use
+1. build `docker/brain-mcp.Dockerfile`
+2. copy `docker/brain-mcp-session.env.example` to `docker/brain-mcp-session.env`
+3. mount canonical, staging, state, and config explicitly
+4. run `docker run --rm -i ... multi-agent-brain-mcp-session:local`
 
-If you want a containerized MCP server, you can reuse `docker/brain-api.Dockerfile` and override the command, but that is not a tracked runtime profile in this repository yet.
+See `docs/operations/docker-mcp-session.md` for the exact command shape,
+validation step, and MCP client snippet.
 
 ## HTTP and CLI surfaces
 
@@ -295,14 +363,16 @@ See `docs/operations/running.md` for the current health model and runtime behavi
 ## Verify your setup
 
 ```bash
-pnpm build
-pnpm typecheck
-pnpm test:transport
-pnpm test
-python -m pytest runtimes/local_experts/tests/test_safety_gate.py -v
+corepack pnpm build
+corepack pnpm typecheck
+corepack pnpm test:transport
+corepack pnpm test
+py -3 -m pytest runtimes/local_experts/tests/test_safety_gate.py -v   # Windows
+python3 -m pytest runtimes/local_experts/tests/test_safety_gate.py -v # macOS/Linux
 ```
 
-`pnpm test` currently expands to `pnpm test:e2e`, which first runs `pnpm build` and then executes the tracked end-to-end suite.
+`corepack pnpm test` currently expands to `pnpm test:e2e`, which first runs
+`pnpm build` and then executes the tracked end-to-end suite.
 
 ## Repository structure
 
@@ -323,6 +393,7 @@ Full map: `docs/reference/repo-map.md`
 - `docs/setup/installation.md`
 - `docs/setup/configuration.md`
 - `docs/operations/running.md`
+- `docs/operations/docker-mcp-session.md`
 - `docs/architecture/overview.md`
 - `docs/architecture/runtime-flow.md`
 - `docs/architecture/invariants-and-boundaries.md`
@@ -335,9 +406,8 @@ Full map: `docs/reference/repo-map.md`
 
 ## Known limitations and active documentation risks
 
-- `packages/contracts/src/mcp/index.ts` still exports `inspect-gap.tool.ts`, while the MCP runtime currently exposes `import_resource` and `create_session_archive`
 - namespace browsing is currently backed by rows in the `notes` table; imported jobs and session archives are stored, but they are not exposed through the namespace tree
-- there is no tracked Docker Compose profile for the MCP server
+- the Docker MCP session profile still assumes Qdrant and the model endpoint are managed intentionally outside the session container
 - there is no tracked CI pipeline validating docs, builds, or tests automatically
 
 ## AI-agent navigation
