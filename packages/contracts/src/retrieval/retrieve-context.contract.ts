@@ -8,17 +8,22 @@ import type {
 import type { ActorContext } from "../common/actor-context.js";
 import type { ContextBudget } from "../common/context-budget.js";
 import type { ProvenanceRef } from "../common/provenance-ref.js";
+import type { RetrievalTraceRef } from "../common/retrieval-trace-ref.js";
+
+export type RetrieveContextStrategy = "flat" | "hierarchical";
 
 export interface RetrieveContextRequest {
   actor: ActorContext;
   query: string;
   budget: ContextBudget;
   corpusIds: CorpusId[];
+  strategy?: RetrieveContextStrategy;
   intentHint?: QueryIntent;
   noteTypePriority?: NoteType[];
   tagFilters?: ControlledTag[];
   includeSuperseded?: boolean;
   requireEvidence?: boolean;
+  includeTrace?: boolean;
 }
 
 export interface RetrieveContextResponse {
@@ -30,4 +35,5 @@ export interface RetrieveContextResponse {
     delivered: number;
   };
   provenance: ProvenanceRef[];
+  trace?: RetrievalTraceRef;
 }

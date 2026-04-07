@@ -7,6 +7,7 @@ import type {
   ExecuteCodingTaskRequest,
   ExecuteCodingTaskResponse,
   GetDecisionSummaryRequest,
+  ImportResourceRequest,
   PromoteNoteRequest,
   QueryHistoryRequest,
   RetrieveContextRequest,
@@ -78,6 +79,14 @@ export class MultiAgentOrchestrator {
     return this.brainController.createRefreshDraftBatch(request);
   }
 
+  async importResource(
+    request: ImportResourceRequest
+  ) {
+    this.assertAuthorized("import_resource", request.actor);
+    this.assertBrainRoute("import_resource");
+    return this.brainController.importResource(request);
+  }
+
   validateNote(request: ValidateNoteRequest): ValidateNoteResponse {
     this.assertAuthorized("validate_note", request.actor);
     this.assertBrainRoute("validate_note");
@@ -120,6 +129,7 @@ export class MultiAgentOrchestrator {
       | "draft_note"
       | "create_refresh_draft"
       | "create_refresh_drafts"
+      | "import_resource"
       | "validate_note"
       | "promote_note"
       | "query_history"

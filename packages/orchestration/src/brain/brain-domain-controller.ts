@@ -1,3 +1,4 @@
+import type { ImportOrchestrationService } from "@multi-agent-brain/application";
 import type {
   AssembleContextPacketRequest,
   AssembleContextPacketResponse,
@@ -5,6 +6,7 @@ import type {
   CreateRefreshDraftRequest,
   DraftNoteRequest,
   GetDecisionSummaryRequest,
+  ImportResourceRequest,
   PromoteNoteRequest,
   QueryHistoryRequest,
   RetrieveContextRequest,
@@ -17,7 +19,8 @@ import type { BrainRetrievalController } from "./brain-retrieval-controller.js";
 export class BrainDomainController {
   constructor(
     private readonly retrievalController: BrainRetrievalController,
-    private readonly memoryController: BrainMemoryController
+    private readonly memoryController: BrainMemoryController,
+    private readonly importOrchestrationService: ImportOrchestrationService
   ) {}
 
   async searchContext(
@@ -54,6 +57,12 @@ export class BrainDomainController {
     request: CreateRefreshDraftBatchRequest
   ) {
     return this.memoryController.createRefreshDraftBatch(request);
+  }
+
+  async importResource(
+    request: ImportResourceRequest
+  ) {
+    return this.importOrchestrationService.importResource(request);
   }
 
   validateNote(request: ValidateNoteRequest): ValidateNoteResponse {

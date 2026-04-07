@@ -1101,7 +1101,7 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
   }
 }
 
-interface SqliteNoteRow {
+export interface SqliteNoteRow {
   note_id: string;
   corpus_id: MetadataNoteRecord["corpusId"];
   note_path: string;

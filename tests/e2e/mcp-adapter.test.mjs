@@ -8,8 +8,18 @@ import test from "node:test";
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
-test("brain-mcp serves initialize, tools/list, get_context_packet, and validate_note over stdio MCP framing", async (t) => {
+test("brain-mcp serves initialize, tools/list, list_context_tree, read_context_node, get_context_packet, and validate_note over stdio MCP framing", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "mab-mcp-"));
+  const canonical = await seedCanonicalTemporalNote(root, {
+    title: "MCP Namespace Canonical Node",
+    scope: "mcp-namespace",
+    validFrom: addDaysIso(currentDateIso(), -14),
+    validUntil: addDaysIso(currentDateIso(), 14)
+  });
+  const staging = await seedStagingDraft(root, {
+    title: "MCP Namespace Staging Node",
+    scope: "mcp-namespace"
+  });
   const repoRoot = path.join(root, "repo");
   await fsMkdir(path.join(repoRoot, ".git"), { recursive: true });
   await fsMkdir(path.join(repoRoot, "src"), { recursive: true });
@@ -81,10 +91,72 @@ test("brain-mcp serves initialize, tools/list, get_context_packet, and validate_
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "get_context_packet"));
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "create_refresh_draft"));
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "execute_coding_task"));
+  assert.ok(listResponse.result.tools.some((tool) => tool.name === "list_context_tree"));
+  assert.ok(listResponse.result.tools.some((tool) => tool.name === "read_context_node"));
+  const listContextTreeTool = listResponse.result.tools.find(
+    (tool) => tool.name === "list_context_tree"
+  );
+  assert.ok(listContextTreeTool);
+  assert.deepEqual(
+    Object.keys(listContextTreeTool.inputSchema.properties).sort(),
+    ["authorityStates", "ownerScope"]
+  );
 
   writeMcpMessage(child.stdin, {
     jsonrpc: "2.0",
     id: 3,
+    method: "tools/call",
+    params: {
+      name: "list_context_tree",
+      arguments: {
+        ownerScope: "context_brain",
+        authorityStates: ["canonical", "staging"]
+      }
+    }
+  });
+
+  const treeResponse = await transport.next();
+  assert.equal(treeResponse.result.isError, false);
+  assert.equal(treeResponse.result.structuredContent.ok, true);
+  assert.ok(
+    treeResponse.result.structuredContent.data.nodes.some(
+      (node) =>
+        node.uri === `mab://context_brain/note/${canonical.noteId}` &&
+        node.authorityState === "canonical"
+    )
+  );
+  assert.ok(
+    treeResponse.result.structuredContent.data.nodes.some(
+      (node) =>
+        node.uri === `mab://context_brain/note/${staging.draftNoteId}` &&
+        node.authorityState === "staging"
+    )
+  );
+
+  writeMcpMessage(child.stdin, {
+    jsonrpc: "2.0",
+    id: 4,
+    method: "tools/call",
+    params: {
+      name: "read_context_node",
+      arguments: {
+        uri: `mab://context_brain/note/${canonical.noteId}`
+      }
+    }
+  });
+
+  const nodeResponse = await transport.next();
+  assert.equal(nodeResponse.result.isError, false);
+  assert.equal(nodeResponse.result.structuredContent.ok, true);
+  assert.equal(
+    nodeResponse.result.structuredContent.data.node.uri,
+    `mab://context_brain/note/${canonical.noteId}`
+  );
+  assert.equal(nodeResponse.result.structuredContent.data.node.authorityState, "canonical");
+
+  writeMcpMessage(child.stdin, {
+    jsonrpc: "2.0",
+    id: 5,
     method: "tools/call",
     params: {
       name: "get_context_packet",
@@ -126,7 +198,7 @@ test("brain-mcp serves initialize, tools/list, get_context_packet, and validate_
   const noteId = randomUUID();
   writeMcpMessage(child.stdin, {
     jsonrpc: "2.0",
-    id: 4,
+    id: 6,
     method: "tools/call",
     params: {
       name: "validate_note",
@@ -163,7 +235,7 @@ test("brain-mcp serves initialize, tools/list, get_context_packet, and validate_
 
   writeMcpMessage(child.stdin, {
     jsonrpc: "2.0",
-    id: 5,
+    id: 7,
     method: "tools/call",
     params: {
       name: "execute_coding_task",
@@ -774,6 +846,51 @@ async function seedCanonicalTemporalNote(root, input) {
 
     assert.equal(promoted.ok, true);
     return { noteId: promoted.data.promotedNoteId };
+  } finally {
+    container.dispose();
+  }
+}
+
+async function seedStagingDraft(root, input) {
+  const { buildServiceContainer } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "packages", "infrastructure", "dist", "index.js")
+    ).href
+  );
+
+  const container = buildServiceContainer({
+    nodeEnv: "test",
+    vaultRoot: path.join(root, "vault", "canonical"),
+    stagingRoot: path.join(root, "vault", "staging"),
+    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    qdrantUrl: "http://127.0.0.1:6333",
+    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    embeddingProvider: "hash",
+    reasoningProvider: "heuristic",
+    draftingProvider: "disabled",
+    rerankerProvider: "local",
+    logLevel: "error"
+  });
+
+  try {
+    const draft = await container.services.stagingDraftService.createDraft({
+      actor: testActor("writer"),
+      targetCorpus: "context_brain",
+      noteType: "reference",
+      title: input.title,
+      sourcePrompt: `Seed staging draft for ${input.title}`,
+      supportingSources: [],
+      bodyHints: [
+        `This staging draft exists only to exercise the namespace browse surface for ${input.title}.`,
+        `It should remain a staging authority node for scope ${input.scope}.`
+      ],
+      frontmatterOverrides: {
+        scope: input.scope
+      }
+    });
+
+    assert.equal(draft.ok, true);
+    return { draftNoteId: draft.data.draftNoteId };
   } finally {
     container.dispose();
   }

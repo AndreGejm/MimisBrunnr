@@ -5,6 +5,7 @@ export type BrainCommand =
   | "draft_note"
   | "create_refresh_draft"
   | "create_refresh_drafts"
+  | "import_resource"
   | "validate_note"
   | "promote_note"
   | "query_history";
@@ -55,6 +56,11 @@ const ROUTE_TABLE: Record<OrchestratorCommand, RoutedTask> = {
   },
   create_refresh_drafts: {
     command: "create_refresh_drafts",
+    domain: "brain",
+    family: "brain_memory_update"
+  },
+  import_resource: {
+    command: "import_resource",
     domain: "brain",
     family: "brain_memory_update"
   },

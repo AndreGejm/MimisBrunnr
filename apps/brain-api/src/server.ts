@@ -9,8 +9,11 @@ import type {
   DraftNoteRequest,
   ExecuteCodingTaskRequest,
   GetDecisionSummaryRequest,
+  ImportResourceRequest,
+  ListContextTreeRequest,
   PromoteNoteRequest,
   QueryHistoryRequest,
+  ReadContextNodeRequest,
   RetrieveContextRequest,
   ServiceError,
   ValidateNoteRequest
@@ -41,13 +44,18 @@ type RouteName =
   | "create-refresh-drafts"
   | "validate-note"
   | "promote-note"
-  | "query-history";
+  | "import-resource"
+  | "query-history"
+  | "list-context-tree"
+  | "read-context-node";
 
 type JsonRecord = Record<string, unknown>;
 
 const DEFAULT_ACTOR_ROLE: Record<RouteName, ActorRole> = {
   "execute-coding-task": "operator",
   "search-context": "retrieval",
+  "list-context-tree": "retrieval",
+  "read-context-node": "retrieval",
   "get-context-packet": "retrieval",
   "fetch-decision-summary": "retrieval",
   "draft-note": "writer",
@@ -55,6 +63,7 @@ const DEFAULT_ACTOR_ROLE: Record<RouteName, ActorRole> = {
   "create-refresh-drafts": "operator",
   "validate-note": "orchestrator",
   "promote-note": "orchestrator",
+  "import-resource": "operator",
   "query-history": "operator"
 };
 
@@ -70,6 +79,8 @@ const ROUTES: Record<string, { method: "GET" | "POST"; name?: RouteName; healthM
   "/v1/system/version": { method: "GET" },
   "/v1/coding/execute": { method: "POST", name: "execute-coding-task" },
   "/v1/context/search": { method: "POST", name: "search-context" },
+  "/v1/context/tree": { method: "POST", name: "list-context-tree" },
+  "/v1/context/node": { method: "POST", name: "read-context-node" },
   "/v1/context/packet": { method: "POST", name: "get-context-packet" },
   "/v1/context/decision-summary": { method: "POST", name: "fetch-decision-summary" },
   "/v1/notes/drafts": { method: "POST", name: "draft-note" },
@@ -77,6 +88,7 @@ const ROUTES: Record<string, { method: "GET" | "POST"; name?: RouteName; healthM
   "/v1/system/freshness/refresh-drafts": { method: "POST", name: "create-refresh-drafts" },
   "/v1/notes/validate": { method: "POST", name: "validate-note" },
   "/v1/notes/promote": { method: "POST", name: "promote-note" },
+  "/v1/maintenance/import-resource": { method: "POST", name: "import-resource" },
   "/v1/history/query": { method: "POST", name: "query-history" }
 };
 
@@ -378,6 +390,20 @@ async function handleRequest(
       sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
       return;
     }
+    case "list-context-tree": {
+      const result = await container.services.contextNamespaceService.listTree(
+        normalizedRequest as unknown as ListContextTreeRequest
+      );
+      sendJson(response, 200, result);
+      return;
+    }
+    case "read-context-node": {
+      const result = await container.services.contextNamespaceService.readNode(
+        normalizedRequest as unknown as ReadContextNodeRequest
+      );
+      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
+      return;
+    }
     case "get-context-packet": {
       const result = await container.orchestrator.getContextPacket(
         normalizedRequest as unknown as AssembleContextPacketRequest
@@ -423,6 +449,13 @@ async function handleRequest(
     case "promote-note": {
       const result = await container.orchestrator.promoteNote(
         normalizedRequest as unknown as PromoteNoteRequest
+      );
+      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
+      return;
+    }
+    case "import-resource": {
+      const result = await container.orchestrator.importResource(
+        normalizedRequest as unknown as ImportResourceRequest
       );
       sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
       return;

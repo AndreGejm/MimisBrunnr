@@ -22,8 +22,12 @@ import {
   AuditHistoryService as ConcreteAuditHistoryService,
   CanonicalNoteService as ConcreteCanonicalNoteService,
   ChunkingService as ConcreteChunkingService,
+  ContextNamespaceService as ConcreteContextNamespaceService,
+  ContextRepresentationService as ConcreteContextRepresentationService,
   ContextPacketService as ConcreteContextPacketService,
   DecisionSummaryService as ConcreteDecisionSummaryService,
+  ImportOrchestrationService as ConcreteImportOrchestrationService,
+  HierarchicalRetrievalService as ConcreteHierarchicalRetrievalService,
   NoteValidationService as ConcreteNoteValidationService,
   PromotionOrchestratorService as ConcretePromotionOrchestratorService,
   RetrieveContextService as ConcreteRetrieveContextService,
@@ -54,6 +58,9 @@ import { OllamaEmbeddingProvider } from "../providers/ollama-embedding-provider.
 import { OllamaLocalReasoningProvider } from "../providers/ollama-local-reasoning-provider.js";
 import { OllamaRerankerProvider } from "../providers/ollama-reranker-provider.js";
 import { SqliteAuditLog } from "../sqlite/sqlite-audit-log.js";
+import { SqliteContextNamespaceStore } from "../sqlite/sqlite-context-namespace-store.js";
+import { SqliteContextRepresentationStore } from "../sqlite/sqlite-context-representation-store.js";
+import { SqliteImportJobStore } from "../sqlite/sqlite-import-job-store.js";
 import { SqliteIssuedTokenStore } from "../sqlite/sqlite-issued-token-store.js";
 import { SqliteMetadataControlStore } from "../sqlite/sqlite-metadata-control-store.js";
 import { SqliteRevocationStore } from "../sqlite/sqlite-revocation-store.js";
@@ -88,6 +95,9 @@ export interface ServiceRegistry {
   retrieveContextService: RetrieveContextService;
   contextPacketService: ConcreteContextPacketService;
   decisionSummaryService: ConcreteDecisionSummaryService;
+  importOrchestrationService: ConcreteImportOrchestrationService;
+  contextNamespaceService: ConcreteContextNamespaceService;
+  contextRepresentationService: ConcreteContextRepresentationService;
   temporalRefreshService: TemporalRefreshService;
 }
 
@@ -111,6 +121,9 @@ export function buildServiceContainer(
   const revocationStore = new SqliteRevocationStore(env.sqlitePath);
   const auditLog = new SqliteAuditLog(env.sqlitePath);
   const lexicalIndex = new SqliteFtsIndex(env.sqlitePath);
+  const contextNamespaceStore = new SqliteContextNamespaceStore(env.sqlitePath);
+  const contextRepresentationStore = new SqliteContextRepresentationStore(env.sqlitePath);
+  const importJobStore = new SqliteImportJobStore(env.sqlitePath);
   const vectorIndex = new QdrantVectorIndex({
     baseUrl: env.qdrantUrl,
     collectionName: env.qdrantCollection
@@ -172,18 +185,10 @@ export function buildServiceContainer(
     draftingProvider
   );
   const chunkingService = new ConcreteChunkingService();
-  const promotionOrchestratorService = new ConcretePromotionOrchestratorService(
-    stagingNoteRepository,
-    canonicalNoteService,
-    noteValidationService,
-    metadataControlStore,
-    chunkingService,
-    auditHistoryService,
-    lexicalIndex,
-    vectorIndex,
-    embeddingProvider
+  const contextRepresentationService = new ConcreteContextRepresentationService(
+    contextRepresentationStore
   );
-  const retrieveContextService = new ConcreteRetrieveContextService({
+  const hierarchicalRetrievalService = new ConcreteHierarchicalRetrievalService({
     lexicalIndex,
     metadataControlStore,
     vectorIndex,
@@ -193,10 +198,39 @@ export function buildServiceContainer(
     rerankerProvider,
     auditHistoryService
   });
+  const promotionOrchestratorService = new ConcretePromotionOrchestratorService(
+    stagingNoteRepository,
+    canonicalNoteService,
+    noteValidationService,
+    metadataControlStore,
+    chunkingService,
+    auditHistoryService,
+    lexicalIndex,
+    vectorIndex,
+    embeddingProvider,
+    contextRepresentationService
+  );
+  const retrieveContextService = new ConcreteRetrieveContextService({
+    lexicalIndex,
+    metadataControlStore,
+    vectorIndex,
+    embeddingProvider,
+    localReasoningProvider,
+    paidEscalationProvider,
+    rerankerProvider,
+    auditHistoryService,
+    hierarchicalRetrievalService
+  });
   const contextPacketService = new ConcreteContextPacketService(metadataControlStore);
   const decisionSummaryService = new ConcreteDecisionSummaryService(
     retrieveContextService,
     auditHistoryService
+  );
+  const importOrchestrationService = new ConcreteImportOrchestrationService(
+    importJobStore
+  );
+  const contextNamespaceService = new ConcreteContextNamespaceService(
+    contextNamespaceStore
   );
   const temporalRefreshService = new ConcreteTemporalRefreshService(
     metadataControlStore,
@@ -227,7 +261,8 @@ export function buildServiceContainer(
       promotionOrchestratorService,
       auditHistoryService,
       temporalRefreshService
-    )
+    ),
+    importOrchestrationService
   );
   const codingDomainController = new CodingDomainController(
     new PythonCodingControllerBridge({
@@ -278,6 +313,9 @@ export function buildServiceContainer(
       retrieveContextService,
       contextPacketService,
       decisionSummaryService,
+      importOrchestrationService,
+      contextNamespaceService,
+      contextRepresentationService,
       temporalRefreshService
     },
     orchestrator,
@@ -285,6 +323,9 @@ export function buildServiceContainer(
       closeIfSupported(lexicalIndex);
       closeIfSupported(auditLog);
       closeIfSupported(metadataControlStore);
+      closeIfSupported(contextNamespaceStore);
+      closeIfSupported(contextRepresentationStore);
+      closeIfSupported(importJobStore);
       closeIfSupported(issuedTokenStore);
       closeIfSupported(revocationStore);
     }

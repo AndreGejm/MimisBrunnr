@@ -1,37 +1,35 @@
+import { AuditHistoryService } from "./audit-history-service.js";
+import {
+  DEFAULT_CONTEXT_BUDGET,
+  type AssembleContextPacketRequest,
+  type ContextCandidate,
+  type RetrieveContextRequest,
+  type RetrieveContextResponse,
+  type ServiceResult
+} from "@multi-agent-brain/contracts";
+import type { QueryIntent } from "@multi-agent-brain/domain";
 import type { EmbeddingProvider } from "../ports/embedding-provider.js";
 import type { LexicalIndex } from "../ports/lexical-index.js";
 import type { LocalReasoningProvider } from "../ports/local-reasoning-provider.js";
 import type { MetadataControlStore } from "../ports/metadata-control-store.js";
 import type { RerankerProvider } from "../ports/reranker-provider.js";
 import type { VectorIndex } from "../ports/vector-index.js";
-import { AuditHistoryService } from "./audit-history-service.js";
-import {
-  DEFAULT_CONTEXT_BUDGET,
-  type ContextCandidate,
-  type AssembleContextPacketRequest,
-  type RetrieveContextRequest,
-  type RetrieveContextResponse,
-  type ServiceResult
-} from "@multi-agent-brain/contracts";
-import type { QueryIntent } from "@multi-agent-brain/domain";
 import { ContextPacketService } from "./context-packet-service.js";
-import { HierarchicalRetrievalService } from "./hierarchical-retrieval-service.js";
-import { RetrievalTraceService } from "./retrieval-trace-service.js";
 import { LexicalRetrievalService } from "./lexical-retrieval-service.js";
 import { QueryIntentService } from "./query-intent-service.js";
 import { RankingFusionService } from "./ranking-fusion-service.js";
+import { RetrievalTraceService } from "./retrieval-trace-service.js";
 import { VectorRetrievalService } from "./vector-retrieval-service.js";
 
 type RetrieveContextErrorCode = "retrieval_failed";
 
-export class RetrieveContextService {
+export class HierarchicalRetrievalService {
   private readonly queryIntentService: QueryIntentService;
   private readonly lexicalRetrievalService: LexicalRetrievalService;
   private readonly vectorRetrievalService: VectorRetrievalService;
   private readonly rankingFusionService: RankingFusionService;
   private readonly contextPacketService: ContextPacketService;
   private readonly retrievalTraceService: RetrievalTraceService;
-  private readonly hierarchicalRetrievalService?: HierarchicalRetrievalService;
 
   constructor(input: {
     lexicalIndex: LexicalIndex;
@@ -42,7 +40,6 @@ export class RetrieveContextService {
     paidEscalationProvider?: LocalReasoningProvider;
     rerankerProvider?: RerankerProvider;
     auditHistoryService?: AuditHistoryService;
-    hierarchicalRetrievalService?: HierarchicalRetrievalService;
   }) {
     this.queryIntentService = new QueryIntentService(input.localReasoningProvider);
     this.lexicalRetrievalService = new LexicalRetrievalService(
@@ -57,7 +54,6 @@ export class RetrieveContextService {
     this.rankingFusionService = new RankingFusionService();
     this.contextPacketService = new ContextPacketService(input.metadataControlStore);
     this.retrievalTraceService = new RetrievalTraceService();
-    this.hierarchicalRetrievalService = input.hierarchicalRetrievalService;
     this.auditHistoryService = input.auditHistoryService;
     this.rerankerProvider = input.rerankerProvider;
     this.paidEscalationProvider = input.paidEscalationProvider;
@@ -73,10 +69,6 @@ export class RetrieveContextService {
     request: RetrieveContextRequest
   ): Promise<ServiceResult<RetrieveContextResponse, RetrieveContextErrorCode>> {
     try {
-      if (request.strategy === "hierarchical" && this.hierarchicalRetrievalService) {
-        return await this.hierarchicalRetrievalService.retrieveContext(request);
-      }
-
       const budget = request.budget ?? DEFAULT_CONTEXT_BUDGET;
       const intent = await this.queryIntentService.classifyIntent(
         request.query,
@@ -107,11 +99,15 @@ export class RetrieveContextService {
         fusedCandidates,
         Math.max(6, budget.maxSources * 2)
       );
+      const hierarchicalCandidates = selectHierarchicalCandidates(
+        rankedCandidates,
+        Math.max(1, budget.maxSources)
+      );
 
       const answerability = await this.queryIntentService.assessAnswerability(
         request.query,
         intent,
-        rankedCandidates
+        hierarchicalCandidates
       );
 
       const packetResponse = await this.contextPacketService.assemblePacket(
@@ -119,7 +115,7 @@ export class RetrieveContextService {
           actor: request.actor,
           intent,
           budget,
-          candidates: rankedCandidates,
+          candidates: hierarchicalCandidates,
           includeRawExcerpts: request.requireEvidence ?? false
         } satisfies AssembleContextPacketRequest,
         answerability
@@ -127,20 +123,18 @@ export class RetrieveContextService {
       const packet = packetResponse.packet;
       const warnings: string[] = [];
       const selectedCandidates = selectDeliveredCandidates(
-        rankedCandidates,
+        hierarchicalCandidates,
         packet.evidence
       );
       const vectorHealth = this.vectorIndex.getHealthSnapshot?.();
       if (vectorHealth?.status === "degraded") {
         warnings.push("Vector retrieval is degraded; lexical retrieval remains active.");
       }
-      warnings.push(
-        ...buildFreshnessWarnings(selectedCandidates)
-      );
+      warnings.push(...buildFreshnessWarnings(selectedCandidates));
       const escalationSummary = await this.summarizeEscalationUncertainty(
         request.query,
         answerability,
-        rankedCandidates
+        hierarchicalCandidates
       );
       if (escalationSummary) {
         packet.uncertainties = mergeUncertainties(
@@ -162,35 +156,38 @@ export class RetrieveContextService {
         outcome: answerability === "local_answer" ? "accepted" : "partial",
         affectedNoteIds: packet.evidence.map((source) => source.noteId),
         affectedChunkIds: packet.evidence.flatMap((source) => (source.chunkId ? [source.chunkId] : [])),
-          detail: {
-            query: request.query,
-            intent,
-            answerability,
-            paidEscalation: {
-              configured: Boolean(this.paidEscalationProvider),
-              used: Boolean(escalationSummary)
-            },
-            vectorHealth,
-            freshness: summarizeFreshness(selectedCandidates),
-            budget,
-            candidateCounts: {
-              lexical: lexicalCandidates.length,
+        detail: {
+          query: request.query,
+          intent,
+          answerability,
+          paidEscalation: {
+            configured: Boolean(this.paidEscalationProvider),
+            used: Boolean(escalationSummary)
+          },
+          vectorHealth,
+          freshness: summarizeFreshness(selectedCandidates),
+          budget,
+          candidateCounts: {
+            lexical: lexicalCandidates.length,
             vector: vectorCandidates.length,
-            reranked: rankedCandidates.length
+            reranked: hierarchicalCandidates.length
           }
         }
       });
 
       const trace = request.includeTrace
-        ? this.retrievalTraceService.buildFlatTrace({
-            intent,
-            lexicalCount: lexicalCandidates.length,
-            vectorCount: vectorCandidates.length,
-            fusedCount: fusedCandidates.length,
-            rerankedCount: rankedCandidates.length,
-            deliveredCount: packet.evidence.length,
-            packetEvidence: packet.evidence
-          })
+        ? this.retrievalTraceService.buildTrace(
+            {
+              intent,
+              lexicalCount: lexicalCandidates.length,
+              vectorCount: vectorCandidates.length,
+              fusedCount: fusedCandidates.length,
+              rerankedCount: hierarchicalCandidates.length,
+              deliveredCount: packet.evidence.length,
+              packetEvidence: packet.evidence
+            },
+            "hierarchical"
+          )
         : undefined;
 
       return {
@@ -200,7 +197,7 @@ export class RetrieveContextService {
           candidateCounts: {
             lexical: lexicalCandidates.length,
             vector: vectorCandidates.length,
-            reranked: rankedCandidates.length,
+            reranked: hierarchicalCandidates.length,
             delivered: packet.evidence.length
           },
           provenance: packet.evidence,
@@ -281,6 +278,42 @@ export class RetrieveContextService {
       return undefined;
     }
   }
+}
+
+function selectHierarchicalCandidates(
+  candidates: readonly ContextCandidate[],
+  limit: number
+): ContextCandidate[] {
+  const buckets = new Map<string, ContextCandidate[]>();
+  const scopeOrder: string[] = [];
+
+  for (const candidate of candidates) {
+    const scope = candidate.scope.trim() || "unspecified";
+    const bucket = buckets.get(scope);
+    if (bucket) {
+      bucket.push(candidate);
+    } else {
+      buckets.set(scope, [candidate]);
+      scopeOrder.push(scope);
+    }
+  }
+
+  const selected: ContextCandidate[] = [];
+  let progress = true;
+  while (selected.length < limit && progress) {
+    progress = false;
+    for (const scope of scopeOrder) {
+      const bucket = buckets.get(scope);
+      if (!bucket || bucket.length === 0 || selected.length >= limit) {
+        continue;
+      }
+
+      selected.push(bucket.shift() as ContextCandidate);
+      progress = true;
+    }
+  }
+
+  return selected.slice(0, limit);
 }
 
 function collectWarnings(...groups: Array<ReadonlyArray<string>>): string[] | undefined {

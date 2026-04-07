@@ -10,8 +10,11 @@ import type {
   DraftNoteRequest,
   ExecuteCodingTaskRequest,
   GetDecisionSummaryRequest,
+  ImportResourceRequest,
+  ListContextTreeToolRequest,
   PromoteNoteRequest,
   QueryHistoryRequest,
+  ReadContextNodeToolRequest,
   RetrieveContextRequest,
   ValidateNoteRequest
 } from "@multi-agent-brain/contracts";
@@ -263,6 +266,14 @@ async function runTool(name: string, request: JsonRecord): Promise<unknown> {
       return container.orchestrator.searchContext(
         request as unknown as RetrieveContextRequest
       );
+    case "list_context_tree":
+      return container.services.contextNamespaceService.listTree(
+        request as unknown as ListContextTreeToolRequest
+      );
+    case "read_context_node":
+      return container.services.contextNamespaceService.readNode(
+        request as unknown as ReadContextNodeToolRequest
+      );
     case "get_context_packet":
       return container.orchestrator.getContextPacket(
         request as unknown as GetContextPacketToolRequest
@@ -278,6 +289,10 @@ async function runTool(name: string, request: JsonRecord): Promise<unknown> {
     case "create_refresh_drafts":
       return container.orchestrator.createRefreshDraftBatch(
         request as unknown as CreateRefreshDraftBatchRequest
+      );
+    case "import_resource":
+      return container.orchestrator.importResource(
+        request as unknown as ImportResourceRequest
       );
     case "fetch_decision_summary":
       return container.orchestrator.fetchDecisionSummary(

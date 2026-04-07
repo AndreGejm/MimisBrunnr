@@ -29,6 +29,21 @@ const NOTE_LIFECYCLE_STATES = new Set([
   "rejected",
   "archived"
 ]);
+const CONTEXT_OWNER_SCOPES = new Set([
+  "context_brain",
+  "general_notes",
+  "imports",
+  "sessions",
+  "system"
+]);
+const CONTEXT_AUTHORITY_STATES = new Set([
+  "canonical",
+  "staging",
+  "derived",
+  "imported",
+  "session",
+  "extracted"
+]);
 const QUERY_INTENTS = new Set([
   "fact_lookup",
   "decision_lookup",
@@ -37,6 +52,7 @@ const QUERY_INTENTS = new Set([
   "status_timeline",
   "debugging"
 ]);
+const RETRIEVAL_STRATEGIES = new Set(["flat", "hierarchical"]);
 const CODING_TASK_TYPES = new Set([
   "triage",
   "review",
@@ -103,11 +119,27 @@ export function validateTransportRequest(
         query: requireString(payload.query, "query"),
         budget: validateBudget(payload.budget, "budget"),
         corpusIds: requireEnumArray(payload.corpusIds, "corpusIds", CORPORA, { minItems: 1 }),
+        strategy: optionalEnum(payload.strategy, "strategy", RETRIEVAL_STRATEGIES),
         intentHint: optionalEnum(payload.intentHint, "intentHint", QUERY_INTENTS),
         noteTypePriority: optionalEnumArray(payload.noteTypePriority, "noteTypePriority", NOTE_TYPES),
         tagFilters: optionalStringArray(payload.tagFilters, "tagFilters"),
         includeSuperseded: optionalBoolean(payload.includeSuperseded, "includeSuperseded"),
         requireEvidence: optionalBoolean(payload.requireEvidence, "requireEvidence")
+      };
+    case "list-context-tree":
+      return {
+        actor,
+        ownerScope: optionalEnum(payload.ownerScope, "ownerScope", CONTEXT_OWNER_SCOPES),
+        authorityStates: optionalEnumArray(
+          payload.authorityStates,
+          "authorityStates",
+          CONTEXT_AUTHORITY_STATES
+        )
+      };
+    case "read-context-node":
+      return {
+        actor,
+        uri: requireString(payload.uri, "uri")
       };
     case "get-context-packet":
       return {
@@ -182,6 +214,12 @@ export function validateTransportRequest(
         since: optionalString(payload.since, "since"),
         until: optionalString(payload.until, "until"),
         limit: requireInteger(payload.limit, "limit", { min: 1 })
+      };
+    case "import-resource":
+      return {
+        actor,
+        sourcePath: requireString(payload.sourcePath, "sourcePath"),
+        importKind: requireString(payload.importKind, "importKind")
       };
     default:
       return payload;
