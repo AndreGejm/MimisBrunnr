@@ -291,7 +291,7 @@ async function runTool(name: string, request: JsonRecord): Promise<unknown> {
         request as unknown as CreateRefreshDraftBatchRequest
       );
     case "import_resource":
-      return container.services.importOrchestrationService.importResource(
+      return container.orchestrator.importResource(
         request as unknown as ImportResourceRequest
       );
     case "fetch_decision_summary":

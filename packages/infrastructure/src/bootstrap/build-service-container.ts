@@ -261,7 +261,8 @@ export function buildServiceContainer(
       promotionOrchestratorService,
       auditHistoryService,
       temporalRefreshService
-    )
+    ),
+    importOrchestrationService
   );
   const codingDomainController = new CodingDomainController(
     new PythonCodingControllerBridge({

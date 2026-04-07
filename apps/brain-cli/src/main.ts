@@ -428,7 +428,7 @@ async function runCommand(
         request as unknown as CreateRefreshDraftBatchRequest
       );
     case "import-resource":
-      return container.services.importOrchestrationService.importResource(
+      return container.orchestrator.importResource(
         request as unknown as ImportResourceRequest
       );
     case "validate-note":

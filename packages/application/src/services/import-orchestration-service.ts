@@ -9,9 +9,7 @@ import type {
 } from "@multi-agent-brain/contracts";
 import type { ImportJobStore } from "../ports/import-job-store.js";
 
-type ImportResourceErrorCode = "forbidden" | "not_found" | "write_failed";
-
-const ALLOWED_IMPORT_ACTOR_ROLES = new Set(["operator", "orchestrator", "system"]);
+type ImportResourceErrorCode = "not_found" | "write_failed";
 
 export class ImportOrchestrationService {
   constructor(private readonly importJobStore: ImportJobStore) {}
@@ -19,16 +17,6 @@ export class ImportOrchestrationService {
   async importResource(
     request: ImportResourceRequest
   ): Promise<ServiceResult<ImportResourceResponse, ImportResourceErrorCode>> {
-    if (!ALLOWED_IMPORT_ACTOR_ROLES.has(request.actor.actorRole)) {
-      return {
-        ok: false,
-        error: {
-          code: "forbidden",
-          message: `Actor role '${request.actor.actorRole}' cannot import resources.`
-        }
-      };
-    }
-
     const sourcePath = resolve(request.sourcePath);
     let sourceText: string;
 

@@ -454,7 +454,7 @@ async function handleRequest(
       return;
     }
     case "import-resource": {
-      const result = await container.services.importOrchestrationService.importResource(
+      const result = await container.orchestrator.importResource(
         normalizedRequest as unknown as ImportResourceRequest
       );
       sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
