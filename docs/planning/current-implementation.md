@@ -199,3 +199,6 @@ The following items are not part of the current production stack:
 - batch ingest and update flows
 
 These are tracked in [`backlog.md`](./backlog.md).
+# Status note
+
+This file is a historical implementation snapshot. For the current runtime, use `README.md`, `docs/architecture/overview.md`, `docs/reference/interfaces.md`, and `docs/reference/repo-map.md`.

@@ -1,6 +1,10 @@
 # brain-cli
 
-Thin local CLI adapter over the existing application services.
+CLI adapter over the shared runtime container.
+
+## Entrypoint
+
+- `apps/brain-cli/src/main.ts`
 
 ## Commands
 
@@ -9,52 +13,53 @@ Thin local CLI adapter over the existing application services.
 - `auth-issued-tokens`
 - `auth-introspect-token`
 - `freshness-status`
-- `create-refresh-draft`
-- `create-refresh-drafts`
 - `issue-auth-token`
 - `revoke-auth-token`
 - `execute-coding-task`
 - `search-context`
+- `list-context-tree`
+- `read-context-node`
 - `get-context-packet`
 - `fetch-decision-summary`
 - `draft-note`
+- `create-refresh-draft`
+- `create-refresh-drafts`
 - `validate-note`
 - `promote-note`
+- `import-resource`
 - `query-history`
+- `create-session-archive`
 
-## Usage
+## Input behavior
+
+- payload-bearing commands accept exactly one of `--stdin`, `--input <path>`, or `--json <payload>`
+- `version` and `auth-status` do not require payloads
+- `auth-issued-tokens`, `freshness-status`, and `create-refresh-drafts` accept optional payloads
+- output is always JSON
+
+## Run
 
 ```bash
 pnpm cli -- version
 pnpm cli -- auth-status
-pnpm cli -- auth-issued-tokens
-pnpm cli -- auth-issued-tokens --json "{\"includeRevoked\":true,\"limit\":10}"
-pnpm cli -- auth-introspect-token --json "{\"token\":\"<issued-or-static-token>\",\"expectedTransport\":\"http\",\"expectedCommand\":\"validate_note\"}"
-pnpm cli -- freshness-status
-pnpm cli -- freshness-status --json "{\"corpusId\":\"context_brain\",\"expiringWithinDays\":7,\"limitPerCategory\":5}"
-pnpm cli -- create-refresh-draft --json "{\"noteId\":\"<canonical-note-id>\",\"bodyHints\":[\"Refresh expired guidance.\"]}"
-pnpm cli -- create-refresh-drafts --json "{\"expiringWithinDays\":14,\"maxDrafts\":3,\"bodyHints\":[\"Refresh stale guidance in batch.\"]}"
-pnpm cli -- issue-auth-token --json "{\"actorId\":\"validate-note-http\",\"actorRole\":\"orchestrator\",\"source\":\"brain-api\",\"allowedTransports\":[\"http\"],\"allowedCommands\":[\"validate_note\"],\"ttlMinutes\":60}"
-pnpm cli -- revoke-auth-token --json "{\"tokenId\":\"<issued-token-id>\",\"reason\":\"operator initiated revocation\"}"
-pnpm cli -- execute-coding-task --json "{\"taskType\":\"triage\",\"task\":\"Find the regression\",\"repoRoot\":\".\"}"
-pnpm cli -- search-context --input ./request.json
-pnpm cli -- get-context-packet --stdin < ./request.json
-pnpm cli -- fetch-decision-summary --stdin < ./request.json
-pnpm cli -- validate-note --stdin < ./request.json
-pnpm cli -- draft-note --json "{\"targetCorpus\":\"context_brain\", ... }"
+pnpm cli -- list-context-tree --json "{\"ownerScope\":\"context_brain\",\"authorityStates\":[\"canonical\",\"staging\"]}"
 ```
 
-## Input Shape
+## Canonical docs
 
-Each command accepts a JSON object shaped like the existing service contracts in `packages/contracts/src/**`.
+- `docs/reference/interfaces.md`
+- `docs/setup/development-workflow.md`
 
-The CLI injects a default actor context when the input omits `actor`, so the wrapper stays thin and transport-agnostic. `execute-coding-task` also defaults `repoRoot` to the current working directory when it is omitted. `version`, `--version`, and `auth-status` do not require an input payload. `auth-issued-tokens` accepts optional JSON input with `actorId`, `asOf`, `includeRevoked`, and `limit`, and it reads the persisted SQLite-issued-token ledger. `freshness-status` accepts an optional JSON payload with `asOf`, `expiringWithinDays`, `corpusId`, and `limitPerCategory`. `create-refresh-draft` expects a canonical `noteId` plus optional `asOf`, `expiringWithinDays`, and `bodyHints`, and it reuses an existing open refresh draft for the same source note instead of creating duplicates. `create-refresh-drafts` builds a bounded batch from the current freshness candidates and accepts optional `asOf`, `expiringWithinDays`, `corpusId`, `limitPerCategory`, `maxDrafts`, `sourceStates`, and `bodyHints`. `issue-auth-token` uses JSON input to mint a short-lived issued token when `MAB_AUTH_ISSUER_SECRET` is configured and records its lifecycle in SQLite, including optional command and administrative-action allowlists. `auth-introspect-token` validates a token against the active policy and can optionally check an expected transport, command, or administrative action. `revoke-auth-token` accepts either a concrete `tokenId` or a still-valid issued token and persists the revocation through the configured file-backed revoke list plus the SQLite-issued-token ledger when the token is known.
+## Evidence status
 
-## Output Shape
+### Verified facts
 
-The CLI prints JSON only:
+- This README is based on `apps/brain-cli/src/main.ts`
 
-- service results are returned unchanged for command handlers backed by `ServiceResult`
-- validation responses are returned directly
+### Assumptions
 
-This keeps the CLI aligned with future HTTP and MCP adapters.
+- None
+
+### TODO gaps
+
+- If commands change, update this file and `docs/reference/interfaces.md` together

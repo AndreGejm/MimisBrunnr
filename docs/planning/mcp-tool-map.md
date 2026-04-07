@@ -43,3 +43,6 @@ The goal is to keep MCP transport as a thin adapter that converts tool inputs in
   - map them onto these contracts
   - call the corresponding service
   - return the bounded response
+# Status note
+
+This file contains planning material. The tracked MCP implementation lives in `apps/brain-mcp`, and the current tool surface is documented in `docs/reference/interfaces.md`.

@@ -1,36 +1,55 @@
 # docker
 
-Runtime assets for local container execution.
+Tracked container assets for the local HTTP runtime live here.
 
 ## Files
 
-- `brain-api.Dockerfile`: builds the monorepo and runs the HTTP adapter
-- `compose.local.yml`: local compose stack for the API plus Qdrant
+- `docker/brain-api.Dockerfile`
+- `docker/compose.local.yml`
 
-## Current Stack Note
+## Current behavior
 
-`compose.local.yml` now mirrors the active local model stack:
+`docker/brain-api.Dockerfile`:
 
-- Docker Model Runner is reached from the container at `http://model-runner.docker.internal:12434`
-- the compose profile binds the same Qwen-family roles used on the workstation
-- Qdrant remains the vector sidecar
-- containerized runs still use `/data/vault/canonical` and `/data/vault/staging` inside the container
+- builds the workspace with Node 22
+- runs `pnpm install --frozen-lockfile`
+- runs `pnpm build`
+- starts the app with `pnpm api`
 
-The host-side default canonical brain path for direct Windows runs remains `F:\Dev\AI Context Brain` when `MAB_VAULT_ROOT` is unset.
+`docker/compose.local.yml`:
 
-## Health
+- runs `brain-api`
+- runs `qdrant`
+- maps the API to `8080:8080`
+- binds persistent named volumes for canonical vault, staging vault, SQLite state, and Qdrant storage
+- points model-backed providers at `http://model-runner.docker.internal:12434`
+- sets embedding, reasoning, drafting, and reranking selectors to the Ollama-compatible stack
 
-The API now exposes:
+## Important profile note
 
-- `GET /health/live`
-- `GET /health/ready`
+The compose profile is more model-backed than the generic defaults in `packages/infrastructure/src/config/env.ts`.
 
-`live` treats missing Qdrant as a warning so the process can still be considered alive during local startup.
+For example:
 
-`ready` requires Qdrant and the core local resources to be available.
+- generic defaults use `hash` embeddings and `heuristic` reasoning unless overridden
+- compose forces the main provider selectors to `ollama`
 
 ## Run
 
 ```bash
 docker compose -f docker/compose.local.yml up --build
 ```
+
+## Evidence status
+
+### Verified facts
+
+- This README is based on `docker/brain-api.Dockerfile` and `docker/compose.local.yml`
+
+### Assumptions
+
+- None
+
+### TODO gaps
+
+- If more container profiles are added, document their differences here instead of folding everything into one description

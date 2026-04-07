@@ -187,3 +187,6 @@ Exit criteria:
 
 - each MCP tool maps directly onto an existing service contract
 - no MCP-specific business logic is needed in application services
+# Status note
+
+This file is a rollout plan, not a current-state runtime guide. For the current implementation, use `README.md`, `docs/architecture/overview.md`, and `docs/reference/interfaces.md`.

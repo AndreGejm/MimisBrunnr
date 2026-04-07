@@ -1,47 +1,79 @@
 # brain-api
 
-Thin local HTTP adapter over the existing application services.
+HTTP adapter over the shared runtime container.
+
+## Entrypoints
+
+- `apps/brain-api/src/main.ts`
+- `apps/brain-api/src/server.ts`
 
 ## Routes
+
+### Health and system
 
 - `GET /health/live`
 - `GET /health/ready`
 - `GET /v1/system/auth`
 - `GET /v1/system/auth/issued-tokens`
-- `GET /v1/system/freshness`
-- `GET /v1/system/version`
 - `POST /v1/system/auth/issue-token`
 - `POST /v1/system/auth/introspect-token`
 - `POST /v1/system/auth/revoke-token`
-- `POST /v1/coding/execute`
+- `GET /v1/system/freshness`
+- `GET /v1/system/version`
+
+### Retrieval and context
+
 - `POST /v1/context/search`
+- `POST /v1/context/tree`
+- `POST /v1/context/node`
 - `POST /v1/context/packet`
 - `POST /v1/context/decision-summary`
+
+### Memory and governance
+
 - `POST /v1/notes/drafts`
 - `POST /v1/system/freshness/refresh-draft`
 - `POST /v1/system/freshness/refresh-drafts`
 - `POST /v1/notes/validate`
 - `POST /v1/notes/promote`
+- `POST /v1/maintenance/import-resource`
 - `POST /v1/history/query`
+- `POST /v1/history/session-archives`
+
+### Coding
+
+- `POST /v1/coding/execute`
 
 ## Behavior
 
-- request and response bodies are JSON
-- request payloads mirror the existing service contracts
-- actor context can be supplied in the body or through `x-brain-*` headers
-- route handlers stay thin and delegate directly to the orchestrator and service layer
-- health routes expose live and ready checks for local runtime supervision and include release metadata
-- the system auth route exposes a redacted actor-registry summary plus aggregate issued-token lifecycle counts for operator review
-- the issued-tokens route lists persisted centrally issued tokens with lifecycle state, actor mapping, and optional revoked-token inclusion
-- the auth control routes let authorized operators issue short-lived actor tokens, inspect token validity against the active policy, and revoke issued tokens through the configured local revocation store and SQLite-issued-token ledger
-- the system freshness route exposes temporal-validity counts plus refresh candidates for expired, future-dated, and expiring-soon current-state notes
-- the refresh-draft route creates a governed staging draft for a stale or time-bounded current-state canonical note instead of mutating canonical memory directly, and it reuses an existing open refresh draft for the same source note when one already exists
-- the batch refresh-drafts route creates a bounded set of governed staging drafts from the current freshness candidates and reports created, reused, and skipped items without mutating canonical memory directly
-- the system version route exposes the shared Git-centric release metadata contract
-- coding execution is surfaced through the same HTTP adapter as the brain-domain routes
+- validates JSON request bodies through shared transport validation
+- injects actor defaults from body and `x-brain-*` headers
+- delegates into the shared orchestrator or shared services
+- exposes liveness and readiness health reports
+- maps service/auth/validation failures to HTTP status codes
 
 ## Run
 
 ```bash
 pnpm api
 ```
+
+## Canonical docs
+
+- `docs/reference/interfaces.md`
+- `docs/operations/running.md`
+- `docs/operations/troubleshooting.md`
+
+## Evidence status
+
+### Verified facts
+
+- This README is based on `apps/brain-api/src/server.ts`
+
+### Assumptions
+
+- None
+
+### TODO gaps
+
+- If routes change, update this file and `docs/reference/interfaces.md` together
