@@ -30,6 +30,7 @@ If the goal is to make Multi Agent Brain the default MCP tool across all workspa
 
 1. close the remaining shared-rollout hardening under `BK-001`
 2. close the remaining freshness-governance work under `BK-007`
+3. keep hierarchical retrieval behind packet-diff-reviewed rollout gates under `BK-008`
 
 The pilot and all-workspace go-live gates for this sequence are documented in [`go-live-gates.md`](./go-live-gates.md).
 
@@ -41,6 +42,7 @@ The next implementation order returns to the broader rollout backlog:
 
 1. close the remaining shared-rollout hardening under `BK-001`
 2. close the remaining freshness-governance work under `BK-007`
+3. keep hierarchical retrieval behind packet-diff-reviewed rollout gates under `BK-008`
 
 ## Review-Driven Ready Work
 
@@ -127,6 +129,7 @@ The next implementation order returns to the broader rollout backlog:
 | BK-005 | Refresh repository documentation to match the current implementation | Core repo READMEs and planning docs are synchronized with the current implementation | done |
 | BK-006 | Define a formal Git-centric versioning contract | The runtime now exposes shared release metadata through CLI, HTTP, MCP initialization, and health surfaces, and the release workflow is documented in [`versioning-contract.md`](./versioning-contract.md) | done |
 | BK-007 | Expand temporal-validity handling beyond current-state and staleness heuristics | Validity windows (`validFrom` / `validUntil`), validation, metadata persistence, stale ranking, expired and expiring-note retrieval warnings, runtime freshness reporting, operator-visible refresh-candidate reporting, governed refresh-draft creation across CLI, HTTP, MCP, and orchestrator surfaces, bounded batch refresh-draft creation from current freshness candidates, and idempotent reuse of open refresh drafts for the same stale canonical note are implemented, but broader lifecycle governance and stronger automated refresh policies are still incomplete | partial |
+| BK-008 | Keep hierarchical retrieval behind rollout gates until default enablement is explicitly approved | Hierarchical retrieval is now available via explicit actor or transport strategy selection and exposes trace plus packet-diff metadata, but default enablement still requires side-by-side packet diff review and a documented rollback switch back to `flat` | partial |
 
 ## Optional Enhancement Backlog
 

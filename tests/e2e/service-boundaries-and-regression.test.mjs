@@ -10,7 +10,8 @@ import {
   SqliteFtsIndex,
   SqliteMetadataControlStore,
   buildServiceContainer,
-  runRuntimeHealthChecks
+  runRuntimeHealthChecks,
+  validateTransportRequest
 } from "../../packages/infrastructure/dist/index.js";
 
 test("retrieval actors cannot create staging drafts", async (t) => {
@@ -675,6 +676,99 @@ test("retrieval packets stay within explicit source and raw-excerpt budgets", as
   assert.ok(result.data.packet.evidence.length <= 2);
   assert.ok((result.data.packet.rawExcerpts?.length ?? 0) <= 1);
   assert.ok(result.data.packet.budgetUsage.sourceCount <= 2);
+});
+
+test("flat retrieval remains the default baseline while hierarchical stays explicit opt-in", async (t) => {
+  const { container } = await createHarness(t);
+
+  await createAndPromote(container, {
+    title: "Flat Baseline Writer Policy",
+    noteType: "decision",
+    bodyHints: [
+      "Flat retrieval remains the rollout baseline.",
+      "Writer promotion still requires orchestrator review."
+    ],
+    scope: "retrieval-rollout-a",
+    promoteAsCurrentState: true
+  });
+
+  await createAndPromote(container, {
+    title: "Hierarchical Rollout Guardrail",
+    noteType: "architecture",
+    bodyHints: [
+      "Hierarchical retrieval stays opt-in until rollout gates are closed.",
+      "Packet diff checks are required before any default switch."
+    ],
+    scope: "retrieval-rollout-b",
+    promoteAsCurrentState: false
+  });
+
+  const defaultValidated = validateTransportRequest("search-context", {
+    query: "writer promotion rollout",
+    corpusIds: ["context_brain"],
+    budget: {
+      maxTokens: 320,
+      maxSources: 2,
+      maxRawExcerpts: 1,
+      maxSummarySentences: 2
+    }
+  });
+  assert.equal(defaultValidated.strategy, undefined);
+
+  const hierarchicalValidated = validateTransportRequest("search-context", {
+    query: "writer promotion rollout",
+    corpusIds: ["context_brain"],
+    budget: {
+      maxTokens: 320,
+      maxSources: 2,
+      maxRawExcerpts: 1,
+      maxSummarySentences: 2
+    },
+    strategy: "hierarchical"
+  });
+  assert.equal(hierarchicalValidated.strategy, "hierarchical");
+
+  const flatResult = await container.services.retrieveContextService.retrieveContext({
+    actor: actor("retrieval"),
+    query: "writer promotion rollout",
+    budget: {
+      maxTokens: 320,
+      maxSources: 2,
+      maxRawExcerpts: 1,
+      maxSummarySentences: 2
+    },
+    corpusIds: ["context_brain"],
+    includeTrace: true
+  });
+
+  const hierarchicalResult = await container.services.retrieveContextService.retrieveContext({
+    actor: actor("retrieval"),
+    query: "writer promotion rollout",
+    budget: {
+      maxTokens: 320,
+      maxSources: 2,
+      maxRawExcerpts: 1,
+      maxSummarySentences: 2
+    },
+    corpusIds: ["context_brain"],
+    strategy: "hierarchical",
+    includeTrace: true
+  });
+
+  assert.equal(flatResult.ok, true);
+  assert.equal(hierarchicalResult.ok, true);
+  assert.equal(flatResult.data.trace.strategy, "flat");
+  assert.equal(hierarchicalResult.data.trace.strategy, "hierarchical");
+  assert.equal(
+    flatResult.data.trace.packetDiff.deliveredEvidenceCount,
+    flatResult.data.packet.evidence.length
+  );
+  assert.equal(
+    hierarchicalResult.data.trace.packetDiff.deliveredEvidenceCount,
+    hierarchicalResult.data.packet.evidence.length
+  );
+  assert.ok(flatResult.data.packet.evidence.length <= 2);
+  assert.ok(hierarchicalResult.data.packet.evidence.length <= 2);
 });
 
 test("context packet assembly hard-enforces token and summary-sentence budgets", async (t) => {
