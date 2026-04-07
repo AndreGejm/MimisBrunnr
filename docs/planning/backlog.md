@@ -36,12 +36,13 @@ The pilot and all-workspace go-live gates for this sequence are documented in [`
 
 ## Architectural Review Carry-Forward
 
-The highest-priority items from the latest architectural review are now implemented.
+The highest-priority items from the earlier architectural review are now implemented.
 
-The next implementation order returns to the broader rollout backlog:
+The next implementation order now begins with the stricter read-path governance groundwork from [`read-path-alignment-rfc.md`](./read-path-alignment-rfc.md):
 
-1. close the remaining shared-rollout hardening under `BK-001`
-2. close the remaining freshness-governance work under `BK-007`
+1. define authority-state invariants and namespace semantics under `RV-006`
+2. close the remaining shared-rollout hardening under `BK-001`
+3. close the remaining freshness-governance work under `BK-007`
 3. keep hierarchical retrieval behind packet-diff-reviewed rollout gates under `BK-008`
 
 ## Review-Driven Ready Work
@@ -53,6 +54,7 @@ The next implementation order returns to the broader rollout backlog:
 | RV-003 | Implement `tagFilters` end-to-end through lexical retrieval, vector retrieval, and fusion | `F4` | done |
 | RV-004 | Add runtime schema validation at CLI, HTTP, and MCP ingress | `F8` | done |
 | RV-005 | Harden SQLite access strategy and make vector degraded mode explicit in telemetry and health reporting | `F6`, `F7` | done |
+| RV-006 | Define authority-state invariants and namespace semantics before namespace, import, session, or hierarchical retrieval work | `read-path-alignment-rfc.md` | ready |
 
 ## Ready Now
 
