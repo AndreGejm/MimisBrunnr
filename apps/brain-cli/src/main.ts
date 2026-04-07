@@ -12,6 +12,7 @@ import type {
   DraftNoteRequest,
   ExecuteCodingTaskRequest,
   GetDecisionSummaryRequest,
+  ImportResourceRequest,
   ListContextTreeRequest,
   PromoteNoteRequest,
   QueryHistoryRequest,
@@ -54,6 +55,7 @@ type CommandName =
   | "create-refresh-drafts"
   | "validate-note"
   | "promote-note"
+  | "import-resource"
   | "query-history";
 type RoutedCommandName = Exclude<
   CommandName,
@@ -94,6 +96,7 @@ const COMMANDS: ReadonlyArray<CommandName> = [
   "create-refresh-drafts",
   "validate-note",
   "promote-note",
+  "import-resource",
   "query-history"
 ];
 
@@ -109,6 +112,7 @@ const DEFAULT_ACTOR_ROLE: Record<RoutedCommandName, ActorRole> = {
   "create-refresh-drafts": "operator",
   "validate-note": "orchestrator",
   "promote-note": "orchestrator",
+  "import-resource": "operator",
   "query-history": "operator"
 };
 const ACTOR_ROLES: ReadonlyArray<ActorRole> = [
@@ -137,6 +141,7 @@ const COMMAND_NAMES: ReadonlyArray<string> = [
   "create_refresh_drafts",
   "validate_note",
   "promote_note",
+  "import_resource",
   "query_history"
 ];
 const CORPORA: ReadonlyArray<"context_brain" | "general_notes"> = [
@@ -422,6 +427,10 @@ async function runCommand(
       return container.orchestrator.createRefreshDraftBatch(
         request as unknown as CreateRefreshDraftBatchRequest
       );
+    case "import-resource":
+      return container.services.importOrchestrationService.importResource(
+        request as unknown as ImportResourceRequest
+      );
     case "validate-note":
       return container.orchestrator.validateNote(
         request as unknown as ValidateNoteRequest
@@ -679,6 +688,7 @@ Commands:
   create-refresh-drafts  Create a bounded batch of governed refresh drafts from freshness candidates
   validate-note    Run deterministic schema validation
   promote-note     Promote a staging draft through the orchestrator
+  import-resource  Record a controlled import job without writing canonical memory
   query-history    Query bounded audit history
 
 Notes:

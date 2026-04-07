@@ -26,6 +26,7 @@ import {
   ContextRepresentationService as ConcreteContextRepresentationService,
   ContextPacketService as ConcreteContextPacketService,
   DecisionSummaryService as ConcreteDecisionSummaryService,
+  ImportOrchestrationService as ConcreteImportOrchestrationService,
   HierarchicalRetrievalService as ConcreteHierarchicalRetrievalService,
   NoteValidationService as ConcreteNoteValidationService,
   PromotionOrchestratorService as ConcretePromotionOrchestratorService,
@@ -59,6 +60,7 @@ import { OllamaRerankerProvider } from "../providers/ollama-reranker-provider.js
 import { SqliteAuditLog } from "../sqlite/sqlite-audit-log.js";
 import { SqliteContextNamespaceStore } from "../sqlite/sqlite-context-namespace-store.js";
 import { SqliteContextRepresentationStore } from "../sqlite/sqlite-context-representation-store.js";
+import { SqliteImportJobStore } from "../sqlite/sqlite-import-job-store.js";
 import { SqliteIssuedTokenStore } from "../sqlite/sqlite-issued-token-store.js";
 import { SqliteMetadataControlStore } from "../sqlite/sqlite-metadata-control-store.js";
 import { SqliteRevocationStore } from "../sqlite/sqlite-revocation-store.js";
@@ -93,6 +95,7 @@ export interface ServiceRegistry {
   retrieveContextService: RetrieveContextService;
   contextPacketService: ConcreteContextPacketService;
   decisionSummaryService: ConcreteDecisionSummaryService;
+  importOrchestrationService: ConcreteImportOrchestrationService;
   contextNamespaceService: ConcreteContextNamespaceService;
   contextRepresentationService: ConcreteContextRepresentationService;
   temporalRefreshService: TemporalRefreshService;
@@ -120,6 +123,7 @@ export function buildServiceContainer(
   const lexicalIndex = new SqliteFtsIndex(env.sqlitePath);
   const contextNamespaceStore = new SqliteContextNamespaceStore(env.sqlitePath);
   const contextRepresentationStore = new SqliteContextRepresentationStore(env.sqlitePath);
+  const importJobStore = new SqliteImportJobStore(env.sqlitePath);
   const vectorIndex = new QdrantVectorIndex({
     baseUrl: env.qdrantUrl,
     collectionName: env.qdrantCollection
@@ -222,6 +226,9 @@ export function buildServiceContainer(
     retrieveContextService,
     auditHistoryService
   );
+  const importOrchestrationService = new ConcreteImportOrchestrationService(
+    importJobStore
+  );
   const contextNamespaceService = new ConcreteContextNamespaceService(
     contextNamespaceStore
   );
@@ -305,6 +312,7 @@ export function buildServiceContainer(
       retrieveContextService,
       contextPacketService,
       decisionSummaryService,
+      importOrchestrationService,
       contextNamespaceService,
       contextRepresentationService,
       temporalRefreshService
@@ -316,6 +324,7 @@ export function buildServiceContainer(
       closeIfSupported(metadataControlStore);
       closeIfSupported(contextNamespaceStore);
       closeIfSupported(contextRepresentationStore);
+      closeIfSupported(importJobStore);
       closeIfSupported(issuedTokenStore);
       closeIfSupported(revocationStore);
     }

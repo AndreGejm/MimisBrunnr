@@ -226,6 +226,22 @@ export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
     }
   },
   {
+    name: "import_resource",
+    title: "Import Resource",
+    description: "Record a controlled import job without writing canonical memory.",
+    defaultActorRole: "operator",
+    inputSchema: {
+      type: "object",
+      required: ["sourcePath", "importKind"],
+      additionalProperties: true,
+      properties: {
+        actor: { type: "object" },
+        sourcePath: { type: "string" },
+        importKind: { type: "string" }
+      }
+    }
+  },
+  {
     name: "draft_note",
     title: "Draft Note",
     description: "Create a staging draft through the writer-only drafting service.",

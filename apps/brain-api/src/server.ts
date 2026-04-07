@@ -9,6 +9,7 @@ import type {
   DraftNoteRequest,
   ExecuteCodingTaskRequest,
   GetDecisionSummaryRequest,
+  ImportResourceRequest,
   ListContextTreeRequest,
   PromoteNoteRequest,
   QueryHistoryRequest,
@@ -43,6 +44,7 @@ type RouteName =
   | "create-refresh-drafts"
   | "validate-note"
   | "promote-note"
+  | "import-resource"
   | "query-history"
   | "list-context-tree"
   | "read-context-node";
@@ -61,6 +63,7 @@ const DEFAULT_ACTOR_ROLE: Record<RouteName, ActorRole> = {
   "create-refresh-drafts": "operator",
   "validate-note": "orchestrator",
   "promote-note": "orchestrator",
+  "import-resource": "operator",
   "query-history": "operator"
 };
 
@@ -85,6 +88,7 @@ const ROUTES: Record<string, { method: "GET" | "POST"; name?: RouteName; healthM
   "/v1/system/freshness/refresh-drafts": { method: "POST", name: "create-refresh-drafts" },
   "/v1/notes/validate": { method: "POST", name: "validate-note" },
   "/v1/notes/promote": { method: "POST", name: "promote-note" },
+  "/v1/maintenance/import-resource": { method: "POST", name: "import-resource" },
   "/v1/history/query": { method: "POST", name: "query-history" }
 };
 
@@ -445,6 +449,13 @@ async function handleRequest(
     case "promote-note": {
       const result = await container.orchestrator.promoteNote(
         normalizedRequest as unknown as PromoteNoteRequest
+      );
+      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
+      return;
+    }
+    case "import-resource": {
+      const result = await container.services.importOrchestrationService.importResource(
+        normalizedRequest as unknown as ImportResourceRequest
       );
       sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
       return;

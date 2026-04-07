@@ -10,6 +10,7 @@ import type {
   DraftNoteRequest,
   ExecuteCodingTaskRequest,
   GetDecisionSummaryRequest,
+  ImportResourceRequest,
   ListContextTreeToolRequest,
   PromoteNoteRequest,
   QueryHistoryRequest,
@@ -288,6 +289,10 @@ async function runTool(name: string, request: JsonRecord): Promise<unknown> {
     case "create_refresh_drafts":
       return container.orchestrator.createRefreshDraftBatch(
         request as unknown as CreateRefreshDraftBatchRequest
+      );
+    case "import_resource":
+      return container.services.importOrchestrationService.importResource(
+        request as unknown as ImportResourceRequest
       );
     case "fetch_decision_summary":
       return container.orchestrator.fetchDecisionSummary(

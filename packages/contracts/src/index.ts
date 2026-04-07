@@ -9,6 +9,7 @@ export * from "./drafting/draft-note.contract.js";
 export * from "./history/get-decision-summary.contract.js";
 export * from "./history/query-history.contract.js";
 export * from "./maintenance/create-refresh-draft.contract.js";
+export * from "./maintenance/import-resource.contract.js";
 export * from "./mcp/index.js";
 export * from "./orchestration/execute-coding-task.contract.js";
 export * from "./promotion/promote-note.contract.js";

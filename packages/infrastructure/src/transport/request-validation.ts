@@ -215,6 +215,12 @@ export function validateTransportRequest(
         until: optionalString(payload.until, "until"),
         limit: requireInteger(payload.limit, "limit", { min: 1 })
       };
+    case "import-resource":
+      return {
+        actor,
+        sourcePath: requireString(payload.sourcePath, "sourcePath"),
+        importKind: requireString(payload.importKind, "importKind")
+      };
     default:
       return payload;
   }
