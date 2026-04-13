@@ -10,6 +10,7 @@ COPY packages ./packages
 COPY docker ./docker
 COPY documentation ./documentation
 COPY runtimes ./runtimes
+COPY scripts ./scripts
 COPY tests ./tests
 COPY .env.example ./
 
