@@ -25,6 +25,7 @@ Source of truth: `apps/brain-api/src/server.ts`
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `POST` | `/v1/context/search` | bounded retrieval |
+| `POST` | `/v1/context/agent-context` | fenced local-agent context assembly |
 | `POST` | `/v1/context/tree` | namespace tree listing |
 | `POST` | `/v1/context/node` | namespace node read |
 | `POST` | `/v1/context/packet` | direct context-packet assembly |
@@ -42,12 +43,15 @@ Source of truth: `apps/brain-api/src/server.ts`
 | `POST` | `/v1/maintenance/import-resource` | record an import job |
 | `POST` | `/v1/history/query` | bounded audit history query |
 | `POST` | `/v1/history/session-archives` | create session archives |
+| `POST` | `/v1/history/session-archives/search` | search non-authoritative session archives |
 
 ### Coding
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `POST` | `/v1/coding/execute` | execute a coding-domain task through the Python bridge |
+| `POST` | `/v1/coding/traces` | list compact operational traces for one local-agent request |
+| `POST` | `/v1/coding/tool-output` | read a full spilled local-agent tool output by output id |
 
 ## CLI
 
@@ -63,7 +67,11 @@ Source of truth: `apps/brain-cli/src/main.ts`
 - `issue-auth-token`
 - `revoke-auth-token`
 - `execute-coding-task`
+- `list-agent-traces`
+- `show-tool-output`
 - `search-context`
+- `search-session-archives`
+- `assemble-agent-context`
 - `list-context-tree`
 - `read-context-node`
 - `get-context-packet`
@@ -114,7 +122,11 @@ Source of truth:
 ### Implemented tools
 
 - `execute_coding_task`
+- `list_agent_traces`
+- `show_tool_output`
 - `search_context`
+- `search_session_archives`
+- `assemble_agent_context`
 - `list_context_tree`
 - `read_context_node`
 - `get_context_packet`
@@ -146,6 +158,8 @@ Source of truth:
 - context namespace store
 - context representation store
 - lexical FTS index
+- local agent trace store
+- tool output spillover store plus `state/tool-output` payload files
 
 ### External services
 

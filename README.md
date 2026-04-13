@@ -2,6 +2,8 @@
 
 Local-first TypeScript monorepo for governed note memory, bounded retrieval, auth-gated transport adapters, and a vendored Python coding runtime.
 
+For a first-time user and operator manual covering setup, Docker Desktop, the orchestrator, Hermes-derived local-agent ideas, storing information, validation, review, retrieval, MCP, and troubleshooting, see `docs/manuals/multiagentbrain-complete-manual.md`.
+
 ## Current state
 
 The tracked repository currently implements:
@@ -9,10 +11,10 @@ The tracked repository currently implements:
 - a layered workspace with `packages/domain`, `packages/contracts`, `packages/application`, `packages/orchestration`, and `packages/infrastructure`
 - three transport adapters over the same shared runtime: HTTP (`apps/brain-api`), CLI (`apps/brain-cli`), and stdio MCP (`apps/brain-mcp`)
 - filesystem-backed canonical and staging note stores
-- SQLite-backed metadata, audit, issued-token, revocation, session-archive, import-job, namespace, and representation stores
+- SQLite-backed metadata, audit, issued-token, revocation, session-archive, import-job, namespace, representation, local-agent trace, and tool-output spillover stores
 - SQLite FTS lexical retrieval plus a Qdrant-backed vector adapter
 - governed drafting, validation, promotion, refresh-draft creation, import-job recording, history queries, and session-archive creation
-- bounded retrieval, direct context-packet assembly, decision-summary generation, namespace tree listing, and namespace node reads
+- bounded retrieval, fenced agent-context assembly, non-authoritative session recall, direct context-packet assembly, decision-summary generation, namespace tree listing, and namespace node reads
 - actor-registry authorization with static credentials, centrally issued tokens, revocation support, and operator auth-control surfaces
 - a vendored Python runtime in `runtimes/local_experts` that handles coding tasks through a Node-to-Python bridge
 
@@ -318,7 +320,7 @@ validation step, and MCP client snippet.
 - system: auth status, issued-token listing, token issuance, token introspection, token revocation, freshness, version
 - context: search, tree, node, packet, decision summary
 - governance: drafts, refresh drafts, validate, promote, import resource, history query, session archives
-- coding: `POST /v1/coding/execute`
+- coding: `POST /v1/coding/execute`, `POST /v1/coding/traces`, `POST /v1/coding/tool-output`
 
 ### CLI
 
@@ -330,7 +332,11 @@ validation step, and MCP client snippet.
 - `issue-auth-token`
 - `revoke-auth-token`
 - `execute-coding-task`
+- `list-agent-traces`
+- `show-tool-output`
 - `search-context`
+- `search-session-archives`
+- `assemble-agent-context`
 - `list-context-tree`
 - `read-context-node`
 - `get-context-packet`

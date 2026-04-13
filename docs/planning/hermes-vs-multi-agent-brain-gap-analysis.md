@@ -5,7 +5,7 @@ Date: 2026-04-13
 Repo A: `F:\Dev\scripts\MultiagentBrain\inspiration\hermes-agent`
 Repo B: `F:\Dev\scripts\MultiagentBrain\multi-agent-brain`
 
-Evidence standard used: source files and manifests first, docs only for scope framing. I generated Codesight for Hermes for orientation and removed the generated `.codesight` directory afterwards; no source claim below relies on Codesight alone.
+Evidence standard used: source files and manifests first, docs only for scope framing. I generated Codesight for Hermes for orientation and removed the generated `.codesight` directory afterwards; no source claim below relies on Codesight alone. I did not treat any Hermes `.codesight` artifact as source evidence; local source files, manifests, and runtime entrypoints remain the evidence basis.
 
 ## 1. Executive judgment
 
@@ -23,10 +23,10 @@ Highest Hermes learning value:
 Areas where multi-agent-brain is already ahead:
 
 1. Governed memory authority: `NoteCaptureService`, `StagingDraftService`, `DraftReviewService`, `ReviewOperatorService`, and `PromotionOrchestratorService` enforce capture, staging, review, promotion, revision, duplicate, and audit gates.
-2. Canonical/staging split and SQLite audit role: `build-service-container.ts:140-330`, `sqlite-metadata-control-store.ts:1188-1337`, `sqlite-fts-index.ts:31-137`.
+2. Canonical/staging split and SQLite audit role: `build-service-container.ts:140-330`, `sqlite-metadata-control-store.ts:1188-1337`, `packages/infrastructure/src/fts/sqlite-fts-index.ts:31-137`.
 3. Retrieval as bounded, explainable service: `RetrieveContextService:72-213`, `HierarchicalRetrievalService:68-180`, `ContextPacketService:18-60`, `ContextPacketService:286-399`, `RetrievalTraceService:18-84`.
 4. Auth and thin transports: CLI/API/MCP all call `validateTransportRequest` and the orchestrator, with `ActorAuthorizationPolicy.authorize` in the route.
-5. Operator review workflow maturity: `review-note-gui.py`, Obsidian review plugin, and `ReviewOperatorService.acceptNote/rejectNote`.
+5. Operator review workflow maturity: `scripts/review-note-gui.py`, Obsidian review plugin, and `ReviewOperatorService.acceptNote/rejectNote`.
 6. Local expert safety gate: `runtimes/local_experts/escalation_controller.py:97-302` has preflight, bounded local handling, rollback, validation, and escalation.
 
 ## 2. Repo identity and scope validation
@@ -36,6 +36,8 @@ Hermes is the Nous Research `hermes-agent` repository. Evidence: `pyproject.toml
 multi-agent-brain is `@multi-agent-brain/workspace`. Evidence: `package.json` names the private workspace and scripts `build`, `cli`, `api`, `mcp`, and `test:e2e`; `README.md` states the current scope: governed note memory, bounded retrieval, auth-gated transports, and a vendored Python coding runtime; `git remote -v` points to `https://github.com/AndreGejm/multi-agent-brain.git`.
 
 Comparison validity caveat: Hermes is an agent runtime with memory features. multi-agent-brain is primarily a governed memory/retrieval service plus local expert runtime. Hermes should not be copied wholesale into multi-agent-brain; it should be mined for runtime adapters around the existing governed core.
+
+Retrieval-health caveat: multi-agent-brain's lexical fallback is valuable, but it can hide vector retrieval degradation from agents and operators unless the response carries an explicit health signal. Any agent-facing adapter should surface that health state instead of letting lexical results look fully healthy.
 
 ## 3. Repo maps
 
@@ -193,11 +195,13 @@ Major runtime flows:
 | Priority | Candidate | Expected value | MAB implementation surface | Conflict/risk | Minimal first implementation | Test |
 |---|---|---|---|---|---|---|
 | P0 | Fenced agent-context packet adapter | Makes memory useful every turn | New thin adapter over `RetrieveContextService` or CLI/MCP `search-context` | Low; keep packets non-authoritative | `assembleAgentMemoryBlock(query, budget, includeTrace)` that emits fenced packet text plus provenance | Fixture query returns expected note IDs and cannot be mistaken for user input |
+| P0 | Non-authoritative session recall | Gives agents useful continuity without promoting transcript text into fact memory | `SessionArchiveService`, SQLite FTS, CLI/API/MCP search surface, agent-context assembly | Low-medium; authority labels must be impossible to miss | Search immutable session archive messages with strict caps and `authority: "non_authoritative"` labels | Archive search returns bounded hits and never creates staging or canonical records |
 | P0 | Retrieval/runtime trace envelope | Debuggable local-agent behavior | Extend retrieval trace or add local-agent trace store | Low-medium; avoid storing secrets | JSON trace with query, candidate counts, selected evidence, model role, tool calls, capture outcome | E2E asserts trace stages and redaction |
 | P0 | SQLite concurrency stress and retry | More reliable multi-agent use | `shared-sqlite-connection.ts`, CLI read commands | Low | retry/backoff around database open/configure plus test parallel reads | Parallel CLI/API retrieval test |
 | P1 | Context spillover/compression | Prevents long-turn context collapse | Future local-agent runtime, MCP client, coding runtime | Low | persist oversized tool outputs and replace with summary/path | Tool output > threshold stays bounded |
 | P1 | Delegated task records | Safe agent-to-agent decomposition | New orchestration command or local-agent runtime using current auth/audit | Medium | create child task record, pass bounded context, disallow canonical writes, record audit | Child cannot self-promote or write canonical memory |
 | P1 | Provider error taxonomy | Better model fallback | Provider wrappers and model role registry | Low-medium | classify timeout/rate/context/model/auth; return structured warning and retry hint | Simulated provider errors map to expected actions |
+| P1 | qwen3-coder local capability profile | Makes the local coding lane explicit and budgeted without adding paid-model assumptions | Domain model profile, coding bridge env, local expert runtime config | Low; profile must not imply memory-write authority | Add deterministic qwen3-coder metadata, phase budgets, and bridge environment values | Profile selection and bridge env tests assert context, temperature, seed, phase budgets, and no authority escalation |
 | P1 | Scheduler for governed maintenance | More useful unattended operation | New script/service invoking `run-memory-librarian` and `create-refresh-drafts` | Medium | local scheduled runner that only opens review items or safe archives | Dry-run and apply-safe-actions tests |
 | P2 | Eval/trajectory harness | Regression protection | `tests/eval` plus JSONL fixtures | Low | retrieval eval command with expected notes/chunks | Ranking changes must preserve baseline |
 | P2 | MCP consumer registry | Lets MAB-backed agents use external tools | Local-agent runtime, not core memory service | Medium-high | typed allowlisted registry with actor-auth wrappers | Unknown tool rejected, allowed tool audited |
