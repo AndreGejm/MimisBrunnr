@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
+import { classifyProviderError } from "@multi-agent-brain/application";
 import type {
   ExecuteCodingTaskRequest,
   ExecuteCodingTaskResponse
@@ -15,6 +16,12 @@ export interface PythonCodingControllerBridgeOptions {
   pythonPath: string;
   moduleName: string;
   timeoutMs: number;
+  ollamaBaseUrl: string;
+  codingBinding: ModelRoleBinding;
+}
+
+export interface PythonCodingEnvironmentOptions {
+  pythonPath: string;
   ollamaBaseUrl: string;
   codingBinding: ModelRoleBinding;
 }
@@ -67,10 +74,13 @@ export class PythonCodingControllerBridge implements CodingControllerBridge {
             status: "escalate",
             reason: `Vendored coding runtime timed out after ${this.options.timeoutMs} ms.`,
             attempts: 0,
-            escalationMetadata: {
+            escalationMetadata: withProviderErrorMetadata(
+              `Vendored coding runtime timed out after ${this.options.timeoutMs} ms.`,
+              {
               bridge: "python",
               timeoutMs: this.options.timeoutMs
-            }
+              }
+            )
           });
         }
       }, this.options.timeoutMs);
@@ -90,10 +100,10 @@ export class PythonCodingControllerBridge implements CodingControllerBridge {
             status: "escalate",
             reason: `Failed to start vendored coding runtime: ${error.message}`,
             attempts: 0,
-            escalationMetadata: {
+            escalationMetadata: withProviderErrorMetadata(error, {
               bridge: "python",
               stderr: stderr || undefined
-            }
+            })
           });
         }
       });
@@ -133,6 +143,12 @@ function buildPythonCommand(
 function buildBridgeEnvironment(
   options: PythonCodingControllerBridgeOptions
 ): NodeJS.ProcessEnv {
+  return buildPythonCodingEnvironment(options);
+}
+
+export function buildPythonCodingEnvironment(
+  options: PythonCodingEnvironmentOptions
+): NodeJS.ProcessEnv {
   const pythonPath = process.env.PYTHONPATH
     ? `${options.pythonPath}${path.delimiter}${process.env.PYTHONPATH}`
     : options.pythonPath;
@@ -148,6 +164,9 @@ function buildBridgeEnvironment(
     ),
     CODING_MODEL_SEED: String(
       options.codingBinding.seed ?? QWEN3_CODER_LOCAL_PROFILE.recommendedSeed ?? 42
+    ),
+    CODING_MODEL_PHASE_BUDGETS_JSON: JSON.stringify(
+      QWEN3_CODER_LOCAL_PROFILE.phaseBudgets ?? {}
     )
   };
 }
@@ -178,7 +197,10 @@ function normalizeBridgeResponse(
         toolUsed: parsed.toolUsed,
         localResult: parsed.localResult,
         validations: parsed.validations,
-        escalationMetadata: parsed.escalationMetadata
+        escalationMetadata:
+          parsed.status === "success"
+            ? parsed.escalationMetadata
+            : withProviderErrorMetadata(parsed.reason, parsed.escalationMetadata)
       };
     }
   } catch {
@@ -191,11 +213,33 @@ function normalizeBridgeResponse(
       stderr.trim() ||
       `Vendored coding runtime returned invalid JSON output (exit code ${exitCode ?? "unknown"}).`,
     attempts: 0,
-    escalationMetadata: {
+    escalationMetadata: withProviderErrorMetadata(
+      stderr.trim() ||
+        `Vendored coding runtime returned invalid JSON output (exit code ${exitCode ?? "unknown"}).`,
+      {
       bridge: "python",
       exitCode: exitCode ?? undefined,
       stdout: stdout.trim() || undefined,
       stderr: stderr.trim() || undefined
-    }
+      }
+    )
+  };
+}
+
+function withProviderErrorMetadata(
+  error: unknown,
+  metadata: Record<string, unknown> | undefined = {}
+): Record<string, unknown> {
+  if (typeof metadata.providerErrorKind === "string") {
+    return metadata;
+  }
+
+  const classified = classifyProviderError(error);
+  return {
+    ...metadata,
+    providerErrorKind: classified.kind,
+    providerRetryable: classified.retryable,
+    providerOperatorAction: classified.operatorAction,
+    retryCount: typeof metadata.retryCount === "number" ? metadata.retryCount : 0
   };
 }

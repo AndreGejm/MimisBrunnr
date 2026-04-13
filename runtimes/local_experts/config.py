@@ -6,6 +6,7 @@ ControllerConfig lives in escalation_controller.py.
 """
 from __future__ import annotations
 
+import json
 import os
 from typing import Any, Dict, List, Optional, Set
 
@@ -15,6 +16,13 @@ from typing import Any, Dict, List, Optional, Set
 
 OLLAMA_API_URL: str = os.getenv("OLLAMA_API_URL", "http://localhost:12434/api/generate")
 CODING_MODEL: str = os.getenv("CODING_MODEL", "qwen3-coder")
+CODING_MODEL_CONTEXT_TOKENS: int = int(os.getenv("CODING_MODEL_CONTEXT_TOKENS", "262144"))
+CODING_MODEL_TEMPERATURE: float = float(os.getenv("CODING_MODEL_TEMPERATURE", "0"))
+CODING_MODEL_SEED: Optional[int] = (
+    int(os.environ["CODING_MODEL_SEED"])
+    if os.getenv("CODING_MODEL_SEED")
+    else 42
+)
 DEFAULT_TIMEOUT_SEC: int = 300
 DEFAULT_MAX_RETRIES: int = 2
 DEFAULT_RETRY_DELAY_SEC: float = 2.0
@@ -67,6 +75,70 @@ PHASE_INPUT_BUDGETS: Dict[str, Dict[str, int]] = {
     "summary": {"base_context": 22000, "prior_outputs": 0},
 }
 
+CODING_MODEL_PHASE_BUDGETS: Dict[str, int] = {
+    "planning": 32000,
+    "implementation": 128000,
+    "verification": 48000,
+    "summary": 16000,
+}
+
+
+def _load_phase_budgets_from_env() -> Dict[str, int]:
+    raw = os.getenv("CODING_MODEL_PHASE_BUDGETS_JSON")
+    if not raw:
+        return CODING_MODEL_PHASE_BUDGETS
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return CODING_MODEL_PHASE_BUDGETS
+
+    if not isinstance(parsed, dict):
+        return CODING_MODEL_PHASE_BUDGETS
+
+    budgets = dict(CODING_MODEL_PHASE_BUDGETS)
+    for key, value in parsed.items():
+        if isinstance(key, str) and isinstance(value, int) and value > 0:
+            budgets[key] = value
+    return budgets
+
+
+CODING_MODEL_PHASE_BUDGETS = _load_phase_budgets_from_env()
+
+
+def _apply_model_phase_budgets() -> None:
+    planning = CODING_MODEL_PHASE_BUDGETS.get("planning", 32000)
+    implementation = CODING_MODEL_PHASE_BUDGETS.get("implementation", 128000)
+    verification = CODING_MODEL_PHASE_BUDGETS.get("verification", 48000)
+    summary = CODING_MODEL_PHASE_BUDGETS.get("summary", 16000)
+
+    def set_base_context(phase_name: str, base_context: int) -> None:
+        current = PHASE_INPUT_BUDGETS.get(phase_name, {"prior_outputs": 0})
+        PHASE_INPUT_BUDGETS[phase_name] = {
+            **current,
+            "base_context": base_context,
+        }
+
+    for phase_name in ("plan",):
+        set_base_context(phase_name, planning)
+    for phase_name in ("code", "draft_patch", "generate_tests", "fix_patch"):
+        set_base_context(phase_name, implementation)
+    for phase_name in (
+        "review_scope",
+        "review_findings",
+        "review_synthesis",
+        "fix_pre_review",
+        "fix_post_review",
+        "fix_test_plan",
+        "fix_final_decision",
+    ):
+        set_base_context(phase_name, verification)
+    for phase_name in ("summarize_diff", "triage", "summary"):
+        set_base_context(phase_name, summary)
+
+
+_apply_model_phase_budgets()
+
 MAX_PROMPT_CHARS_PER_PHASE: Dict[str, int] = {
     "plan": 36000,
     "code": 24000,
@@ -84,6 +156,13 @@ MAX_PROMPT_CHARS_PER_PHASE: Dict[str, int] = {
     "triage": 26000,
     "summary": 26000,
 }
+
+for phase_name, budget in PHASE_INPUT_BUDGETS.items():
+    prompt_cap = budget["base_context"] + budget["prior_outputs"] + 8000
+    MAX_PROMPT_CHARS_PER_PHASE[phase_name] = max(
+        MAX_PROMPT_CHARS_PER_PHASE.get(phase_name, 0),
+        prompt_cap,
+    )
 
 MAX_OUTPUT_TOKENS: Dict[str, int] = {
     "plan": 1600,
@@ -103,7 +182,7 @@ MAX_OUTPUT_TOKENS: Dict[str, int] = {
     "summary": 1200,
 }
 
-TEMPERATURES: Dict[str, float] = {key: 0.0 for key in MAX_OUTPUT_TOKENS}
+TEMPERATURES: Dict[str, float] = {key: CODING_MODEL_TEMPERATURE for key in MAX_OUTPUT_TOKENS}
 
 # ---------------------------------------------------------------------------
 # Phase definitions

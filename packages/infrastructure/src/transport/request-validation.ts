@@ -243,6 +243,16 @@ export function validateTransportRequest(
         until: optionalString(payload.until, "until"),
         limit: requireInteger(payload.limit, "limit", { min: 1 })
       };
+    case "list-agent-traces":
+      return {
+        actor,
+        requestId: requireString(payload.requestId, "requestId")
+      };
+    case "show-tool-output":
+      return {
+        actor,
+        outputId: requireString(payload.outputId, "outputId")
+      };
     case "import-resource":
       return {
         actor,

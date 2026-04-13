@@ -1,3 +1,4 @@
+import path from "node:path";
 import type {
   AuditLog,
   AuditHistoryService,
@@ -15,11 +16,13 @@ import type {
   RetrieveContextService,
   RerankerProvider,
   SessionArchiveStore,
+  StagingNoteRepository,
   StagingDraftService,
   TemporalRefreshService,
-  StagingNoteRepository,
+  ToolOutputBudgetService,
   VectorIndex
 } from "@multi-agent-brain/application";
+import type { LocalAgentTraceStore, ToolOutputStore } from "@multi-agent-brain/domain";
 import {
   AuditHistoryService as ConcreteAuditHistoryService,
   AgentContextAssemblyService as ConcreteAgentContextAssemblyService,
@@ -36,7 +39,8 @@ import {
   RetrieveContextService as ConcreteRetrieveContextService,
   SessionArchiveService as ConcreteSessionArchiveService,
   StagingDraftService as ConcreteStagingDraftService,
-  TemporalRefreshService as ConcreteTemporalRefreshService
+  TemporalRefreshService as ConcreteTemporalRefreshService,
+  ToolOutputBudgetService as ConcreteToolOutputBudgetService
 } from "@multi-agent-brain/application";
 import {
   ActorAuthorizationPolicy,
@@ -66,9 +70,11 @@ import { SqliteContextNamespaceStore } from "../sqlite/sqlite-context-namespace-
 import { SqliteContextRepresentationStore } from "../sqlite/sqlite-context-representation-store.js";
 import { SqliteImportJobStore } from "../sqlite/sqlite-import-job-store.js";
 import { SqliteIssuedTokenStore } from "../sqlite/sqlite-issued-token-store.js";
+import { SqliteLocalAgentTraceStore } from "../sqlite/sqlite-local-agent-trace-store.js";
 import { SqliteMetadataControlStore } from "../sqlite/sqlite-metadata-control-store.js";
 import { SqliteRevocationStore } from "../sqlite/sqlite-revocation-store.js";
 import { SqliteSessionArchiveStore } from "../sqlite/sqlite-session-archive-store.js";
+import { SqliteToolOutputStore } from "../sqlite/sqlite-tool-output-store.js";
 import { QdrantVectorIndex } from "../vector/qdrant-vector-index.js";
 import { FileSystemCanonicalNoteRepository } from "../vault/file-system-canonical-note-repository.js";
 import { FileSystemStagingNoteRepository } from "../vault/file-system-staging-note-repository.js";
@@ -81,6 +87,8 @@ export interface ServicePortRegistry {
   issuedTokenStore: SqliteIssuedTokenStore;
   revocationStore: SqliteRevocationStore;
   auditLog: AuditLog;
+  localAgentTraceStore: LocalAgentTraceStore;
+  toolOutputStore: ToolOutputStore;
   lexicalIndex?: LexicalIndex;
   vectorIndex?: VectorIndex;
   embeddingProvider?: EmbeddingProvider;
@@ -107,6 +115,7 @@ export interface ServiceRegistry {
   contextRepresentationService: ConcreteContextRepresentationService;
   sessionArchiveService: ConcreteSessionArchiveService;
   temporalRefreshService: TemporalRefreshService;
+  toolOutputBudgetService: ToolOutputBudgetService;
 }
 
 export interface ServiceContainer {
@@ -129,6 +138,11 @@ export function buildServiceContainer(
   const issuedTokenStore = new SqliteIssuedTokenStore(env.sqlitePath);
   const revocationStore = new SqliteRevocationStore(env.sqlitePath);
   const auditLog = new SqliteAuditLog(env.sqlitePath);
+  const localAgentTraceStore = new SqliteLocalAgentTraceStore(env.sqlitePath);
+  const toolOutputStore = new SqliteToolOutputStore(
+    env.sqlitePath,
+    path.join(path.dirname(path.resolve(env.sqlitePath)), "tool-output")
+  );
   const lexicalIndex = new SqliteFtsIndex(env.sqlitePath);
   const contextNamespaceStore = new SqliteContextNamespaceStore(env.sqlitePath);
   const contextRepresentationStore = new SqliteContextRepresentationStore(env.sqlitePath);
@@ -255,6 +269,9 @@ export function buildServiceContainer(
     stagingDraftService,
     auditHistoryService
   );
+  const toolOutputBudgetService = new ConcreteToolOutputBudgetService(
+    toolOutputStore
+  );
 
   const authPolicy = new ActorAuthorizationPolicy({
     mode: env.auth.mode,
@@ -283,6 +300,7 @@ export function buildServiceContainer(
     ),
     importOrchestrationService
   );
+  const codingPrimaryBinding = modelRoleRegistry.resolve("coding_primary");
   const codingDomainController = new CodingDomainController(
     new PythonCodingControllerBridge({
       pythonExecutable: env.codingRuntimePythonExecutable,
@@ -290,9 +308,15 @@ export function buildServiceContainer(
       moduleName: env.codingRuntimeModule,
       timeoutMs: env.codingRuntimeTimeoutMs,
       ollamaBaseUrl: env.providerEndpoints.dockerOllamaBaseUrl,
-      codingBinding: modelRoleRegistry.resolve("coding_primary")
+      codingBinding: codingPrimaryBinding
     }),
-    auditHistoryService
+    auditHistoryService,
+    localAgentTraceStore,
+    {
+      modelRole: "coding_primary",
+      modelId: codingPrimaryBinding.modelId
+    },
+    toolOutputBudgetService
   );
   const orchestrator = new MultiAgentOrchestrator(
     new TaskFamilyRouter(),
@@ -314,6 +338,8 @@ export function buildServiceContainer(
       issuedTokenStore,
       revocationStore,
       auditLog,
+      localAgentTraceStore,
+      toolOutputStore,
       lexicalIndex,
       vectorIndex,
       embeddingProvider,
@@ -338,12 +364,15 @@ export function buildServiceContainer(
       contextNamespaceService,
       contextRepresentationService,
       sessionArchiveService,
-      temporalRefreshService
+      temporalRefreshService,
+      toolOutputBudgetService
     },
     orchestrator,
     dispose() {
       closeIfSupported(lexicalIndex);
       closeIfSupported(auditLog);
+      closeIfSupported(localAgentTraceStore);
+      closeIfSupported(toolOutputStore);
       closeIfSupported(metadataControlStore);
       closeIfSupported(sessionArchiveStore);
       closeIfSupported(contextNamespaceStore);

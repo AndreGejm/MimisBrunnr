@@ -24,16 +24,22 @@ const TRANSPORTS = new Set<TransportKind>([
 ]);
 
 const COMMAND_NAMES = new Set<OrchestratorCommand>([
-  "execute_coding_task",
   "search_context",
+  "search_session_archives",
+  "assemble_agent_context",
   "get_context_packet",
   "fetch_decision_summary",
   "draft_note",
+  "create_session_archive",
   "create_refresh_draft",
   "create_refresh_drafts",
+  "import_resource",
   "validate_note",
   "promote_note",
-  "query_history"
+  "query_history",
+  "execute_coding_task",
+  "list_agent_traces",
+  "show_tool_output"
 ]);
 
 const ADMIN_ACTION_NAMES = new Set<AdministrativeAction>([

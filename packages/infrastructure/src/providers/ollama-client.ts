@@ -1,3 +1,5 @@
+import { withBoundedProviderRetry } from "@multi-agent-brain/application";
+
 type FetchImplementation = typeof fetch;
 
 interface OllamaClientOptions {
@@ -145,23 +147,25 @@ export class OllamaClient {
   }
 
   private async requestJson<T>(relativePath: string, body: Record<string, unknown>): Promise<T> {
-    const response = await this.fetchImplementation(new URL(relativePath, this.baseUrl), {
-      method: "POST",
-      headers: {
-        "content-type": "application/json"
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(this.timeoutMs)
+    return withBoundedProviderRetry(async () => {
+      const response = await this.fetchImplementation(new URL(relativePath, this.baseUrl), {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(this.timeoutMs)
+      });
+
+      if (!response.ok) {
+        throw new OllamaHttpError(
+          response.status,
+          `Ollama request failed with status ${response.status}.`
+        );
+      }
+
+      return await response.json() as T;
     });
-
-    if (!response.ok) {
-      throw new OllamaHttpError(
-        response.status,
-        `Ollama request failed with status ${response.status}.`
-      );
-    }
-
-    return await response.json() as T;
   }
 }
 

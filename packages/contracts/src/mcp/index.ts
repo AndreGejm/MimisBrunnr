@@ -1,4 +1,6 @@
 export * from "./execute-coding-task.tool.js";
+export * from "./list-agent-traces.tool.js";
+export * from "./show-tool-output.tool.js";
 export * from "./search-context.tool.js";
 export * from "./search-session-archives.tool.js";
 export * from "./assemble-agent-context.tool.js";

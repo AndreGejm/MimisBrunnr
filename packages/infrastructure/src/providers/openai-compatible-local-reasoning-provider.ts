@@ -1,3 +1,4 @@
+import { withBoundedProviderRetry } from "@multi-agent-brain/application";
 import type { LocalReasoningProvider } from "@multi-agent-brain/application";
 import type {
   AnswerabilityDisposition,
@@ -164,42 +165,44 @@ export class OpenAiCompatibleLocalReasoningProvider implements LocalReasoningPro
     system: string;
     prompt: string;
   }): Promise<T> {
-    const response = await this.fetchImplementation(
-      new URL("chat/completions", this.baseUrl),
-      {
-        method: "POST",
-        headers: buildHeaders(this.options.apiKey),
-        body: JSON.stringify({
-          model: this.options.model,
-          messages: [
-            { role: "system", content: input.system },
-            { role: "user", content: input.prompt }
-          ],
-          temperature: this.options.temperature ?? 0,
-          max_tokens: this.options.maxOutputTokens ?? 256,
-          seed: this.options.seed ?? 42,
-          response_format: {
-            type: "json_object"
-          }
-        }),
-        signal: AbortSignal.timeout(this.timeoutMs)
-      }
-    );
-
-    if (!response.ok) {
-      throw new OpenAiCompatibleHttpError(
-        response.status,
-        `OpenAI-compatible reasoning request failed with status ${response.status}.`
+    return withBoundedProviderRetry(async () => {
+      const response = await this.fetchImplementation(
+        new URL("chat/completions", this.baseUrl),
+        {
+          method: "POST",
+          headers: buildHeaders(this.options.apiKey),
+          body: JSON.stringify({
+            model: this.options.model,
+            messages: [
+              { role: "system", content: input.system },
+              { role: "user", content: input.prompt }
+            ],
+            temperature: this.options.temperature ?? 0,
+            max_tokens: this.options.maxOutputTokens ?? 256,
+            seed: this.options.seed ?? 42,
+            response_format: {
+              type: "json_object"
+            }
+          }),
+          signal: AbortSignal.timeout(this.timeoutMs)
+        }
       );
-    }
 
-    const payload = await response.json() as OpenAiChatCompletionResponse;
-    const content = extractMessageContent(payload);
-    if (!content) {
-      throw new Error("OpenAI-compatible reasoning provider returned no content.");
-    }
+      if (!response.ok) {
+        throw new OpenAiCompatibleHttpError(
+          response.status,
+          `OpenAI-compatible reasoning request failed with status ${response.status}.`
+        );
+      }
 
-    return JSON.parse(content) as T;
+      const payload = await response.json() as OpenAiChatCompletionResponse;
+      const content = extractMessageContent(payload);
+      if (!content) {
+        throw new Error("OpenAI-compatible reasoning provider returned no content.");
+      }
+
+      return JSON.parse(content) as T;
+    });
   }
 }
 

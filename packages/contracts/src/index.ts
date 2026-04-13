@@ -14,6 +14,8 @@ export * from "./maintenance/create-refresh-draft.contract.js";
 export * from "./maintenance/import-resource.contract.js";
 export * from "./mcp/index.js";
 export * from "./orchestration/execute-coding-task.contract.js";
+export * from "./orchestration/list-agent-traces.contract.js";
+export * from "./orchestration/show-tool-output.contract.js";
 export * from "./promotion/promote-note.contract.js";
 export * from "./retrieval/glob-context.contract.js";
 export * from "./retrieval/grep-context.contract.js";

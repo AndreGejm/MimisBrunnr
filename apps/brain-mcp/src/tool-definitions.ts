@@ -60,6 +60,36 @@ export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
     }
   },
   {
+    name: "list_agent_traces",
+    title: "List Agent Traces",
+    description: "List compact operational traces for one local-agent request.",
+    defaultActorRole: "operator",
+    inputSchema: {
+      type: "object",
+      required: ["requestId"],
+      additionalProperties: true,
+      properties: {
+        actor: { type: "object" },
+        requestId: { type: "string" }
+      }
+    }
+  },
+  {
+    name: "show_tool_output",
+    title: "Show Tool Output",
+    description: "Read a full spilled local-agent tool output by output id.",
+    defaultActorRole: "operator",
+    inputSchema: {
+      type: "object",
+      required: ["outputId"],
+      additionalProperties: true,
+      properties: {
+        actor: { type: "object" },
+        outputId: { type: "string" }
+      }
+    }
+  },
+  {
     name: "search_context",
     title: "Search Context",
     description: "Run bounded hybrid retrieval and return a context packet with provenance.",

@@ -13,7 +13,10 @@ export type BrainCommand =
   | "promote_note"
   | "query_history";
 
-export type CodingCommand = "execute_coding_task";
+export type CodingCommand =
+  | "execute_coding_task"
+  | "list_agent_traces"
+  | "show_tool_output";
 
 export type OrchestratorCommand = BrainCommand | CodingCommand;
 
@@ -99,6 +102,16 @@ const ROUTE_TABLE: Record<OrchestratorCommand, RoutedTask> = {
   },
   execute_coding_task: {
     command: "execute_coding_task",
+    domain: "coding",
+    family: "coding"
+  },
+  list_agent_traces: {
+    command: "list_agent_traces",
+    domain: "coding",
+    family: "coding"
+  },
+  show_tool_output: {
+    command: "show_tool_output",
     domain: "coding",
     family: "coding"
   }

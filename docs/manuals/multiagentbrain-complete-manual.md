@@ -2388,13 +2388,10 @@ corepack pnpm cli -- issue-auth-token --json '{
 }'
 ```
 
-The current token-issue validator accepts only the command names listed in
-`packages/infrastructure/src/transport/auth-control-validation.ts`. That list
-currently includes core commands such as `search_context`, `draft_note`,
-`validate_note`, `promote_note`, `execute_coding_task`, and `query_history`.
-For newer commands such as `create_session_archive`, `assemble_agent_context`,
-`import_resource`, `list_agent_traces`, or `show_tool_output`, omit
-`allowedCommands` until the validator allow-list is widened.
+The current token-issue validator accepts the orchestrator command names listed
+in `packages/infrastructure/src/transport/auth-control-validation.ts`, including
+the newer local-agent commands such as `assemble_agent_context`,
+`create_session_archive`, `list_agent_traces`, and `show_tool_output`.
 
 Inspect a token:
 

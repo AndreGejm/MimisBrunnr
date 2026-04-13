@@ -28,12 +28,25 @@ export interface CodingMemoryContextRequest {
   includeTrace?: boolean;
 }
 
+export interface CodingMemoryContextStatus {
+  requested: boolean;
+  included: boolean;
+  retrievalHealth?: {
+    status?: string;
+  };
+  traceIncluded?: boolean;
+  tokenEstimate?: number;
+  truncated?: boolean;
+  errorMessage?: string;
+}
+
 export interface ExecuteCodingTaskRequest {
   actor: ActorContext;
   taskType: CodingTaskType;
   task: string;
   context?: string;
   memoryContext?: CodingMemoryContextRequest;
+  memoryContextStatus?: CodingMemoryContextStatus;
   repoRoot?: string;
   filePath?: string;
   symbolName?: string;

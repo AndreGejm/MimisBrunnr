@@ -13,12 +13,14 @@ import type {
   ExecuteCodingTaskRequest,
   GetDecisionSummaryRequest,
   ImportResourceRequest,
+  ListAgentTracesRequest,
   ListContextTreeToolRequest,
   PromoteNoteRequest,
   QueryHistoryRequest,
   ReadContextNodeToolRequest,
   RetrieveContextRequest,
   SearchSessionArchivesRequest,
+  ShowToolOutputRequest,
   ValidateNoteRequest
 } from "@multi-agent-brain/contracts";
 import {
@@ -270,6 +272,14 @@ async function runTool(name: string, request: JsonRecord): Promise<unknown> {
     case "execute_coding_task":
       return container.orchestrator.executeCodingTask(
         request as unknown as ExecuteCodingTaskRequest
+      );
+    case "list_agent_traces":
+      return container.orchestrator.listAgentTraces(
+        request as unknown as ListAgentTracesRequest
+      );
+    case "show_tool_output":
+      return container.orchestrator.showToolOutput(
+        request as unknown as ShowToolOutputRequest
       );
     case "search_context":
       return container.orchestrator.searchContext(

@@ -12,6 +12,7 @@ import type {
   ExecuteCodingTaskRequest,
   GetDecisionSummaryRequest,
   ImportResourceRequest,
+  ListAgentTracesRequest,
   ListContextTreeRequest,
   PromoteNoteRequest,
   QueryHistoryRequest,
@@ -19,6 +20,7 @@ import type {
   RetrieveContextRequest,
   SearchSessionArchivesRequest,
   ServiceError,
+  ShowToolOutputRequest,
   ValidateNoteRequest
 } from "@multi-agent-brain/contracts";
 import {
@@ -39,6 +41,8 @@ import {
 
 type RouteName =
   | "execute-coding-task"
+  | "list-agent-traces"
+  | "show-tool-output"
   | "search-context"
   | "search-session-archives"
   | "assemble-agent-context"
@@ -59,6 +63,8 @@ type JsonRecord = Record<string, unknown>;
 
 const DEFAULT_ACTOR_ROLE: Record<RouteName, ActorRole> = {
   "execute-coding-task": "operator",
+  "list-agent-traces": "operator",
+  "show-tool-output": "operator",
   "search-context": "retrieval",
   "search-session-archives": "retrieval",
   "assemble-agent-context": "retrieval",
@@ -87,6 +93,8 @@ const ROUTES: Record<string, { method: "GET" | "POST"; name?: RouteName; healthM
   "/v1/system/freshness": { method: "GET" },
   "/v1/system/version": { method: "GET" },
   "/v1/coding/execute": { method: "POST", name: "execute-coding-task" },
+  "/v1/coding/traces": { method: "POST", name: "list-agent-traces" },
+  "/v1/coding/tool-output": { method: "POST", name: "show-tool-output" },
   "/v1/context/search": { method: "POST", name: "search-context" },
   "/v1/context/agent-context": { method: "POST", name: "assemble-agent-context" },
   "/v1/context/tree": { method: "POST", name: "list-context-tree" },
@@ -393,6 +401,20 @@ async function handleRequest(
         normalizedRequest as unknown as ExecuteCodingTaskRequest
       );
       sendJson(response, mapCodingStatusToStatusCode(result.status), result);
+      return;
+    }
+    case "list-agent-traces": {
+      const result = await container.orchestrator.listAgentTraces(
+        normalizedRequest as unknown as ListAgentTracesRequest
+      );
+      sendJson(response, 200, result);
+      return;
+    }
+    case "show-tool-output": {
+      const result = await container.orchestrator.showToolOutput(
+        normalizedRequest as unknown as ShowToolOutputRequest
+      );
+      sendJson(response, result.found ? 200 : 404, result);
       return;
     }
     case "search-context": {

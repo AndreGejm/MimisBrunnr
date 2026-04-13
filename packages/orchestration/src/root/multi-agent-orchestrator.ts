@@ -12,11 +12,15 @@ import {
   type ExecuteCodingTaskResponse,
   type GetDecisionSummaryRequest,
   type ImportResourceRequest,
+  type ListAgentTracesRequest,
+  type ListAgentTracesResponse,
   type PromoteNoteRequest,
   type QueryHistoryRequest,
   type RetrieveContextRequest,
   type SearchSessionArchivesRequest,
   type ServiceResult,
+  type ShowToolOutputRequest,
+  type ShowToolOutputResponse,
   type ValidateNoteRequest,
   type ValidateNoteResponse
 } from "@multi-agent-brain/contracts";
@@ -152,6 +156,33 @@ export class MultiAgentOrchestrator {
     return this.codingController.executeTask(executionRequest);
   }
 
+  async listAgentTraces(
+    request: ListAgentTracesRequest
+  ): Promise<ListAgentTracesResponse> {
+    this.assertAuthorized("list_agent_traces", request.actor);
+    const route = this.router.route("list_agent_traces");
+    if (route.domain !== "coding") {
+      throw new Error("Agent trace route is misconfigured.");
+    }
+
+    return {
+      traces: await this.codingController.listTraces(request.requestId)
+    };
+  }
+
+  async showToolOutput(
+    request: ShowToolOutputRequest
+  ): Promise<ShowToolOutputResponse> {
+    this.assertAuthorized("show_tool_output", request.actor);
+    const route = this.router.route("show_tool_output");
+    if (route.domain !== "coding") {
+      throw new Error("Tool output route is misconfigured.");
+    }
+
+    const output = await this.codingController.showToolOutput(request.outputId);
+    return output ? { found: true, output } : { found: false };
+  }
+
   private assertBrainRoute(
     command:
       | "search_context"
@@ -207,6 +238,11 @@ export class MultiAgentOrchestrator {
     if (!assembledContext.ok) {
       return {
         ...executionRequest,
+        memoryContextStatus: {
+          requested: true,
+          included: false,
+          errorMessage: assembledContext.error.message
+        },
         context: appendContextBlock(
           request.context,
           `<agent-context source="multi-agent-brain" authority="unavailable">Failed to assemble memory context: ${assembledContext.error.message}</agent-context>`
@@ -217,6 +253,16 @@ export class MultiAgentOrchestrator {
     void memoryContext;
     return {
       ...executionRequest,
+      memoryContextStatus: {
+        requested: true,
+        included: true,
+        retrievalHealth: assembledContext.data.retrievalHealth
+          ? { status: assembledContext.data.retrievalHealth.status }
+          : undefined,
+        traceIncluded: Boolean(assembledContext.data.trace),
+        tokenEstimate: assembledContext.data.tokenEstimate,
+        truncated: assembledContext.data.truncated
+      },
       context: appendContextBlock(request.context, assembledContext.data.contextBlock)
     };
   }

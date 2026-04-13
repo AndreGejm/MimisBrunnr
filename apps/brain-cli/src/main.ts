@@ -15,12 +15,14 @@ import type {
   ExecuteCodingTaskRequest,
   GetDecisionSummaryRequest,
   ImportResourceRequest,
+  ListAgentTracesRequest,
   ListContextTreeRequest,
   PromoteNoteRequest,
   QueryHistoryRequest,
   ReadContextNodeRequest,
   RetrieveContextRequest,
   SearchSessionArchivesRequest,
+  ShowToolOutputRequest,
   TransportKind,
   ValidateNoteRequest
 } from "@multi-agent-brain/contracts";
@@ -48,6 +50,8 @@ type CommandName =
   | "issue-auth-token"
   | "revoke-auth-token"
   | "execute-coding-task"
+  | "list-agent-traces"
+  | "show-tool-output"
   | "search-context"
   | "search-session-archives"
   | "assemble-agent-context"
@@ -92,6 +96,8 @@ const COMMANDS: ReadonlyArray<CommandName> = [
   "issue-auth-token",
   "revoke-auth-token",
   "execute-coding-task",
+  "list-agent-traces",
+  "show-tool-output",
   "search-context",
   "search-session-archives",
   "assemble-agent-context",
@@ -111,6 +117,8 @@ const COMMANDS: ReadonlyArray<CommandName> = [
 
 const DEFAULT_ACTOR_ROLE: Record<RoutedCommandName, ActorRole> = {
   "execute-coding-task": "operator",
+  "list-agent-traces": "operator",
+  "show-tool-output": "operator",
   "search-context": "retrieval",
   "search-session-archives": "retrieval",
   "assemble-agent-context": "retrieval",
@@ -143,6 +151,8 @@ const TRANSPORTS: ReadonlyArray<TransportKind> = [
 ];
 const COMMAND_NAMES: ReadonlyArray<string> = [
   "execute_coding_task",
+  "list_agent_traces",
+  "show_tool_output",
   "search_context",
   "search_session_archives",
   "assemble_agent_context",
@@ -434,6 +444,14 @@ async function runCommand(
       return container.orchestrator.executeCodingTask(
         request as unknown as ExecuteCodingTaskRequest
       );
+    case "list-agent-traces":
+      return container.orchestrator.listAgentTraces(
+        request as unknown as ListAgentTracesRequest
+      );
+    case "show-tool-output":
+      return container.orchestrator.showToolOutput(
+        request as unknown as ShowToolOutputRequest
+      );
     case "fetch-decision-summary":
       return container.orchestrator.fetchDecisionSummary(
         request as unknown as GetDecisionSummaryRequest
@@ -709,6 +727,8 @@ Commands:
   issue-auth-token     Mint a short-lived issued actor token from JSON input
   revoke-auth-token    Revoke a previously issued actor token through the local revocation store
   execute-coding-task  Run a coding-domain task through the vendored safety-gated runtime
+  list-agent-traces  List compact operational traces for one local-agent request
+  show-tool-output  Read a full spilled local-agent tool output by output id
   search-context   Run bounded retrieval through retrieveContextService
   search-session-archives  Search immutable non-authoritative session archives
   assemble-agent-context  Assemble a fenced local-agent context packet
@@ -735,6 +755,8 @@ Notes:
   - create-session-archive expects JSON input with sessionId and a non-empty messages array of { role, content } objects.
   - search-session-archives expects query and optional sessionId, limit, and maxTokens.
   - assemble-agent-context expects query, corpusIds, budget, and optional session recall controls.
+  - list-agent-traces expects requestId.
+  - show-tool-output expects outputId.
   - issue-auth-token expects JSON input with actorId, actorRole, and optional source, allowedTransports, allowedCommands, allowedAdminActions, validFrom, validUntil, or ttlMinutes.
   - revoke-auth-token expects JSON input with tokenId or a valid issued token, and optional reason.
   - Input payloads are JSON objects shaped like the existing service contracts.

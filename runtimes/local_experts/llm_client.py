@@ -5,7 +5,7 @@ from typing import Any, Dict
 
 import httpx
 
-from .config import CODING_MODEL, MAX_OUTPUT_TOKENS, OLLAMA_API_URL, TEMPERATURES
+from .config import CODING_MODEL, CODING_MODEL_SEED, MAX_OUTPUT_TOKENS, OLLAMA_API_URL, TEMPERATURES
 
 
 async def run_ollama_api(
@@ -21,7 +21,7 @@ async def run_ollama_api(
         "options": {
             "temperature": TEMPERATURES.get(phase_name, 0.0),
             "num_predict": MAX_OUTPUT_TOKENS.get(phase_name, 1200),
-            "seed": 42,
+            "seed": CODING_MODEL_SEED,
         },
     }
 
