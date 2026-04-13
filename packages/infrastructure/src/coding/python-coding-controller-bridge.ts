@@ -4,6 +4,7 @@ import type {
   ExecuteCodingTaskRequest,
   ExecuteCodingTaskResponse
 } from "@multi-agent-brain/contracts";
+import { QWEN3_CODER_LOCAL_PROFILE } from "@multi-agent-brain/domain";
 import type {
   CodingControllerBridge,
   ModelRoleBinding
@@ -140,7 +141,14 @@ function buildBridgeEnvironment(
     ...process.env,
     PYTHONPATH: pythonPath,
     OLLAMA_API_URL: toGenerateUrl(options.ollamaBaseUrl),
-    CODING_MODEL: options.codingBinding.modelId ?? "qwen3-coder:30B"
+    CODING_MODEL: options.codingBinding.modelId ?? "qwen3-coder:30B",
+    CODING_MODEL_CONTEXT_TOKENS: String(QWEN3_CODER_LOCAL_PROFILE.contextWindowTokens),
+    CODING_MODEL_TEMPERATURE: String(
+      options.codingBinding.temperature ?? QWEN3_CODER_LOCAL_PROFILE.recommendedTemperature
+    ),
+    CODING_MODEL_SEED: String(
+      options.codingBinding.seed ?? QWEN3_CODER_LOCAL_PROFILE.recommendedSeed ?? 42
+    )
   };
 }
 

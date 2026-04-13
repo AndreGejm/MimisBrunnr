@@ -1,9 +1,11 @@
 import type {
+  AgentContextAssemblyService,
   DecisionSummaryService,
   ContextPacketService,
   RetrieveContextService
 } from "@multi-agent-brain/application";
 import type {
+  AssembleAgentContextRequest,
   AssembleContextPacketRequest,
   AssembleContextPacketResponse,
   GetDecisionSummaryRequest,
@@ -13,7 +15,8 @@ export class BrainRetrievalController {
   constructor(
     private readonly retrieveContextService: RetrieveContextService,
     private readonly decisionSummaryService: DecisionSummaryService,
-    private readonly contextPacketService: ContextPacketService
+    private readonly contextPacketService: ContextPacketService,
+    private readonly agentContextAssemblyService: AgentContextAssemblyService
   ) {}
 
   async searchContext(
@@ -26,6 +29,12 @@ export class BrainRetrievalController {
     request: GetDecisionSummaryRequest
   ) {
     return this.decisionSummaryService.getDecisionSummary(request);
+  }
+
+  async assembleAgentContext(
+    request: AssembleAgentContextRequest
+  ) {
+    return this.agentContextAssemblyService.assembleAgentContext(request);
   }
 
   async getContextPacket(

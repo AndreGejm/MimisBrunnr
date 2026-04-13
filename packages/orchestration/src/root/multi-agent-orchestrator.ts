@@ -1,19 +1,24 @@
-import type {
-  AssembleContextPacketRequest,
-  AssembleContextPacketResponse,
-  CreateSessionArchiveRequest,
-  CreateRefreshDraftBatchRequest,
-  CreateRefreshDraftRequest,
-  DraftNoteRequest,
-  ExecuteCodingTaskRequest,
-  ExecuteCodingTaskResponse,
-  GetDecisionSummaryRequest,
-  ImportResourceRequest,
-  PromoteNoteRequest,
-  QueryHistoryRequest,
-  RetrieveContextRequest,
-  ValidateNoteRequest,
-  ValidateNoteResponse
+import {
+  DEFAULT_CONTEXT_BUDGET,
+  type AssembleAgentContextRequest,
+  type AssembleAgentContextResponse,
+  type AssembleContextPacketRequest,
+  type AssembleContextPacketResponse,
+  type CreateSessionArchiveRequest,
+  type CreateRefreshDraftBatchRequest,
+  type CreateRefreshDraftRequest,
+  type DraftNoteRequest,
+  type ExecuteCodingTaskRequest,
+  type ExecuteCodingTaskResponse,
+  type GetDecisionSummaryRequest,
+  type ImportResourceRequest,
+  type PromoteNoteRequest,
+  type QueryHistoryRequest,
+  type RetrieveContextRequest,
+  type SearchSessionArchivesRequest,
+  type ServiceResult,
+  type ValidateNoteRequest,
+  type ValidateNoteResponse
 } from "@multi-agent-brain/contracts";
 import type { ActorAuthorizationPolicy } from "./actor-authorization-policy.js";
 import type { BrainDomainController } from "../brain/brain-domain-controller.js";
@@ -40,6 +45,14 @@ export class MultiAgentOrchestrator {
     return this.brainController.searchContext(request);
   }
 
+  async searchSessionArchives(
+    request: SearchSessionArchivesRequest
+  ) {
+    this.assertAuthorized("search_session_archives", request.actor);
+    this.assertBrainRoute("search_session_archives");
+    return this.brainController.searchSessionArchives(request);
+  }
+
   async fetchDecisionSummary(
     request: GetDecisionSummaryRequest
   ) {
@@ -54,6 +67,14 @@ export class MultiAgentOrchestrator {
     this.assertAuthorized("get_context_packet", request.actor);
     this.assertBrainRoute("get_context_packet");
     return this.brainController.getContextPacket(request);
+  }
+
+  async assembleAgentContext(
+    request: AssembleAgentContextRequest
+  ): Promise<ServiceResult<AssembleAgentContextResponse>> {
+    this.assertAuthorized("assemble_agent_context", request.actor);
+    this.assertBrainRoute("assemble_agent_context");
+    return this.brainController.assembleAgentContext(request);
   }
 
   async draftNote(
@@ -127,12 +148,15 @@ export class MultiAgentOrchestrator {
       throw new Error("Coding task route is misconfigured.");
     }
 
-    return this.codingController.executeTask(request);
+    const executionRequest = await this.injectMemoryContext(request);
+    return this.codingController.executeTask(executionRequest);
   }
 
   private assertBrainRoute(
     command:
       | "search_context"
+      | "search_session_archives"
+      | "assemble_agent_context"
       | "get_context_packet"
       | "fetch_decision_summary"
       | "draft_note"
@@ -156,4 +180,49 @@ export class MultiAgentOrchestrator {
   ): void {
     this.actorAuthorizationPolicy.authorize(command, actor);
   }
+
+  private async injectMemoryContext(
+    request: ExecuteCodingTaskRequest
+  ): Promise<ExecuteCodingTaskRequest> {
+    if (!request.memoryContext) {
+      return request;
+    }
+
+    const { memoryContext, ...executionRequest } = request;
+    const contextQuery = request.memoryContext.query ??
+      [request.task, request.filePath, request.symbolName]
+        .filter((value): value is string => Boolean(value?.trim()))
+        .join(" ");
+    const assembledContext = await this.brainController.assembleAgentContext({
+      actor: request.actor,
+      query: contextQuery,
+      corpusIds: request.memoryContext.corpusIds ?? ["context_brain", "general_notes"],
+      budget: request.memoryContext.budget ?? DEFAULT_CONTEXT_BUDGET,
+      includeSessionArchives:
+        request.memoryContext.includeSessionArchives ?? Boolean(request.memoryContext.sessionId),
+      sessionId: request.memoryContext.sessionId,
+      includeTrace: request.memoryContext.includeTrace
+    });
+
+    if (!assembledContext.ok) {
+      return {
+        ...executionRequest,
+        context: appendContextBlock(
+          request.context,
+          `<agent-context source="multi-agent-brain" authority="unavailable">Failed to assemble memory context: ${assembledContext.error.message}</agent-context>`
+        )
+      };
+    }
+
+    void memoryContext;
+    return {
+      ...executionRequest,
+      context: appendContextBlock(request.context, assembledContext.data.contextBlock)
+    };
+  }
+}
+
+function appendContextBlock(existingContext: string | undefined, contextBlock: string): string {
+  const existing = existingContext?.trim();
+  return existing ? `${existing}\n\n${contextBlock}` : contextBlock;
 }

@@ -1,5 +1,6 @@
 import type { ImportOrchestrationService } from "@multi-agent-brain/application";
 import type {
+  AssembleAgentContextRequest,
   AssembleContextPacketRequest,
   AssembleContextPacketResponse,
   CreateSessionArchiveRequest,
@@ -11,6 +12,7 @@ import type {
   PromoteNoteRequest,
   QueryHistoryRequest,
   RetrieveContextRequest,
+  SearchSessionArchivesRequest,
   ValidateNoteRequest,
   ValidateNoteResponse
 } from "@multi-agent-brain/contracts";
@@ -42,6 +44,12 @@ export class BrainDomainController {
     return this.retrievalController.getContextPacket(request);
   }
 
+  async assembleAgentContext(
+    request: AssembleAgentContextRequest
+  ) {
+    return this.retrievalController.assembleAgentContext(request);
+  }
+
   async draftNote(
     request: DraftNoteRequest
   ) {
@@ -52,6 +60,12 @@ export class BrainDomainController {
     request: CreateSessionArchiveRequest
   ) {
     return this.memoryController.createSessionArchive(request);
+  }
+
+  async searchSessionArchives(
+    request: SearchSessionArchivesRequest
+  ) {
+    return this.memoryController.searchSessionArchives(request);
   }
 
   async createRefreshDraft(

@@ -132,6 +132,8 @@ interface NormalizedActorTokenCredential {
 const COMMAND_ROLE_POLICY: Record<OrchestratorCommand, ReadonlySet<ActorRole>> = {
   execute_coding_task: new Set(["operator", "system"]),
   search_context: new Set(["retrieval", "operator", "orchestrator", "system"]),
+  search_session_archives: new Set(["retrieval", "operator", "orchestrator", "system"]),
+  assemble_agent_context: new Set(["retrieval", "operator", "orchestrator", "system"]),
   get_context_packet: new Set(["retrieval", "operator", "orchestrator", "system"]),
   fetch_decision_summary: new Set(["retrieval", "operator", "orchestrator", "system"]),
   draft_note: new Set(["writer", "operator", "orchestrator", "system"]),

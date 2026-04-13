@@ -26,6 +26,30 @@ export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
         },
         task: { type: "string" },
         context: { type: "string" },
+        memoryContext: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            query: { type: "string" },
+            corpusIds: {
+              type: "array",
+              items: { type: "string", enum: ["context_brain", "general_notes"] }
+            },
+            budget: {
+              type: "object",
+              required: ["maxTokens", "maxSources", "maxRawExcerpts", "maxSummarySentences"],
+              properties: {
+                maxTokens: { type: "number" },
+                maxSources: { type: "number" },
+                maxRawExcerpts: { type: "number" },
+                maxSummarySentences: { type: "number" }
+              }
+            },
+            includeSessionArchives: { type: "boolean" },
+            sessionId: { type: "string" },
+            includeTrace: { type: "boolean" }
+          }
+        },
         repoRoot: { type: "string" },
         filePath: { type: "string" },
         symbolName: { type: "string" },
@@ -66,7 +90,61 @@ export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
         noteTypePriority: { type: "array", items: { type: "string" } },
         tagFilters: { type: "array", items: { type: "string" } },
         includeSuperseded: { type: "boolean" },
-        requireEvidence: { type: "boolean" }
+        requireEvidence: { type: "boolean" },
+        includeTrace: { type: "boolean" }
+      }
+    }
+  },
+  {
+    name: "search_session_archives",
+    title: "Search Session Archives",
+    description: "Search immutable non-authoritative session archives for bounded recall.",
+    defaultActorRole: "retrieval",
+    inputSchema: {
+      type: "object",
+      required: ["query"],
+      additionalProperties: true,
+      properties: {
+        actor: { type: "object" },
+        query: { type: "string" },
+        sessionId: { type: "string" },
+        limit: { type: "number" },
+        maxTokens: { type: "number" }
+      }
+    }
+  },
+  {
+    name: "assemble_agent_context",
+    title: "Assemble Agent Context",
+    description: "Assemble a fenced local-agent context packet from canonical retrieval and optional non-authoritative session recall.",
+    defaultActorRole: "retrieval",
+    inputSchema: {
+      type: "object",
+      required: ["query", "corpusIds", "budget"],
+      additionalProperties: true,
+      properties: {
+        actor: { type: "object" },
+        query: { type: "string" },
+        corpusIds: {
+          type: "array",
+          minItems: 1,
+          items: { type: "string", enum: ["context_brain", "general_notes"] }
+        },
+        budget: {
+          type: "object",
+          required: ["maxTokens", "maxSources", "maxRawExcerpts", "maxSummarySentences"],
+          properties: {
+            maxTokens: { type: "number" },
+            maxSources: { type: "number" },
+            maxRawExcerpts: { type: "number" },
+            maxSummarySentences: { type: "number" }
+          }
+        },
+        includeTrace: { type: "boolean" },
+        includeSessionArchives: { type: "boolean" },
+        sessionId: { type: "string" },
+        sessionLimit: { type: "number" },
+        sessionMaxTokens: { type: "number" }
       }
     }
   },

@@ -1,5 +1,7 @@
 export type BrainCommand =
   | "search_context"
+  | "search_session_archives"
+  | "assemble_agent_context"
   | "get_context_packet"
   | "fetch_decision_summary"
   | "draft_note"
@@ -34,6 +36,16 @@ const ROUTE_TABLE: Record<OrchestratorCommand, RoutedTask> = {
     command: "search_context",
     domain: "brain",
     family: "brain_retrieval"
+  },
+  search_session_archives: {
+    command: "search_session_archives",
+    domain: "brain",
+    family: "brain_retrieval"
+  },
+  assemble_agent_context: {
+    command: "assemble_agent_context",
+    domain: "brain",
+    family: "brain_context_packet"
   },
   get_context_packet: {
     command: "get_context_packet",

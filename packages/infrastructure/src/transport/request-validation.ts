@@ -112,6 +112,7 @@ export function validateTransportRequest(
         taskType: requireEnum(payload.taskType, "taskType", CODING_TASK_TYPES),
         task: requireString(payload.task, "task"),
         context: optionalString(payload.context, "context"),
+        memoryContext: validateCodingMemoryContext(payload.memoryContext, "memoryContext"),
         repoRoot: optionalString(payload.repoRoot, "repoRoot"),
         filePath: optionalString(payload.filePath, "filePath"),
         symbolName: optionalString(payload.symbolName, "symbolName"),
@@ -130,7 +131,28 @@ export function validateTransportRequest(
         noteTypePriority: optionalEnumArray(payload.noteTypePriority, "noteTypePriority", NOTE_TYPES),
         tagFilters: optionalStringArray(payload.tagFilters, "tagFilters"),
         includeSuperseded: optionalBoolean(payload.includeSuperseded, "includeSuperseded"),
-        requireEvidence: optionalBoolean(payload.requireEvidence, "requireEvidence")
+        requireEvidence: optionalBoolean(payload.requireEvidence, "requireEvidence"),
+        includeTrace: optionalBoolean(payload.includeTrace, "includeTrace")
+      };
+    case "search-session-archives":
+      return {
+        actor,
+        query: requireString(payload.query, "query"),
+        sessionId: optionalString(payload.sessionId, "sessionId"),
+        limit: optionalInteger(payload.limit, "limit", { min: 1 }),
+        maxTokens: optionalInteger(payload.maxTokens, "maxTokens", { min: 1 })
+      };
+    case "assemble-agent-context":
+      return {
+        actor,
+        query: requireString(payload.query, "query"),
+        budget: validateBudget(payload.budget, "budget"),
+        corpusIds: requireEnumArray(payload.corpusIds, "corpusIds", CORPORA, { minItems: 1 }),
+        includeTrace: optionalBoolean(payload.includeTrace, "includeTrace"),
+        includeSessionArchives: optionalBoolean(payload.includeSessionArchives, "includeSessionArchives"),
+        sessionId: optionalString(payload.sessionId, "sessionId"),
+        sessionLimit: optionalInteger(payload.sessionLimit, "sessionLimit", { min: 1 }),
+        sessionMaxTokens: optionalInteger(payload.sessionMaxTokens, "sessionMaxTokens", { min: 1 })
       };
     case "list-context-tree":
       return {
@@ -262,6 +284,33 @@ function validateBudget(value: unknown, field: string): JsonRecord {
     maxSources: requireInteger(budget.maxSources, `${field}.maxSources`, { min: 1 }),
     maxRawExcerpts: requireInteger(budget.maxRawExcerpts, `${field}.maxRawExcerpts`, { min: 0 }),
     maxSummarySentences: requireInteger(budget.maxSummarySentences, `${field}.maxSummarySentences`, { min: 0 })
+  };
+}
+
+function optionalBudget(value: unknown, field: string): JsonRecord | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  return validateBudget(value, field);
+}
+
+function validateCodingMemoryContext(value: unknown, field: string): JsonRecord | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const memoryContext = requireObject(value, field);
+  return {
+    query: optionalString(memoryContext.query, `${field}.query`),
+    corpusIds: optionalEnumArray(memoryContext.corpusIds, `${field}.corpusIds`, CORPORA),
+    budget: optionalBudget(memoryContext.budget, `${field}.budget`),
+    includeSessionArchives: optionalBoolean(
+      memoryContext.includeSessionArchives,
+      `${field}.includeSessionArchives`
+    ),
+    sessionId: optionalString(memoryContext.sessionId, `${field}.sessionId`),
+    includeTrace: optionalBoolean(memoryContext.includeTrace, `${field}.includeTrace`)
   };
 }
 

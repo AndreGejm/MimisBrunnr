@@ -1,5 +1,7 @@
 export * from "./execute-coding-task.tool.js";
 export * from "./search-context.tool.js";
+export * from "./search-session-archives.tool.js";
+export * from "./assemble-agent-context.tool.js";
 export * from "./get-context-packet.tool.js";
 export * from "./create-refresh-draft.tool.js";
 export * from "./create-refresh-drafts.tool.js";

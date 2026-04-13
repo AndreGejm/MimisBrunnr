@@ -6,6 +6,7 @@ export * from "./contexts/index.js";
 export * from "./imports/import-artifact-state.js";
 export * from "./imports/import-job.js";
 export * from "./lifecycle/note-lifecycle-state.js";
+export * from "./model-capability-profile.js";
 export * from "./notes/note-frontmatter.js";
 export * from "./notes/note-id.js";
 export * from "./notes/note-type.js";

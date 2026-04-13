@@ -6,6 +6,7 @@ import process from "node:process";
 import type {
   ActorContext,
   ActorRole,
+  AssembleAgentContextRequest,
   AssembleContextPacketRequest,
   CreateSessionArchiveRequest,
   CreateRefreshDraftBatchRequest,
@@ -19,6 +20,7 @@ import type {
   QueryHistoryRequest,
   ReadContextNodeRequest,
   RetrieveContextRequest,
+  SearchSessionArchivesRequest,
   TransportKind,
   ValidateNoteRequest
 } from "@multi-agent-brain/contracts";
@@ -47,6 +49,8 @@ type CommandName =
   | "revoke-auth-token"
   | "execute-coding-task"
   | "search-context"
+  | "search-session-archives"
+  | "assemble-agent-context"
   | "list-context-tree"
   | "read-context-node"
   | "get-context-packet"
@@ -89,6 +93,8 @@ const COMMANDS: ReadonlyArray<CommandName> = [
   "revoke-auth-token",
   "execute-coding-task",
   "search-context",
+  "search-session-archives",
+  "assemble-agent-context",
   "list-context-tree",
   "read-context-node",
   "get-context-packet",
@@ -106,6 +112,8 @@ const COMMANDS: ReadonlyArray<CommandName> = [
 const DEFAULT_ACTOR_ROLE: Record<RoutedCommandName, ActorRole> = {
   "execute-coding-task": "operator",
   "search-context": "retrieval",
+  "search-session-archives": "retrieval",
+  "assemble-agent-context": "retrieval",
   "list-context-tree": "retrieval",
   "read-context-node": "retrieval",
   "get-context-packet": "retrieval",
@@ -136,6 +144,8 @@ const TRANSPORTS: ReadonlyArray<TransportKind> = [
 const COMMAND_NAMES: ReadonlyArray<string> = [
   "execute_coding_task",
   "search_context",
+  "search_session_archives",
+  "assemble_agent_context",
   "list_context_tree",
   "read_context_node",
   "get_context_packet",
@@ -399,6 +409,14 @@ async function runCommand(
     case "search-context":
       return container.orchestrator.searchContext(
         request as unknown as RetrieveContextRequest
+      );
+    case "search-session-archives":
+      return container.orchestrator.searchSessionArchives(
+        request as unknown as SearchSessionArchivesRequest
+      );
+    case "assemble-agent-context":
+      return container.orchestrator.assembleAgentContext(
+        request as unknown as AssembleAgentContextRequest
       );
     case "list-context-tree":
       return container.services.contextNamespaceService.listTree(
@@ -692,6 +710,8 @@ Commands:
   revoke-auth-token    Revoke a previously issued actor token through the local revocation store
   execute-coding-task  Run a coding-domain task through the vendored safety-gated runtime
   search-context   Run bounded retrieval through retrieveContextService
+  search-session-archives  Search immutable non-authoritative session archives
+  assemble-agent-context  Assemble a fenced local-agent context packet
   list-context-tree  List namespace nodes through the shared context namespace service
   read-context-node  Read a namespace node through the shared context namespace service
   get-context-packet  Assemble a bounded packet directly from ranked candidates
@@ -713,6 +733,8 @@ Notes:
   - create-refresh-draft expects JSON input with noteId and optional asOf, expiringWithinDays, or bodyHints.
   - create-refresh-drafts accepts optional JSON input with asOf, expiringWithinDays, corpusId, limitPerCategory, maxDrafts, sourceStates, and bodyHints.
   - create-session-archive expects JSON input with sessionId and a non-empty messages array of { role, content } objects.
+  - search-session-archives expects query and optional sessionId, limit, and maxTokens.
+  - assemble-agent-context expects query, corpusIds, budget, and optional session recall controls.
   - issue-auth-token expects JSON input with actorId, actorRole, and optional source, allowedTransports, allowedCommands, allowedAdminActions, validFrom, validUntil, or ttlMinutes.
   - revoke-auth-token expects JSON input with tokenId or a valid issued token, and optional reason.
   - Input payloads are JSON objects shaped like the existing service contracts.

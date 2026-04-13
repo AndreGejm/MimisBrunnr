@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import process from "node:process";
 import type {
   ActorContext,
+  AssembleAgentContextRequest,
   CreateSessionArchiveRequest,
   CreateRefreshDraftBatchRequest,
   CreateRefreshDraftRequest,
@@ -17,6 +18,7 @@ import type {
   QueryHistoryRequest,
   ReadContextNodeToolRequest,
   RetrieveContextRequest,
+  SearchSessionArchivesRequest,
   ValidateNoteRequest
 } from "@multi-agent-brain/contracts";
 import {
@@ -272,6 +274,14 @@ async function runTool(name: string, request: JsonRecord): Promise<unknown> {
     case "search_context":
       return container.orchestrator.searchContext(
         request as unknown as RetrieveContextRequest
+      );
+    case "search_session_archives":
+      return container.orchestrator.searchSessionArchives(
+        request as unknown as SearchSessionArchivesRequest
+      );
+    case "assemble_agent_context":
+      return container.orchestrator.assembleAgentContext(
+        request as unknown as AssembleAgentContextRequest
       );
     case "list_context_tree":
       return container.services.contextNamespaceService.listTree(

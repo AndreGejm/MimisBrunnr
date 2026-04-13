@@ -9,6 +9,7 @@ import {
   DEFAULT_CONTEXT_BUDGET,
   type ContextCandidate,
   type AssembleContextPacketRequest,
+  type RetrievalHealthReport,
   type RetrieveContextRequest,
   type RetrieveContextResponse,
   type ServiceResult
@@ -192,6 +193,18 @@ export class RetrieveContextService {
             packetEvidence: packet.evidence
           })
         : undefined;
+      const responseWarnings = collectWarnings(
+        warnings,
+        auditResult && !auditResult.ok ? [auditResult.error.message] : []
+      );
+      const retrievalHealth = buildRetrievalHealthReport({
+        lexicalCandidates: lexicalCandidates.length,
+        vectorCandidates: vectorCandidates.length,
+        rerankedCandidates: rankedCandidates.length,
+        deliveredCandidates: packet.evidence.length,
+        vectorHealthStatus: vectorHealth?.status,
+        warnings: responseWarnings ?? []
+      });
 
       return {
         ok: true,
@@ -204,12 +217,10 @@ export class RetrieveContextService {
             delivered: packet.evidence.length
           },
           provenance: packet.evidence,
+          retrievalHealth,
           trace
         },
-        warnings: collectWarnings(
-          warnings,
-          auditResult && !auditResult.ok ? [auditResult.error.message] : []
-        )
+        warnings: responseWarnings
       };
     } catch (error) {
       await this.auditHistoryService?.recordAction({
@@ -286,6 +297,32 @@ export class RetrieveContextService {
 function collectWarnings(...groups: Array<ReadonlyArray<string>>): string[] | undefined {
   const warnings = [...new Set(groups.flat().map((warning) => warning.trim()).filter(Boolean))];
   return warnings.length > 0 ? warnings : undefined;
+}
+
+function buildRetrievalHealthReport(input: {
+  lexicalCandidates: number;
+  vectorCandidates: number;
+  rerankedCandidates: number;
+  deliveredCandidates: number;
+  vectorHealthStatus?: string;
+  warnings: string[];
+}): RetrievalHealthReport {
+  const vectorDegraded =
+    input.vectorHealthStatus === "degraded" || input.vectorCandidates === 0;
+  const status = input.deliveredCandidates === 0
+    ? "unhealthy"
+    : vectorDegraded
+      ? "degraded"
+      : "healthy";
+
+  return {
+    status,
+    lexicalCandidates: input.lexicalCandidates,
+    vectorCandidates: input.vectorCandidates,
+    rerankedCandidates: input.rerankedCandidates,
+    deliveredCandidates: input.deliveredCandidates,
+    warnings: input.warnings
+  };
 }
 
 function mergeUncertainties(existing: string[], summary: string): string[] {

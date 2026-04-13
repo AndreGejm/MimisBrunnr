@@ -1,6 +1,7 @@
 import type {
   AuditLog,
   AuditHistoryService,
+  AgentContextAssemblyService,
   CanonicalNoteService,
   CanonicalNoteRepository,
   ChunkingService,
@@ -21,6 +22,7 @@ import type {
 } from "@multi-agent-brain/application";
 import {
   AuditHistoryService as ConcreteAuditHistoryService,
+  AgentContextAssemblyService as ConcreteAgentContextAssemblyService,
   CanonicalNoteService as ConcreteCanonicalNoteService,
   ChunkingService as ConcreteChunkingService,
   ContextNamespaceService as ConcreteContextNamespaceService,
@@ -97,6 +99,7 @@ export interface ServiceRegistry {
   chunkingService: ChunkingService;
   promotionOrchestratorService: PromotionOrchestratorService;
   retrieveContextService: RetrieveContextService;
+  agentContextAssemblyService: AgentContextAssemblyService;
   contextPacketService: ConcreteContextPacketService;
   decisionSummaryService: ConcreteDecisionSummaryService;
   importOrchestrationService: ConcreteImportOrchestrationService;
@@ -242,6 +245,10 @@ export function buildServiceContainer(
   const sessionArchiveService = new ConcreteSessionArchiveService(
     sessionArchiveStore
   );
+  const agentContextAssemblyService = new ConcreteAgentContextAssemblyService(
+    retrieveContextService,
+    sessionArchiveService
+  );
   const temporalRefreshService = new ConcreteTemporalRefreshService(
     metadataControlStore,
     canonicalNoteService,
@@ -263,7 +270,8 @@ export function buildServiceContainer(
     new BrainRetrievalController(
       retrieveContextService,
       decisionSummaryService,
-      contextPacketService
+      contextPacketService,
+      agentContextAssemblyService
     ),
     new BrainMemoryController(
       stagingDraftService,
@@ -323,6 +331,7 @@ export function buildServiceContainer(
       chunkingService,
       promotionOrchestratorService,
       retrieveContextService,
+      agentContextAssemblyService,
       contextPacketService,
       decisionSummaryService,
       importOrchestrationService,

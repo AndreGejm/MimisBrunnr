@@ -12,6 +12,17 @@ import type { RetrievalTraceRef } from "../common/retrieval-trace-ref.js";
 
 export type RetrieveContextStrategy = "flat" | "hierarchical";
 
+export type RetrievalHealthStatus = "healthy" | "degraded" | "unhealthy";
+
+export interface RetrievalHealthReport {
+  status: RetrievalHealthStatus;
+  lexicalCandidates: number;
+  vectorCandidates: number;
+  rerankedCandidates: number;
+  deliveredCandidates: number;
+  warnings: string[];
+}
+
 export interface RetrieveContextRequest {
   actor: ActorContext;
   query: string;
@@ -35,5 +46,6 @@ export interface RetrieveContextResponse {
     delivered: number;
   };
   provenance: ProvenanceRef[];
+  retrievalHealth?: RetrievalHealthReport;
   trace?: RetrievalTraceRef;
 }

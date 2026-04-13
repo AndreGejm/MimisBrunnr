@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type {
   ActorContext,
   ActorRole,
+  AssembleAgentContextRequest,
   AssembleContextPacketRequest,
   CreateSessionArchiveRequest,
   CreateRefreshDraftBatchRequest,
@@ -16,6 +17,7 @@ import type {
   QueryHistoryRequest,
   ReadContextNodeRequest,
   RetrieveContextRequest,
+  SearchSessionArchivesRequest,
   ServiceError,
   ValidateNoteRequest
 } from "@multi-agent-brain/contracts";
@@ -38,6 +40,8 @@ import {
 type RouteName =
   | "execute-coding-task"
   | "search-context"
+  | "search-session-archives"
+  | "assemble-agent-context"
   | "get-context-packet"
   | "fetch-decision-summary"
   | "draft-note"
@@ -56,6 +60,8 @@ type JsonRecord = Record<string, unknown>;
 const DEFAULT_ACTOR_ROLE: Record<RouteName, ActorRole> = {
   "execute-coding-task": "operator",
   "search-context": "retrieval",
+  "search-session-archives": "retrieval",
+  "assemble-agent-context": "retrieval",
   "list-context-tree": "retrieval",
   "read-context-node": "retrieval",
   "get-context-packet": "retrieval",
@@ -82,6 +88,7 @@ const ROUTES: Record<string, { method: "GET" | "POST"; name?: RouteName; healthM
   "/v1/system/version": { method: "GET" },
   "/v1/coding/execute": { method: "POST", name: "execute-coding-task" },
   "/v1/context/search": { method: "POST", name: "search-context" },
+  "/v1/context/agent-context": { method: "POST", name: "assemble-agent-context" },
   "/v1/context/tree": { method: "POST", name: "list-context-tree" },
   "/v1/context/node": { method: "POST", name: "read-context-node" },
   "/v1/context/packet": { method: "POST", name: "get-context-packet" },
@@ -93,7 +100,8 @@ const ROUTES: Record<string, { method: "GET" | "POST"; name?: RouteName; healthM
   "/v1/notes/promote": { method: "POST", name: "promote-note" },
   "/v1/maintenance/import-resource": { method: "POST", name: "import-resource" },
   "/v1/history/query": { method: "POST", name: "query-history" },
-  "/v1/history/session-archives": { method: "POST", name: "create-session-archive" }
+  "/v1/history/session-archives": { method: "POST", name: "create-session-archive" },
+  "/v1/history/session-archives/search": { method: "POST", name: "search-session-archives" }
 };
 
 export interface BrainApiServer {
@@ -390,6 +398,20 @@ async function handleRequest(
     case "search-context": {
       const result = await container.orchestrator.searchContext(
         normalizedRequest as unknown as RetrieveContextRequest
+      );
+      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
+      return;
+    }
+    case "search-session-archives": {
+      const result = await container.orchestrator.searchSessionArchives(
+        normalizedRequest as unknown as SearchSessionArchivesRequest
+      );
+      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
+      return;
+    }
+    case "assemble-agent-context": {
+      const result = await container.orchestrator.assembleAgentContext(
+        normalizedRequest as unknown as AssembleAgentContextRequest
       );
       sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
       return;

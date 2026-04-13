@@ -13,6 +13,7 @@ export * from "./ports/session-archive-store.js";
 export * from "./ports/staging-note-repository.js";
 export * from "./ports/vector-index.js";
 export * from "./services/audit-history-service.js";
+export * from "./services/agent-context-assembly-service.js";
 export * from "./services/canonical-note-service.js";
 export * from "./services/chunking-service.js";
 export * from "./services/context-namespace-service.js";

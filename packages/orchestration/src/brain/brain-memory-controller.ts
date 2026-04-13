@@ -13,6 +13,7 @@ import type {
   DraftNoteRequest,
   PromoteNoteRequest,
   QueryHistoryRequest,
+  SearchSessionArchivesRequest,
   ValidateNoteRequest,
   ValidateNoteResponse
 } from "@multi-agent-brain/contracts";
@@ -59,6 +60,12 @@ export class BrainMemoryController {
     request: CreateSessionArchiveRequest
   ) {
     return this.sessionArchiveService.createArchive(request);
+  }
+
+  async searchSessionArchives(
+    request: SearchSessionArchivesRequest
+  ) {
+    return this.sessionArchiveService.searchArchives(request);
   }
 
   async queryHistory(

@@ -1,4 +1,6 @@
 import type { ActorContext } from "../common/actor-context.js";
+import type { ContextBudget } from "../common/context-budget.js";
+import type { CorpusId } from "@multi-agent-brain/domain";
 
 export type CodingTaskType =
   | "triage"
@@ -17,11 +19,21 @@ export interface CodingValidationResult {
   metadata?: Record<string, unknown>;
 }
 
+export interface CodingMemoryContextRequest {
+  query?: string;
+  corpusIds?: CorpusId[];
+  budget?: ContextBudget;
+  includeSessionArchives?: boolean;
+  sessionId?: string;
+  includeTrace?: boolean;
+}
+
 export interface ExecuteCodingTaskRequest {
   actor: ActorContext;
   taskType: CodingTaskType;
   task: string;
   context?: string;
+  memoryContext?: CodingMemoryContextRequest;
   repoRoot?: string;
   filePath?: string;
   symbolName?: string;
