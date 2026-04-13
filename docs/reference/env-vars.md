@@ -23,9 +23,10 @@ The Node applications do **not** auto-load `.env`. These variables must exist in
 
 | Variable | Purpose | Default / notes |
 | --- | --- | --- |
-| `MAB_VAULT_ROOT` | canonical note root | Windows default `F:\Dev\AI Context Brain`, otherwise `./vault/canonical` |
-| `MAB_STAGING_ROOT` | staging draft root | `./vault/staging` |
-| `MAB_SQLITE_PATH` | SQLite path | `./state/multi-agent-brain.sqlite` |
+| `MAB_DATA_ROOT` | root for default host state paths | `%USERPROFILE%\.multiagentbrain` on Windows, `$HOME/.multiagentbrain` elsewhere |
+| `MAB_VAULT_ROOT` | canonical note root | `$MAB_DATA_ROOT/vault/canonical` |
+| `MAB_STAGING_ROOT` | staging draft root | `$MAB_DATA_ROOT/vault/staging` |
+| `MAB_SQLITE_PATH` | SQLite path | `$MAB_DATA_ROOT/state/multi-agent-brain.sqlite` |
 | `MAB_QDRANT_URL` | Qdrant base URL | `http://127.0.0.1:6333` |
 | `MAB_QDRANT_COLLECTION` | Qdrant collection | `context_brain_chunks` |
 | `MAB_QDRANT_SOFT_FAIL` | allow degraded vector behavior instead of surfacing hard failure | defaults to `true` |

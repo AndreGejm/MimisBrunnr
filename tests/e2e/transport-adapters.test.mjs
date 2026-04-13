@@ -769,6 +769,30 @@ test("brain-api exposes shared release metadata through the system version route
   assert.equal(payload.release.releaseChannel, "tagged");
 });
 
+test("loadEnvironment derives storage paths from MAB_DATA_ROOT", async () => {
+  const { loadEnvironment } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "packages", "infrastructure", "dist", "index.js")
+    ).href
+  );
+  const dataRoot = path.join(os.tmpdir(), `mab-data-root-${randomUUID()}`);
+
+  const environment = loadEnvironment({
+    ...process.env,
+    MAB_DATA_ROOT: dataRoot,
+    MAB_VAULT_ROOT: undefined,
+    MAB_STAGING_ROOT: undefined,
+    MAB_SQLITE_PATH: undefined
+  });
+
+  assert.equal(environment.vaultRoot, path.join(dataRoot, "vault", "canonical"));
+  assert.equal(environment.stagingRoot, path.join(dataRoot, "vault", "staging"));
+  assert.equal(
+    environment.sqlitePath,
+    path.join(dataRoot, "state", "multi-agent-brain.sqlite")
+  );
+});
+
 test("brain-api exposes auth registry status through the system auth route", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-auth-status-"));
   const { createBrainApiServer } = await import(

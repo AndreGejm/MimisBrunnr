@@ -16,14 +16,15 @@ In order of practical use:
 
 Default values from `packages/infrastructure/src/config/env.ts`:
 
-- Windows canonical vault root: `F:\Dev\AI Context Brain`
-- non-Windows canonical vault root: `./vault/canonical`
-- staging root: `./vault/staging`
-- SQLite path: `./state/multi-agent-brain.sqlite`
+- data root: `%USERPROFILE%\.multiagentbrain` on Windows or `$HOME/.multiagentbrain` elsewhere
+- canonical vault root: `$MAB_DATA_ROOT/vault/canonical`
+- staging root: `$MAB_DATA_ROOT/vault/staging`
+- SQLite path: `$MAB_DATA_ROOT/state/multi-agent-brain.sqlite`
 - Qdrant URL: `http://127.0.0.1:6333`
 - Qdrant collection: `context_brain_chunks`
 
-If you want repo-local state on Windows, override `MAB_VAULT_ROOT`.
+If you want repo-local state, override `MAB_VAULT_ROOT`, `MAB_STAGING_ROOT`,
+and `MAB_SQLITE_PATH`.
 
 ## Provider defaults
 

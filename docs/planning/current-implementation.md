@@ -114,7 +114,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - `qwen3-coder`
 - `qwen3-reranker`
 - `docker.io/ai/qwen3-embedding:0.6B-F16`
-- Windows host default canonical brain root at `F:\Dev\AI Context Brain` when `MAB_VAULT_ROOT` is unset
+- host state defaults under `%USERPROFILE%\.multiagentbrain` on Windows or `$HOME/.multiagentbrain` elsewhere when `MAB_DATA_ROOT` and the explicit storage path variables are unset
 
 ## Transport Surfaces
 

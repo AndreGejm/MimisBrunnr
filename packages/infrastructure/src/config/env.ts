@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
@@ -15,13 +16,7 @@ import {
 const DEFAULT_WORKSPACE_ROOT = fileURLToPath(
   new URL("../../../../", import.meta.url)
 );
-const DEFAULT_WINDOWS_CANONICAL_VAULT_ROOT = "F:\\Dev\\AI Context Brain";
-const DEFAULT_CANONICAL_VAULT_ROOT =
-  process.platform === "win32"
-    ? DEFAULT_WINDOWS_CANONICAL_VAULT_ROOT
-    : "./vault/canonical";
-const DEFAULT_STAGING_ROOT = "./vault/staging";
-const DEFAULT_SQLITE_PATH = "./state/multi-agent-brain.sqlite";
+const DEFAULT_DATA_ROOT_NAME = ".multiagentbrain";
 
 export interface AppEnvironment {
   nodeEnv: "development" | "test" | "production";
@@ -105,12 +100,14 @@ export function loadEnvironment(env: NodeJS.ProcessEnv = process.env): AppEnviro
   const actorRegistryPath = env.MAB_AUTH_ACTOR_REGISTRY_PATH?.trim() || undefined;
   const issuedTokenRevocationPath =
     env.MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_PATH?.trim() || undefined;
+  const dataRoot = resolveDataRoot(env);
   return normalizeEnvironment({
     nodeEnv: (env.MAB_NODE_ENV as AppEnvironment["nodeEnv"]) ?? "development",
     release: loadReleaseMetadata(env),
-    vaultRoot: env.MAB_VAULT_ROOT ?? DEFAULT_CANONICAL_VAULT_ROOT,
-    stagingRoot: env.MAB_STAGING_ROOT ?? DEFAULT_STAGING_ROOT,
-    sqlitePath: env.MAB_SQLITE_PATH ?? DEFAULT_SQLITE_PATH,
+    vaultRoot: env.MAB_VAULT_ROOT ?? path.join(dataRoot, "vault", "canonical"),
+    stagingRoot: env.MAB_STAGING_ROOT ?? path.join(dataRoot, "vault", "staging"),
+    sqlitePath:
+      env.MAB_SQLITE_PATH ?? path.join(dataRoot, "state", "multi-agent-brain.sqlite"),
     qdrantUrl: env.MAB_QDRANT_URL ?? "http://127.0.0.1:6333",
     qdrantCollection: env.MAB_QDRANT_COLLECTION ?? "context_brain_chunks",
     qdrantSoftFail: parseBoolean(env.MAB_QDRANT_SOFT_FAIL, true),
@@ -174,7 +171,18 @@ export function loadEnvironment(env: NodeJS.ProcessEnv = process.env): AppEnviro
   });
 }
 
+function resolveDataRoot(env: NodeJS.ProcessEnv): string {
+  const configured = env.MAB_DATA_ROOT?.trim();
+  if (configured) {
+    return configured;
+  }
+
+  const home = env.USERPROFILE?.trim() || env.HOME?.trim() || os.homedir();
+  return path.join(home, DEFAULT_DATA_ROOT_NAME);
+}
+
 export function normalizeEnvironment(input: Partial<AppEnvironment>): AppEnvironment {
+  const dataRoot = resolveDataRoot(process.env);
   const providerEndpoints = {
     dockerOllamaBaseUrl:
       input.providerEndpoints?.dockerOllamaBaseUrl ??
@@ -187,9 +195,10 @@ export function normalizeEnvironment(input: Partial<AppEnvironment>): AppEnviron
   const baseEnvironment: AppEnvironment = {
     nodeEnv: input.nodeEnv ?? "development",
     release: input.release ?? loadReleaseMetadata(),
-    vaultRoot: input.vaultRoot ?? DEFAULT_CANONICAL_VAULT_ROOT,
-    stagingRoot: input.stagingRoot ?? DEFAULT_STAGING_ROOT,
-    sqlitePath: input.sqlitePath ?? DEFAULT_SQLITE_PATH,
+    vaultRoot: input.vaultRoot ?? path.join(dataRoot, "vault", "canonical"),
+    stagingRoot: input.stagingRoot ?? path.join(dataRoot, "vault", "staging"),
+    sqlitePath:
+      input.sqlitePath ?? path.join(dataRoot, "state", "multi-agent-brain.sqlite"),
     qdrantUrl: input.qdrantUrl ?? "http://127.0.0.1:6333",
     qdrantCollection: input.qdrantCollection ?? "context_brain_chunks",
     qdrantSoftFail: input.qdrantSoftFail ?? true,

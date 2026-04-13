@@ -62,7 +62,8 @@ Why this works:
 Important:
 
 - `.env.example` is reference material only; the Node applications do not load `.env` files automatically
-- on Windows, if `MAB_VAULT_ROOT` is unset, the code defaults to `F:\Dev\AI Context Brain`
+- if `MAB_DATA_ROOT` is unset, host state defaults under `%USERPROFILE%\.multiagentbrain` on Windows or `$HOME/.multiagentbrain` elsewhere
+- override `MAB_VAULT_ROOT`, `MAB_STAGING_ROOT`, and `MAB_SQLITE_PATH` for repo-local or test-only state
 
 ## Containerized model-backed profile
 

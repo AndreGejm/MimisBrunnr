@@ -404,20 +404,18 @@ Default local storage locations:
 
 | Storage | Default |
 | --- | --- |
-| Canonical vault on Windows | `F:\Dev\AI Context Brain` |
-| Canonical vault on non-Windows | `./vault/canonical` |
-| Staging vault | `./vault/staging` |
-| SQLite state | `./state/multi-agent-brain.sqlite` |
+| Data root on Windows | `%USERPROFILE%\.multiagentbrain` |
+| Data root on non-Windows | `$HOME/.multiagentbrain` |
+| Canonical vault | `$MAB_DATA_ROOT/vault/canonical` |
+| Staging vault | `$MAB_DATA_ROOT/vault/staging` |
+| SQLite state | `$MAB_DATA_ROOT/state/multi-agent-brain.sqlite` |
 | Qdrant URL | `http://127.0.0.1:6333` |
 | API host/port | `127.0.0.1:8080` |
 
-If you do not want the Windows default canonical vault, set `MAB_VAULT_ROOT`
-before running commands:
+If you want disposable test state, set `MAB_DATA_ROOT` before running commands:
 
 ```powershell
-$env:MAB_VAULT_ROOT = "F:\Dev\my-test-brain\canonical"
-$env:MAB_STAGING_ROOT = "F:\Dev\my-test-brain\staging"
-$env:MAB_SQLITE_PATH = "F:\Dev\my-test-brain\state\multi-agent-brain.sqlite"
+$env:MAB_DATA_ROOT = "$env:USERPROFILE\.multiagentbrain-test"
 corepack pnpm cli -- version
 ```
 
@@ -821,10 +819,10 @@ Copy-Item docker\brain-mcp-session.env.example docker\brain-mcp-session.env
 Example test layout:
 
 ```text
-F:/Dev/mab-session-test/vault/canonical
-F:/Dev/mab-session-test/vault/staging
-F:/Dev/mab-session-test/state
-F:/Dev/mab-session-test/config/auth
+<MAB_DATA_ROOT>/vault/canonical
+<MAB_DATA_ROOT>/vault/staging
+<MAB_DATA_ROOT>/state
+<MAB_DATA_ROOT>/config/auth
 ```
 
 4. Copy the example actor registry into the auth config directory and replace
@@ -1242,7 +1240,7 @@ Run a coding task with memory context:
 corepack pnpm cli -- execute-coding-task --json '{
   "taskType": "review",
   "task": "Review the current change for direct canonical memory writes.",
-  "repoRoot": "F:/Dev/scripts/MultiagentBrain",
+  "repoRoot": "<REPO_ROOT>",
   "memoryContext": {
     "query": "agents should create staging drafts before promotion",
     "corpusIds": ["context_brain", "general_notes"],
@@ -2153,7 +2151,7 @@ Basic CLI example:
 corepack pnpm cli -- execute-coding-task --json '{
   "taskType": "review",
   "task": "Review the staged changes for memory-governance regressions.",
-  "repoRoot": "F:/Dev/scripts/MultiagentBrain",
+  "repoRoot": "<REPO_ROOT>",
   "context": "Focus on direct canonical writes and auth bypasses."
 }'
 ```
@@ -2164,7 +2162,7 @@ With memory context:
 corepack pnpm cli -- execute-coding-task --json '{
   "taskType": "triage",
   "task": "Find why vector retrieval is degraded.",
-  "repoRoot": "F:/Dev/scripts/MultiagentBrain",
+  "repoRoot": "<REPO_ROOT>",
   "memoryContext": {
     "query": "vector retrieval degraded lexical retrieval active qdrant health",
     "corpusIds": ["context_brain", "general_notes"],

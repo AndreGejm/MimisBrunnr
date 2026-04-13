@@ -52,19 +52,19 @@ What to do:
 - set the fixed session actor id, source, and token contract explicitly
 - validate again before launching the MCP client
 
-## The app writes outside the repo on Windows
+## The app writes outside the repo
 
 Symptom:
 
-- canonical notes appear under `F:\Dev\AI Context Brain`
+- canonical notes appear under `%USERPROFILE%\.multiagentbrain` or `$HOME/.multiagentbrain`
 
 Cause:
 
-- `packages/infrastructure/src/config/env.ts` uses that as the Windows default when `MAB_VAULT_ROOT` is unset
+- `packages/infrastructure/src/config/env.ts` derives default storage paths from `MAB_DATA_ROOT`
 
 What to do:
 
-- set `MAB_VAULT_ROOT` explicitly for repo-local development
+- set `MAB_DATA_ROOT` or the explicit `MAB_VAULT_ROOT`, `MAB_STAGING_ROOT`, and `MAB_SQLITE_PATH` variables for repo-local development
 
 ## `GET /health/live` is degraded or `GET /health/ready` fails
 

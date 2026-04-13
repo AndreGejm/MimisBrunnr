@@ -113,12 +113,12 @@ Expected files inside those mounts:
 - SQLite database at `/data/state/multi-agent-brain.sqlite`
 - actor registry at `/config/auth/actor-registry.json`
 
-Windows host example paths:
+Host example paths:
 
-- `F:/Dev/scripts/MultiagentBrain/multi-agent-brain/vault/canonical`
-- `F:/Dev/scripts/MultiagentBrain/multi-agent-brain/vault/staging`
-- `F:/Dev/scripts/MultiagentBrain/multi-agent-brain/state`
-- `F:/Dev/scripts/MultiagentBrain/multi-agent-brain/config/auth`
+- `<MAB_DATA_ROOT>/vault/canonical`
+- `<MAB_DATA_ROOT>/vault/staging`
+- `<MAB_DATA_ROOT>/state`
+- `<MAB_DATA_ROOT>/config/auth`
 
 Use forward slashes in `docker run` arguments on Windows.
 
@@ -141,10 +141,10 @@ Validation-only run:
 ```bash
 docker run --rm \
   --env-file docker/brain-mcp-session.env \
-  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/vault/canonical,dst=/data/vault/canonical \
-  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/vault/staging,dst=/data/vault/staging \
-  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/state,dst=/data/state \
-  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/config/auth,dst=/config/auth,readonly \
+  --mount type=bind,src=<HOST_CANONICAL_ROOT>,dst=/data/vault/canonical \
+  --mount type=bind,src=<HOST_STAGING_ROOT>,dst=/data/vault/staging \
+  --mount type=bind,src=<HOST_STATE_ROOT>,dst=/data/state \
+  --mount type=bind,src=<HOST_AUTH_CONFIG_ROOT>,dst=/config/auth,readonly \
   --add-host host.docker.internal:host-gateway \
   --add-host model-runner.docker.internal:host-gateway \
   multi-agent-brain-mcp-session:local \
@@ -167,10 +167,10 @@ Official direct-launch shape:
 ```bash
 docker run --rm -i \
   --env-file docker/brain-mcp-session.env \
-  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/vault/canonical,dst=/data/vault/canonical \
-  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/vault/staging,dst=/data/vault/staging \
-  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/state,dst=/data/state \
-  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/config/auth,dst=/config/auth,readonly \
+  --mount type=bind,src=<HOST_CANONICAL_ROOT>,dst=/data/vault/canonical \
+  --mount type=bind,src=<HOST_STAGING_ROOT>,dst=/data/vault/staging \
+  --mount type=bind,src=<HOST_STATE_ROOT>,dst=/data/state \
+  --mount type=bind,src=<HOST_AUTH_CONFIG_ROOT>,dst=/config/auth,readonly \
   --add-host host.docker.internal:host-gateway \
   --add-host model-runner.docker.internal:host-gateway \
   multi-agent-brain-mcp-session:local
@@ -216,15 +216,15 @@ Example generic client config:
         "--rm",
         "-i",
         "--env-file",
-        "F:/Dev/scripts/MultiagentBrain/multi-agent-brain/docker/brain-mcp-session.env",
+        "<REPO_ROOT>/docker/brain-mcp-session.env",
         "--mount",
-        "type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/vault/canonical,dst=/data/vault/canonical",
+        "type=bind,src=<HOST_CANONICAL_ROOT>,dst=/data/vault/canonical",
         "--mount",
-        "type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/vault/staging,dst=/data/vault/staging",
+        "type=bind,src=<HOST_STAGING_ROOT>,dst=/data/vault/staging",
         "--mount",
-        "type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/state,dst=/data/state",
+        "type=bind,src=<HOST_STATE_ROOT>,dst=/data/state",
         "--mount",
-        "type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/config/auth,dst=/config/auth,readonly",
+        "type=bind,src=<HOST_AUTH_CONFIG_ROOT>,dst=/config/auth,readonly",
         "--add-host",
         "host.docker.internal:host-gateway",
         "--add-host",

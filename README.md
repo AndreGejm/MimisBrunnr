@@ -4,6 +4,12 @@ Local-first TypeScript monorepo for governed note memory, bounded retrieval, aut
 
 For a first-time user and operator manual covering setup, Docker Desktop, the orchestrator, Hermes-derived local-agent ideas, storing information, validation, review, retrieval, MCP, and troubleshooting, see `docs/manuals/multiagentbrain-complete-manual.md`.
 
+Release metadata:
+
+- `CHANGELOG.md`
+- `RELEASE_NOTES.md`
+- `docs/release/v1.0.1-release-checklist.md`
+
 ## Current state
 
 The tracked repository currently implements:
@@ -102,10 +108,12 @@ Important:
 
 - `.env.example` is reference material only
 - the Node entrypoints do not auto-load `.env`
-- if `MAB_VAULT_ROOT` is unset on Windows, the runtime defaults to `F:\Dev\AI Context Brain`
-- if `MAB_VAULT_ROOT` is unset on non-Windows platforms, the runtime defaults to `./vault/canonical`
+- if `MAB_DATA_ROOT` is unset on Windows, host state defaults under `%USERPROFILE%\.multiagentbrain`
+- if `MAB_DATA_ROOT` is unset on non-Windows platforms, host state defaults under `$HOME/.multiagentbrain`
+- `MAB_VAULT_ROOT`, `MAB_STAGING_ROOT`, and `MAB_SQLITE_PATH` can still override the derived paths individually
 
-If you want repo-local development state on Windows, set `MAB_VAULT_ROOT` explicitly instead of relying on the Windows default.
+If you want repo-local development state, set `MAB_VAULT_ROOT`,
+`MAB_STAGING_ROOT`, and `MAB_SQLITE_PATH` explicitly.
 
 See `docs/reference/env-vars.md` for the full environment variable list.
 
@@ -220,10 +228,10 @@ Validate the profile before connecting a client:
 ```bash
 docker run --rm \
   --env-file docker/brain-mcp-session.env \
-  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/vault/canonical,dst=/data/vault/canonical \
-  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/vault/staging,dst=/data/vault/staging \
-  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/state,dst=/data/state \
-  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/config/auth,dst=/config/auth,readonly \
+  --mount type=bind,src=<HOST_CANONICAL_ROOT>,dst=/data/vault/canonical \
+  --mount type=bind,src=<HOST_STAGING_ROOT>,dst=/data/vault/staging \
+  --mount type=bind,src=<HOST_STATE_ROOT>,dst=/data/state \
+  --mount type=bind,src=<HOST_AUTH_CONFIG_ROOT>,dst=/config/auth,readonly \
   --add-host host.docker.internal:host-gateway \
   --add-host model-runner.docker.internal:host-gateway \
   multi-agent-brain-mcp-session:local \
@@ -235,10 +243,10 @@ Launch the MCP session:
 ```bash
 docker run --rm -i \
   --env-file docker/brain-mcp-session.env \
-  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/vault/canonical,dst=/data/vault/canonical \
-  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/vault/staging,dst=/data/vault/staging \
-  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/state,dst=/data/state \
-  --mount type=bind,src=F:/Dev/scripts/MultiagentBrain/multi-agent-brain/config/auth,dst=/config/auth,readonly \
+  --mount type=bind,src=<HOST_CANONICAL_ROOT>,dst=/data/vault/canonical \
+  --mount type=bind,src=<HOST_STAGING_ROOT>,dst=/data/vault/staging \
+  --mount type=bind,src=<HOST_STATE_ROOT>,dst=/data/state \
+  --mount type=bind,src=<HOST_AUTH_CONFIG_ROOT>,dst=/config/auth,readonly \
   --add-host host.docker.internal:host-gateway \
   --add-host model-runner.docker.internal:host-gateway \
   multi-agent-brain-mcp-session:local

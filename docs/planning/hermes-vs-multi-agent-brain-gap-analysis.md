@@ -2,8 +2,8 @@
 
 Date: 2026-04-13
 
-Repo A: `F:\Dev\scripts\MultiagentBrain\inspiration\hermes-agent`
-Repo B: `F:\Dev\scripts\MultiagentBrain\multi-agent-brain`
+Repo A: `inspiration/hermes-agent`
+Repo B: this MultiagentBrain workspace
 
 Evidence standard used: source files and manifests first, docs only for scope framing. I generated Codesight for Hermes for orientation and removed the generated `.codesight` directory afterwards; no source claim below relies on Codesight alone. I did not treat any Hermes `.codesight` artifact as source evidence; local source files, manifests, and runtime entrypoints remain the evidence basis.
 
