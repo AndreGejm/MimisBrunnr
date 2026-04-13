@@ -8,7 +8,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json tsconfig.base
 COPY apps ./apps
 COPY packages ./packages
 COPY docker ./docker
-COPY docs ./docs
+COPY documentation ./documentation
 COPY runtimes ./runtimes
 COPY scripts ./scripts
 COPY tests ./tests

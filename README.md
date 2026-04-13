@@ -2,13 +2,13 @@
 
 Local-first TypeScript monorepo for governed note memory, bounded retrieval, auth-gated transport adapters, and a vendored Python coding runtime.
 
-For a first-time user and operator manual covering setup, Docker Desktop, the orchestrator, Hermes-derived local-agent ideas, storing information, validation, review, retrieval, MCP, and troubleshooting, see `docs/manuals/multiagentbrain-complete-manual.md`.
+For a first-time user and operator manual covering setup, Docker Desktop, the orchestrator, Hermes-derived local-agent ideas, storing information, validation, review, retrieval, MCP, and troubleshooting, see `documentation/manuals/multiagentbrain-complete-manual.md`.
 
 Release metadata:
 
-- `CHANGELOG.md`
-- `RELEASE_NOTES.md`
-- `docs/release/v1.0.1-release-checklist.md`
+- `documentation/release/CHANGELOG.md`
+- `documentation/release/RELEASE_NOTES.md`
+- `documentation/release/v1.0.1-release-checklist.md`
 
 ## Current state
 
@@ -57,7 +57,7 @@ buildServiceContainer()
                 \--> Python coding bridge
 ```
 
-See `docs/architecture/overview.md` for the package-level map and `docs/architecture/runtime-flow.md` for request and promotion flow details.
+See `documentation/architecture/overview.md` for the package-level map and `documentation/architecture/runtime-flow.md` for request and promotion flow details.
 
 ## Prerequisites
 
@@ -115,7 +115,7 @@ Important:
 If you want repo-local development state, set `MAB_VAULT_ROOT`,
 `MAB_STAGING_ROOT`, and `MAB_SQLITE_PATH` explicitly.
 
-See `docs/reference/env-vars.md` for the full environment variable list.
+See `documentation/reference/env-vars.md` for the full environment variable list.
 
 ## Run locally
 
@@ -215,7 +215,7 @@ Tracked Docker MCP assets:
 - `docker/brain-mcp-session.env.example`
 - `docker/brain-mcp-session.actor-registry.example.json`
 - `docker/compose.mcp-session.yml`
-- `docs/operations/docker-mcp-session.md`
+- `documentation/operations/docker-mcp-session.md`
 
 Build the image:
 
@@ -317,7 +317,7 @@ Recommended setup:
 3. mount canonical, staging, state, and config explicitly
 4. run `docker run --rm -i ... multi-agent-brain-mcp-session:local`
 
-See `docs/operations/docker-mcp-session.md` for the exact command shape,
+See `documentation/operations/docker-mcp-session.md` for the exact command shape,
 validation step, and MCP client snippet.
 
 ## HTTP and CLI surfaces
@@ -358,7 +358,7 @@ validation step, and MCP client snippet.
 - `query-history`
 - `create-session-archive`
 
-See `docs/reference/interfaces.md` for the canonical interface list.
+See `documentation/reference/interfaces.md` for the canonical interface list.
 
 ## Health behavior
 
@@ -372,7 +372,7 @@ Important operational behavior:
 - missing Qdrant is a warning in `live`
 - missing Qdrant is a failure in `ready`
 
-See `docs/operations/running.md` for the current health model and runtime behavior.
+See `documentation/operations/running.md` for the current health model and runtime behavior.
 
 ## Verify your setup
 
@@ -394,29 +394,29 @@ python3 -m pytest runtimes/local_experts/tests/test_safety_gate.py -v # macOS/Li
 apps/          transport entrypoints
 packages/      layered TypeScript modules
 docker/        Dockerfile and local compose profile
-docs/          canonical docs plus planning/history docs
+documentation/          canonical docs plus planning/history docs
 runtimes/      vendored Python coding runtime
 tests/         end-to-end transport and service tests
 scripts/       currently only a placeholder README
 ```
 
-Full map: `docs/reference/repo-map.md`
+Full map: `documentation/reference/repo-map.md`
 
 ## Source-of-truth docs
 
-- `docs/setup/installation.md`
-- `docs/setup/configuration.md`
-- `docs/operations/running.md`
-- `docs/operations/docker-mcp-session.md`
-- `docs/architecture/overview.md`
-- `docs/architecture/runtime-flow.md`
-- `docs/architecture/invariants-and-boundaries.md`
-- `docs/reference/interfaces.md`
-- `docs/reference/env-vars.md`
-- `docs/reference/repo-map.md`
-- `docs/agents/ai-navigation-guide.md`
+- `documentation/setup/installation.md`
+- `documentation/setup/configuration.md`
+- `documentation/operations/running.md`
+- `documentation/operations/docker-mcp-session.md`
+- `documentation/architecture/overview.md`
+- `documentation/architecture/runtime-flow.md`
+- `documentation/architecture/invariants-and-boundaries.md`
+- `documentation/reference/interfaces.md`
+- `documentation/reference/env-vars.md`
+- `documentation/reference/repo-map.md`
+- `documentation/agents/ai-navigation-guide.md`
 
-`docs/planning/` is useful for history and rollout context, but it is not the primary source of truth for the current runtime.
+`documentation/planning/` is useful for history and rollout context, but it is not the primary source of truth for the current runtime.
 
 ## Known limitations and active documentation risks
 
@@ -428,15 +428,15 @@ Full map: `docs/reference/repo-map.md`
 
 Start here if you are using an automated reviewer or coding agent:
 
-- `docs/agents/ai-navigation-guide.md`
-- `docs/reference/repo-map.md`
-- `docs/architecture/invariants-and-boundaries.md`
+- `documentation/agents/ai-navigation-guide.md`
+- `documentation/reference/repo-map.md`
+- `documentation/architecture/invariants-and-boundaries.md`
 
 ## Evidence status
 
 ### Verified facts
 
-- This README is based on tracked code in `apps/`, `packages/`, `docker/`, `runtimes/`, `tests/`, and `docs/`
+- This README is based on tracked code in `apps/`, `packages/`, `docker/`, `runtimes/`, `tests/`, and `documentation/`
 - Runtime defaults come from `packages/infrastructure/src/config/env.ts`
 - Transport surfaces come from `apps/brain-api/src/server.ts`, `apps/brain-cli/src/main.ts`, and `apps/brain-mcp/src/main.ts`
 - Docker behavior comes from `docker/brain-api.Dockerfile` and `docker/compose.local.yml`
