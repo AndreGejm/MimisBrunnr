@@ -6,6 +6,13 @@ mimisbrunnr is the AI context well inside mimir: the durable knowledge store and
 
 For a first-time user and operator manual covering setup, Docker Desktop, the orchestrator, Hermes-derived local-agent ideas, storing information, validation, review, retrieval, MCP, and troubleshooting, see `documentation/manuals/mimir-complete-manual.md`.
 
+Repository identity:
+
+- GitHub repository: `https://github.com/AndreGejm/MimisBrunnr`
+- product/app/orchestrator: `mimir`
+- stored context and durable memory layer: `mimisbrunnr`
+- npm workspace scope: `@mimir/*`
+
 Release metadata:
 
 - `documentation/release/CHANGELOG.md`
@@ -97,7 +104,7 @@ corepack pnpm install
 corepack pnpm build
 ```
 
-The root package scripts are the supported install and build entrypoints. There is no tracked bootstrap script in `scripts/`.
+The root package scripts are the supported install and build entrypoints. `scripts/` contains narrow operator helpers for launcher installation, Codex MCP setup, diagnostics, review, cleanup, and wrapper entrypoints; it does not contain a one-shot bootstrap script.
 
 If `corepack enable` cannot install a global `pnpm` shim on your machine, run the
 workspace commands as `corepack pnpm ...` directly.
@@ -404,7 +411,7 @@ docker/        Dockerfile and local compose profile
 documentation/          canonical docs plus planning/history docs
 runtimes/      vendored Python coding runtime
 tests/         end-to-end transport and service tests
-scripts/       currently only a placeholder README
+scripts/       launcher, installer, doctor, review, and cleanup helpers
 ```
 
 Full map: `documentation/reference/repo-map.md`

@@ -83,7 +83,7 @@ When changing the repo:
 
 - no tracked CI workflow runs these checks for you
 - no tracked migration runner exists for SQLite changes
-- no tracked shell bootstrap script exists in `scripts/`
+- no one-shot shell bootstrap script exists; `scripts/` contains scoped launcher, access, review, and cleanup helpers
 
 ## Evidence status
 

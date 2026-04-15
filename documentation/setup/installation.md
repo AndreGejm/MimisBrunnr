@@ -26,7 +26,7 @@ corepack pnpm install
 corepack pnpm build
 ```
 
-There is no tracked bootstrap script in `scripts/`; the root package scripts are the supported installation/build entrypoints.
+There is no one-shot bootstrap script; the root package scripts are the supported installation/build entrypoints. The tracked `scripts/` helpers install launcher aliases, configure Codex MCP access, run diagnostics, and provide review/cleanup wrappers.
 
 If `corepack enable` cannot install a global `pnpm` shim, run every workspace
 command as `corepack pnpm ...` directly.
@@ -110,9 +110,9 @@ python3 -m pytest runtimes/local_experts/tests/test_safety_gate.py -v # macOS/Li
 ## What is not installed by default
 
 - no `.env` loader
-- no global CLI wrapper beyond the workspace-local `mimir-cli` / `mimir-mcp` package bins
+- no global launcher aliases unless you explicitly run `node scripts/install-mimir-launchers.mjs` or `node scripts/install-default-access.mjs`
 - no tracked migration runner
-- no tracked local dev bootstrap helpers in `scripts/`
+- no one-shot local dev bootstrap script; tracked `scripts/` helpers are scoped operator utilities
 
 ## Evidence status
 

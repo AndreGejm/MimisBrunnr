@@ -18,7 +18,7 @@ This map is based on tracked repository content. It intentionally separates trac
 | `documentation/` | canonical docs plus planning/history docs |
 | `runtimes/` | vendored Python coding runtime |
 | `tests/` | end-to-end test suite |
-| `scripts/` | currently only a placeholder README |
+| `scripts/` | launcher wrappers, access installers, diagnostics, review GUI, and governed cleanup wrapper |
 
 ## Major subsystems
 
@@ -54,17 +54,20 @@ This map is based on tracked repository content. It intentionally separates trac
 
 ### Orchestration root
 
-- `packages/orchestration/src/root/multi-agent-orchestrator.ts`
+- `packages/orchestration/src/root/mimir-orchestrator.ts`
 
 ### Coding bridge
 
 - `packages/infrastructure/src/coding/python-coding-controller-bridge.ts`
 - `runtimes/local_experts/bridge.py`
 
-### Docker entrypoint
+### Docker entrypoints
 
 - `docker/mimir-api.Dockerfile`
 - `docker/compose.local.yml`
+- `docker/mimir-mcp.Dockerfile`
+- `docker/compose.mcp-session.yml`
+- `docker/mimir-mcp-session-entrypoint.mjs`
 
 ## Storage surfaces
 
@@ -118,11 +121,13 @@ This map is based on tracked repository content. It intentionally separates trac
 - `tests/e2e/retrieval-strategy-diff.test.mjs`
 - `tests/e2e/hierarchical-retrieval.test.mjs`
 - `tests/e2e/session-archives.test.mjs`
+- `tests/e2e/hermes-bridge-runtime.test.mjs`
 - `tests/e2e/service-boundaries-and-regression.test.mjs`
 - `tests/e2e/import-pipeline.test.mjs`
 - `tests/e2e/transport-adapters.test.mjs`
 - `tests/e2e/mcp-adapter.test.mjs`
 - `tests/e2e/local-model-providers.test.mjs`
+- `tests/e2e/mcp-session-startup.test.mjs`
 
 ### Python test surface
 
@@ -154,7 +159,7 @@ The tracked repo currently has no:
 - Kubernetes manifests
 - Terraform
 - migration directory
-- tracked bootstrap scripts in `scripts/`
+- a one-shot bootstrap script; `scripts/` contains scoped helpers instead
 
 ## Local workspace residue note
 
@@ -181,4 +186,4 @@ Those are not part of the tracked repository unless they are later committed.
 
 ### TODO gaps
 
-- If the tracked repo gains CI, deployment, migration, or bootstrap surfaces, add them here
+- If the tracked repo gains CI, deployment, migration, or additional release automation surfaces, add them here
