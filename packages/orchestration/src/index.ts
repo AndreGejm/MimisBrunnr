@@ -1,6 +1,6 @@
-export * from "./brain/brain-domain-controller.js";
-export * from "./brain/brain-memory-controller.js";
-export * from "./brain/brain-retrieval-controller.js";
+export * from "./mimisbrunnr/mimisbrunnr-domain-controller.js";
+export * from "./mimisbrunnr/mimisbrunnr-memory-controller.js";
+export * from "./mimisbrunnr/mimisbrunnr-retrieval-controller.js";
 export * from "./coding/coding-controller-bridge.js";
 export * from "./coding/coding-domain-controller.js";
 export * from "./model-roles/model-role-registry.js";
@@ -8,5 +8,5 @@ export * from "./model-roles/provider-registry.js";
 export * from "./root/actor-authorization-policy.js";
 export * from "./root/administrative-action.js";
 export * from "./root/issued-actor-token.js";
-export * from "./root/multi-agent-orchestrator.js";
+export * from "./root/mimir-orchestrator.js";
 export * from "./routing/task-family-router.js";

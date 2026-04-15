@@ -6,6 +6,7 @@ import process from "node:process";
 
 import {
   buildInstallationManifest,
+  COMPATIBILITY_LAUNCHER_NAMES,
   getCliWrapperPath,
   getDefaultCodexConfigPath,
   getDefaultInstallationManifestPath,
@@ -47,23 +48,18 @@ function parseArgs(argv) {
 const options = parseArgs(process.argv.slice(2));
 const repoRoot = getRepoRootFromScript(import.meta.url);
 const wrapperPath = getCliWrapperPath(repoRoot);
-const shims = [
-  {
-    fileName: "multiagentbrain.cmd",
-    content: renderWindowsCmdShim(process.execPath, wrapperPath)
-  },
-  {
-    fileName: "mab.cmd",
-    content: renderWindowsCmdShim(process.execPath, wrapperPath)
-  }
-];
+const launcherNames = COMPATIBILITY_LAUNCHER_NAMES;
+const shims = launcherNames.map((launcherName) => ({
+  fileName: `${launcherName}.cmd`,
+  content: renderWindowsCmdShim(process.execPath, wrapperPath)
+}));
 const manifest = buildInstallationManifest({
   repoRoot,
   manifestPath: options.manifestPath,
   codexConfigPath: getDefaultCodexConfigPath(),
   launcherBinDir: options.binDir,
   launcherNames: shims.map((shim) => shim.fileName.replace(/\.cmd$/i, "")),
-  serverName: "multiagentbrain"
+  serverName: "mimir"
 });
 
 if (options.dryRun) {

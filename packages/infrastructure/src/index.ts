@@ -8,7 +8,7 @@ export {
   ActorAuthorizationPolicy,
   issueActorAccessToken,
   verifyActorAccessToken
-} from "@multi-agent-brain/orchestration";
+} from "@mimir/orchestration";
 export * from "./fts/sqlite-fts-index.js";
 export * from "./health/runtime-health.js";
 export * from "./providers/hash-embedding-provider.js";

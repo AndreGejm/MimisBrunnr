@@ -3,7 +3,7 @@ import type {
   ActorRole,
   ServiceError,
   TransportKind
-} from "@multi-agent-brain/contracts";
+} from "@mimir/contracts";
 import type { OrchestratorCommand } from "../routing/task-family-router.js";
 import type { AdministrativeAction } from "./administrative-action.js";
 import {

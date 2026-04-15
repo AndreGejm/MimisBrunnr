@@ -3,12 +3,12 @@ import type {
   SessionArchiveSearchQuery,
   SessionArchiveStore,
   StoredSessionArchive
-} from "@multi-agent-brain/application";
-import type { SearchSessionArchivesResponse } from "@multi-agent-brain/contracts";
+} from "@mimir/application";
+import type { SearchSessionArchivesResponse } from "@mimir/contracts";
 import type {
   SessionArchive,
   SessionArchiveMessage
-} from "@multi-agent-brain/domain";
+} from "@mimir/domain";
 import {
   acquireSharedSqliteConnection,
   type SharedSqliteConnection

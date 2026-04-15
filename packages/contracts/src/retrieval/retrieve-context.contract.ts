@@ -4,7 +4,7 @@ import type {
   CorpusId,
   NoteType,
   QueryIntent
-} from "@multi-agent-brain/domain";
+} from "@mimir/domain";
 import type { ActorContext } from "../common/actor-context.js";
 import type { ContextBudget } from "../common/context-budget.js";
 import type { ProvenanceRef } from "../common/provenance-ref.js";

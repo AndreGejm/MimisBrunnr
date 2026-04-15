@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
-import type { ImportJobStore } from "@multi-agent-brain/application";
-import type { ImportJob } from "@multi-agent-brain/domain";
+import type { ImportJobStore } from "@mimir/application";
+import type { ImportJob } from "@mimir/domain";
 import {
   acquireSharedSqliteConnection,
   type SharedSqliteConnection

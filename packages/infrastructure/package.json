@@ -1,5 +1,5 @@
 {
-  "name": "@multi-agent-brain/infrastructure",
+  "name": "@mimir/infrastructure",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,9 +10,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@multi-agent-brain/application": "workspace:*",
-    "@multi-agent-brain/contracts": "workspace:*",
-    "@multi-agent-brain/domain": "workspace:*",
-    "@multi-agent-brain/orchestration": "workspace:*"
+    "@mimir/application": "workspace:*",
+    "@mimir/contracts": "workspace:*",
+    "@mimir/domain": "workspace:*",
+    "@mimir/orchestration": "workspace:*"
   }
 }

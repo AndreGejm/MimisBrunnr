@@ -20,7 +20,7 @@ Then open the specific files for the task area.
 
 - trust runtime entrypoint code over planning docs
 - trust `packages/infrastructure/src/config/env.ts` over assumptions about `.env`
-- trust `apps/brain-api/src/server.ts`, `apps/brain-cli/src/main.ts`, and `apps/brain-mcp/src/tool-definitions.ts` for transport surfaces
+- trust `apps/mimir-api/src/server.ts`, `apps/mimir-cli/src/main.ts`, and `apps/mimir-mcp/src/tool-definitions.ts` for transport surfaces
 - trust `packages/infrastructure/src/bootstrap/build-service-container.ts` for runtime wiring
 - trust `tests/e2e/*.test.mjs` when docs and planning material disagree
 
@@ -31,7 +31,7 @@ Then open the specific files for the task area.
 Start with:
 
 - `packages/contracts/src/**`
-- `apps/brain-api/src/server.ts`
+- `apps/mimir-api/src/server.ts`
 - whichever orchestrator or service file handles the command
 - `documentation/reference/interfaces.md`
 
@@ -40,7 +40,7 @@ Start with:
 Start with:
 
 - `packages/contracts/src/**`
-- `apps/brain-cli/src/main.ts`
+- `apps/mimir-cli/src/main.ts`
 - target orchestrator/service file
 - `documentation/reference/interfaces.md`
 
@@ -48,8 +48,8 @@ Start with:
 
 Start with:
 
-- `apps/brain-mcp/src/tool-definitions.ts`
-- `apps/brain-mcp/src/main.ts`
+- `apps/mimir-mcp/src/tool-definitions.ts`
+- `apps/mimir-mcp/src/main.ts`
 - target orchestrator/service file
 - `documentation/reference/interfaces.md`
 
@@ -93,7 +93,7 @@ Be especially careful in these files because they affect multiple runtime surfac
 - `packages/application/src/services/promotion-orchestrator-service.ts`
 - `packages/infrastructure/src/config/env.ts`
 - `packages/infrastructure/src/sqlite/sqlite-metadata-control-store.ts`
-- `apps/brain-mcp/src/tool-definitions.ts`
+- `apps/mimir-mcp/src/tool-definitions.ts`
 
 ## Low-guess invariants to preserve
 
@@ -128,7 +128,7 @@ Read:
 Read:
 
 - `packages/infrastructure/src/bootstrap/build-service-container.ts`
-- `packages/orchestration/src/root/multi-agent-orchestrator.ts`
+- `packages/orchestration/src/root/mimir-orchestrator.ts`
 - the target service file
 - the relevant tests
 

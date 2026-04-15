@@ -12,7 +12,7 @@ test("promotion regenerates derived L0 and L1 context representations", async (t
 
   const draft = await container.services.stagingDraftService.createDraft({
     actor: actor("writer"),
-    targetCorpus: "context_brain",
+    targetCorpus: "mimisbrunnr",
     noteType: "reference",
     title: "Representation Canonical Node",
     sourcePrompt: "Draft a note that exercises derived representation regeneration.",
@@ -31,7 +31,7 @@ test("promotion regenerates derived L0 and L1 context representations", async (t
   const promoted = await container.services.promotionOrchestratorService.promoteDraft({
     actor: actor("orchestrator"),
     draftNoteId: draft.data.draftNoteId,
-    targetCorpus: "context_brain",
+    targetCorpus: "mimisbrunnr",
     promoteAsCurrentState: false
   });
 
@@ -65,7 +65,7 @@ test("promotion regenerates derived L0 and L1 context representations", async (t
 });
 
 async function createHarness(t) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-context-representations-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-context-representations-"));
   const container = buildServiceContainer({
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),

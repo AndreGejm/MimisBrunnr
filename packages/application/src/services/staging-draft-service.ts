@@ -10,8 +10,8 @@ import type {
   DraftNoteRequest,
   DraftNoteResponse,
   ServiceResult
-} from "@multi-agent-brain/contracts";
-import type { ControlledTag, NoteFrontmatter, NoteId, NoteType } from "@multi-agent-brain/domain";
+} from "@mimir/contracts";
+import type { ControlledTag, NoteFrontmatter, NoteId, NoteType } from "@mimir/domain";
 
 type DraftNoteErrorCode = "forbidden" | "validation_failed" | "write_failed" | "not_found";
 
@@ -213,9 +213,9 @@ export class StagingDraftService {
 
 function buildDraftFrontmatter(request: DraftNoteRequest, noteId: NoteId): NoteFrontmatter {
   const baseTags = new Set<ControlledTag>([
-    "project/multi-agent-brain",
+    "project/mimir",
     "status/draft",
-    request.targetCorpus === "context_brain" ? "domain/retrieval" : "artifact/application"
+    request.targetCorpus === "mimisbrunnr" ? "domain/retrieval" : "artifact/application"
   ]);
 
   for (const tag of request.frontmatterOverrides?.tags ?? []) {
@@ -229,13 +229,13 @@ function buildDraftFrontmatter(request: DraftNoteRequest, noteId: NoteId): NoteF
   return {
     noteId,
     title: request.title,
-    project: request.frontmatterOverrides?.project ?? "multi-agent-brain",
+    project: request.frontmatterOverrides?.project ?? "mimir",
     type: request.noteType,
     status: request.frontmatterOverrides?.status ?? "draft",
     updated: request.frontmatterOverrides?.updated ?? currentDateIso(),
     summary: request.frontmatterOverrides?.summary ?? summarizePrompt(request.sourcePrompt),
     tags: [...baseTags],
-    scope: request.frontmatterOverrides?.scope ?? (request.targetCorpus === "context_brain" ? "staging" : "general_notes"),
+    scope: request.frontmatterOverrides?.scope ?? (request.targetCorpus === "mimisbrunnr" ? "staging" : "general_notes"),
     corpusId: request.targetCorpus,
     currentState: request.targetCorpus === "general_notes"
       ? false
@@ -289,7 +289,7 @@ function currentDateIso(): string {
 }
 
 function validateDraftCorpusBoundaries(request: DraftNoteRequest): string | undefined {
-  if (request.targetCorpus !== "context_brain") {
+  if (request.targetCorpus !== "mimisbrunnr") {
     return undefined;
   }
 
@@ -301,5 +301,5 @@ function validateDraftCorpusBoundaries(request: DraftNoteRequest): string | unde
     return undefined;
   }
 
-  return "Context-brain drafts cannot directly source from general_notes without explicit promotion.";
+  return "mimisbrunnr drafts cannot directly source from general_notes without explicit promotion.";
 }

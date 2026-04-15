@@ -1,8 +1,8 @@
 import { mkdir, open } from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { VectorIndexHealthSnapshot } from "@multi-agent-brain/application";
-import type { TemporalValiditySummary } from "@multi-agent-brain/application";
+import type { VectorIndexHealthSnapshot } from "@mimir/application";
+import type { TemporalValiditySummary } from "@mimir/application";
 import type { AppEnvironment } from "../config/env.js";
 
 export type HealthStatus = "pass" | "warn" | "fail";

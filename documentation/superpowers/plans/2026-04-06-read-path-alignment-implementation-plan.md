@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a governed context namespace, layered read representations, retrieval traces, hierarchical retrieval rollout gates, controlled imports, and session archives without weakening Multi Agent Brain's existing authority, freshness, auth, or promotion model.
+**Goal:** Add a governed context namespace, layered read representations, retrieval traces, hierarchical retrieval rollout gates, controlled imports, and session archives without weakening mimir's existing authority, freshness, auth, or promotion model.
 
 **Architecture:** Preserve the current authority plane: canonical Markdown, staging drafts, SQLite metadata and audit authority, FTS, Qdrant, deterministic promotion, and actor-scoped authz all remain in place. Add a read-only namespace projection, derived `L0` and `L1` representations, optional hierarchical retrieval, and new read/import/session artifacts as additive layers that always expose authority state and never bypass staged promotion.
 
@@ -56,9 +56,9 @@
 
 ### Transport and test updates
 
-- Modify `apps/brain-cli/src/main.ts` to expose new browse/read/import/archive commands as thin wrappers.
-- Modify `apps/brain-api/src/server.ts` to expose HTTP routes for the same bounded operations.
-- Modify `apps/brain-mcp/src/tool-definitions.ts` to expose read-only browse and trace tools plus controlled import/archive tools.
+- Modify `apps/mimir-cli/src/main.ts` to expose new browse/read/import/archive commands as thin wrappers.
+- Modify `apps/mimir-api/src/server.ts` to expose HTTP routes for the same bounded operations.
+- Modify `apps/mimir-mcp/src/tool-definitions.ts` to expose read-only browse and trace tools plus controlled import/archive tools.
 - Create `tests/e2e/context-authority-contracts.test.mjs`.
 - Create `tests/e2e/context-namespace.test.mjs`.
 - Create `tests/e2e/retrieval-trace.test.mjs`.
@@ -99,8 +99,8 @@ import * as domain from "../../packages/domain/dist/index.js";
 test("context node descriptors preserve authority and freshness fields", async () => {
   assert.equal(typeof domain.createContextAuthorityStateSet, "function");
   const descriptor = {
-    uri: "mab://context_brain/note/test-note",
-    ownerScope: "context_brain",
+    uri: "mimir://mimisbrunnr/note/test-note",
+    ownerScope: "mimisbrunnr",
     contextKind: "note",
     authorityState: "canonical",
     sourceType: "canonical_note",
@@ -197,7 +197,7 @@ test("namespace service projects canonical and staging notes without collapsing 
   assert.ok(container.services.contextNamespaceService);
   const tree = await container.services.contextNamespaceService.listTree({
     actor: { actorId: "operator", actorRole: "operator", source: "test", transport: "internal" },
-    ownerScope: "context_brain"
+    ownerScope: "mimisbrunnr"
   });
   assert.equal(tree.ok, true);
 });
@@ -260,9 +260,9 @@ git commit -m "feat: add read-only context namespace projection"
 - Modify: `packages/contracts/src/index.ts`
 - Modify: `packages/contracts/src/mcp/index.ts`
 - Modify: `packages/infrastructure/src/transport/request-validation.ts`
-- Modify: `apps/brain-cli/src/main.ts`
-- Modify: `apps/brain-api/src/server.ts`
-- Modify: `apps/brain-mcp/src/tool-definitions.ts`
+- Modify: `apps/mimir-cli/src/main.ts`
+- Modify: `apps/mimir-api/src/server.ts`
+- Modify: `apps/mimir-mcp/src/tool-definitions.ts`
 - Modify: `tests/e2e/transport-adapters.test.mjs`
 - Modify: `tests/e2e/mcp-adapter.test.mjs`
 - Modify: `package.json`
@@ -270,10 +270,10 @@ git commit -m "feat: add read-only context namespace projection"
 - [ ] **Step 1: Add failing transport tests**
 
 ```js
-test("brain-cli can list context tree nodes through the shared namespace service", async () => {
+test("mimir-cli can list context tree nodes through the shared namespace service", async () => {
   const result = await runNodeCommand(
-    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
-    ["list-context-tree", "--json", JSON.stringify({ ownerScope: "context_brain" })],
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    ["list-context-tree", "--json", JSON.stringify({ ownerScope: "mimisbrunnr" })],
     process.env
   );
   assert.equal(result.exitCode, 0, result.stderr);
@@ -313,7 +313,7 @@ Expected: PASS with CLI, HTTP, and MCP all delegating to the shared namespace se
 - [ ] **Step 5: Commit**
 
 ```bash
-git add apps/brain-cli/src/main.ts apps/brain-api/src/server.ts apps/brain-mcp/src/tool-definitions.ts packages/contracts/src packages/infrastructure/src/transport/request-validation.ts tests/e2e/transport-adapters.test.mjs tests/e2e/mcp-adapter.test.mjs package.json
+git add apps/mimir-cli/src/main.ts apps/mimir-api/src/server.ts apps/mimir-mcp/src/tool-definitions.ts packages/contracts/src packages/infrastructure/src/transport/request-validation.ts tests/e2e/transport-adapters.test.mjs tests/e2e/mcp-adapter.test.mjs package.json
 git commit -m "feat: expose namespace browse surfaces across transports"
 ```
 
@@ -335,7 +335,7 @@ test("retrieve context can emit a bounded trace and packet diff metadata", async
   const result = await container.services.retrieveContextService.retrieveContext({
     actor: actor("retrieval"),
     query: "writer promotion policy",
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     budget: { maxTokens: 1200, maxSources: 4, maxRawExcerpts: 2, maxSummarySentences: 6 },
     includeTrace: true
   });
@@ -406,7 +406,7 @@ test("promotion regenerates L0 and L1 derived representations for canonical note
   const promote = await container.services.promotionOrchestratorService.promoteDraft({
     actor: actor("orchestrator"),
     draftNoteId,
-    targetCorpus: "context_brain",
+    targetCorpus: "mimisbrunnr",
     promoteAsCurrentState: false
   });
 
@@ -473,7 +473,7 @@ test("hierarchical retrieval is opt-in and preserves bounded packet guarantees",
   const result = await container.services.retrieveContextService.retrieveContext({
     actor: actor("retrieval"),
     query: "writer promotion policy",
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     strategy: "hierarchical",
     budget: { maxTokens: 900, maxSources: 3, maxRawExcerpts: 1, maxSummarySentences: 5 },
     includeTrace: true
@@ -527,9 +527,9 @@ git commit -m "feat: add gated hierarchical retrieval strategy"
 - Create: `packages/contracts/src/maintenance/import-resource.contract.ts`
 - Modify: `packages/contracts/src/index.ts`
 - Modify: `packages/infrastructure/src/bootstrap/build-service-container.ts`
-- Modify: `apps/brain-cli/src/main.ts`
-- Modify: `apps/brain-api/src/server.ts`
-- Modify: `apps/brain-mcp/src/tool-definitions.ts`
+- Modify: `apps/mimir-cli/src/main.ts`
+- Modify: `apps/mimir-api/src/server.ts`
+- Modify: `apps/mimir-mcp/src/tool-definitions.ts`
 - Create: `tests/e2e/import-pipeline.test.mjs`
 - Modify: `package.json`
 
@@ -577,7 +577,7 @@ Expected: PASS with imported artifacts visible in namespace state and no direct 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/domain/src/imports packages/application/src/ports/import-job-store.ts packages/application/src/services/import-orchestration-service.ts packages/infrastructure/src/sqlite/sqlite-import-job-store.ts packages/contracts/src/maintenance/import-resource.contract.ts apps/brain-cli/src/main.ts apps/brain-api/src/server.ts apps/brain-mcp/src/tool-definitions.ts tests/e2e/import-pipeline.test.mjs package.json
+git add packages/domain/src/imports packages/application/src/ports/import-job-store.ts packages/application/src/services/import-orchestration-service.ts packages/infrastructure/src/sqlite/sqlite-import-job-store.ts packages/contracts/src/maintenance/import-resource.contract.ts apps/mimir-cli/src/main.ts apps/mimir-api/src/server.ts apps/mimir-mcp/src/tool-definitions.ts tests/e2e/import-pipeline.test.mjs package.json
 git commit -m "feat: add controlled import pipeline"
 ```
 
@@ -591,9 +591,9 @@ git commit -m "feat: add controlled import pipeline"
 - Create: `packages/contracts/src/history/create-session-archive.contract.ts`
 - Modify: `packages/contracts/src/index.ts`
 - Modify: `packages/infrastructure/src/bootstrap/build-service-container.ts`
-- Modify: `apps/brain-cli/src/main.ts`
-- Modify: `apps/brain-api/src/server.ts`
-- Modify: `apps/brain-mcp/src/tool-definitions.ts`
+- Modify: `apps/mimir-cli/src/main.ts`
+- Modify: `apps/mimir-api/src/server.ts`
+- Modify: `apps/mimir-mcp/src/tool-definitions.ts`
 - Create: `tests/e2e/session-archives.test.mjs`
 - Modify: `package.json`
 
@@ -642,7 +642,7 @@ Expected: PASS with immutable archives stored and discoverable without any extra
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/domain/src/sessions packages/application/src/ports/session-archive-store.ts packages/application/src/services/session-archive-service.ts packages/infrastructure/src/sqlite/sqlite-session-archive-store.ts packages/contracts/src/history/create-session-archive.contract.ts apps/brain-cli/src/main.ts apps/brain-api/src/server.ts apps/brain-mcp/src/tool-definitions.ts tests/e2e/session-archives.test.mjs package.json
+git add packages/domain/src/sessions packages/application/src/ports/session-archive-store.ts packages/application/src/services/session-archive-service.ts packages/infrastructure/src/sqlite/sqlite-session-archive-store.ts packages/contracts/src/history/create-session-archive.contract.ts apps/mimir-cli/src/main.ts apps/mimir-api/src/server.ts apps/mimir-mcp/src/tool-definitions.ts tests/e2e/session-archives.test.mjs package.json
 git commit -m "feat: add immutable session archives"
 ```
 

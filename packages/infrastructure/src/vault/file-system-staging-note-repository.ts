@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { StagingDraftRecord, StagingNoteRepository } from "@multi-agent-brain/application";
-import type { CorpusId, NoteId } from "@multi-agent-brain/domain";
+import type { StagingDraftRecord, StagingNoteRepository } from "@mimir/application";
+import type { CorpusId, NoteId } from "@mimir/domain";
 import { computeRevision, parseMarkdownNote, serializeMarkdownNote } from "./frontmatter-codec.js";
 import {
   ensureParentDirectory,

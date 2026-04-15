@@ -1,7 +1,7 @@
 import type { LexicalIndex } from "../ports/lexical-index.js";
 import type { MetadataControlStore } from "../ports/metadata-control-store.js";
-import type { NoteType } from "@multi-agent-brain/domain";
-import type { RetrieveContextRequest } from "@multi-agent-brain/contracts";
+import type { NoteType } from "@mimir/domain";
+import type { RetrieveContextRequest } from "@mimir/contracts";
 import type { ScoredChunkCandidate } from "./retrieval-candidate.js";
 
 export class LexicalRetrievalService {

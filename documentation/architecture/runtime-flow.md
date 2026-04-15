@@ -12,14 +12,14 @@ flowchart TD
   C --> E["Providers and auth policy"]
   C --> F["Application services"]
   C --> G["Domain controllers"]
-  C --> H["MultiAgentOrchestrator"]
+  C --> H["MimirOrchestrator"]
 ```
 
 Key files:
 
-- `apps/brain-api/src/main.ts`
-- `apps/brain-cli/src/main.ts`
-- `apps/brain-mcp/src/main.ts`
+- `apps/mimir-api/src/main.ts`
+- `apps/mimir-cli/src/main.ts`
+- `apps/mimir-mcp/src/main.ts`
 - `packages/infrastructure/src/config/env.ts`
 - `packages/infrastructure/src/bootstrap/build-service-container.ts`
 
@@ -30,7 +30,7 @@ sequenceDiagram
   participant T as Transport adapter
   participant V as Transport validation
   participant A as Actor context + auth
-  participant O as MultiAgentOrchestrator
+  participant O as MimirOrchestrator
   participant C as Domain controller
   participant S as Application service
   participant P as Ports/adapters
@@ -49,9 +49,9 @@ sequenceDiagram
 
 Transport examples:
 
-- HTTP uses `validateTransportRequest()` in `apps/brain-api/src/server.ts`
-- CLI uses the same validation in `apps/brain-cli/src/main.ts`
-- MCP uses the same validation in `apps/brain-mcp/src/main.ts`
+- HTTP uses `validateTransportRequest()` in `apps/mimir-api/src/server.ts`
+- CLI uses the same validation in `apps/mimir-cli/src/main.ts`
+- MCP uses the same validation in `apps/mimir-mcp/src/main.ts`
 
 ## Retrieval flow
 

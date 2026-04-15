@@ -1,11 +1,11 @@
-# brain-mcp
+# mimir-mcp
 
 stdio MCP adapter over the shared runtime container.
 
 ## Entrypoints
 
-- `apps/brain-mcp/src/main.ts`
-- `apps/brain-mcp/src/tool-definitions.ts`
+- `apps/mimir-mcp/src/main.ts`
+- `apps/mimir-mcp/src/tool-definitions.ts`
 
 ## Implemented methods
 
@@ -52,7 +52,7 @@ pnpm mcp
 
 ### Verified facts
 
-- This README is based on `apps/brain-mcp/src/main.ts` and `apps/brain-mcp/src/tool-definitions.ts`
+- This README is based on `apps/mimir-mcp/src/main.ts` and `apps/mimir-mcp/src/tool-definitions.ts`
 
 ### Assumptions
 

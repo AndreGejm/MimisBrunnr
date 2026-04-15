@@ -11,9 +11,9 @@ import type {
   TemporalValidityCandidateState,
   TemporalValidityReport,
   TemporalValiditySummary
-} from "@multi-agent-brain/application";
-import type { QueryHistoryRequest, QueryHistoryResponse } from "@multi-agent-brain/contracts";
-import type { AuditEntry, ChunkId, ChunkRecord, NoteId } from "@multi-agent-brain/domain";
+} from "@mimir/application";
+import type { QueryHistoryRequest, QueryHistoryResponse } from "@mimir/contracts";
+import type { AuditEntry, ChunkId, ChunkRecord, NoteId } from "@mimir/domain";
 import {
   acquireSharedSqliteConnection,
   type SharedSqliteConnection

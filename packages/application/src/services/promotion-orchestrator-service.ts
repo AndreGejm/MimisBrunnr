@@ -13,8 +13,8 @@ import { AuditHistoryService } from "./audit-history-service.js";
 import { CanonicalNoteService } from "./canonical-note-service.js";
 import { ChunkingService } from "./chunking-service.js";
 import { NoteValidationService } from "./note-validation-service.js";
-import type { PromoteNoteRequest, PromoteNoteResponse, ServiceResult } from "@multi-agent-brain/contracts";
-import type { ChunkRecord, ControlledTag, NoteFrontmatter, NoteId } from "@multi-agent-brain/domain";
+import type { PromoteNoteRequest, PromoteNoteResponse, ServiceResult } from "@mimir/contracts";
+import type { ChunkRecord, ControlledTag, NoteFrontmatter, NoteId } from "@mimir/domain";
 
 type PromoteNoteErrorCode =
   | "forbidden"

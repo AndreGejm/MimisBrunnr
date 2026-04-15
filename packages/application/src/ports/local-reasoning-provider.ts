@@ -1,8 +1,8 @@
 import type {
   AnswerabilityDisposition,
   QueryIntent
-} from "@multi-agent-brain/domain";
-import type { ContextCandidate } from "@multi-agent-brain/contracts";
+} from "@mimir/domain";
+import type { ContextCandidate } from "@mimir/contracts";
 
 export interface LocalReasoningProvider {
   readonly providerId: string;

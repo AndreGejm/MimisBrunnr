@@ -1,7 +1,7 @@
 # Vendored Local Experts Runtime
 
 This folder vendors the runtime-critical Python modules from the standalone
-`local-experts` repository so `multi-agent-brain` can become self-contained.
+`local-experts` repository so `mimir` can become self-contained.
 
 Purpose:
 
@@ -30,7 +30,7 @@ Notes:
   `runtimes/local_experts` without external path assumptions
 - this runtime is now the active coding runtime used through the
   `CodingDomainController` and the Node-to-Python bridge inside
-  `multi-agent-brain`
+  `mimir`
 - the runtime is invoked as a bounded worker, not as the outer application host
 - the current local coding model path is Docker Model Runner backed and uses the
   repository's configured coding role

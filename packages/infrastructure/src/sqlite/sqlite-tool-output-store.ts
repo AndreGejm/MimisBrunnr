@@ -5,7 +5,7 @@ import type {
   StoredToolOutput,
   ToolOutputSpilloverRecord,
   ToolOutputStore
-} from "@multi-agent-brain/domain";
+} from "@mimir/domain";
 import {
   acquireSharedSqliteConnection,
   type SharedSqliteConnection

@@ -1,4 +1,4 @@
-import { withBoundedProviderRetry } from "@multi-agent-brain/application";
+import { withBoundedProviderRetry } from "@mimir/application";
 
 type FetchImplementation = typeof fetch;
 

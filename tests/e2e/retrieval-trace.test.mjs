@@ -15,7 +15,7 @@ test("retrieve context can emit a bounded trace and packet diff metadata", async
   const result = await container.services.retrieveContextService.retrieveContext({
     actor: actor("retrieval"),
     query: "Retrieval Trace Canonical Node",
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     budget: {
       maxTokens: 1200,
       maxSources: 4,
@@ -45,7 +45,7 @@ test("retrieve context can emit a bounded trace and packet diff metadata", async
 });
 
 async function createHarness(t) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-retrieval-trace-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-retrieval-trace-"));
   const container = buildServiceContainer({
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
@@ -74,20 +74,20 @@ async function createCanonicalNote(container) {
   const noteId = randomUUID();
   const result = await container.services.canonicalNoteService.writeCanonicalNote({
     noteId,
-    corpusId: "context_brain",
-    notePath: "context_brain/trace/canonical-node.md",
+    corpusId: "mimisbrunnr",
+    notePath: "mimisbrunnr/trace/canonical-node.md",
     revision: "",
     frontmatter: {
       noteId,
       title: "Retrieval Trace Canonical Node",
-      project: "multi-agent-brain",
+      project: "mimir",
       type: "reference",
       status: "promoted",
       updated: currentDateIso(),
       summary: "Canonical trace node for retrieval trace coverage.",
-      tags: ["project/multi-agent-brain", "domain/retrieval", "status/promoted"],
+      tags: ["project/mimir", "domain/retrieval", "status/promoted"],
       scope: "trace",
-      corpusId: "context_brain",
+      corpusId: "mimisbrunnr",
       currentState: true
     },
     body: [
@@ -112,7 +112,7 @@ async function createCanonicalNote(container) {
 async function createStagingDraft(container) {
   const result = await container.services.stagingDraftService.createDraft({
     actor: actor("writer"),
-    targetCorpus: "context_brain",
+    targetCorpus: "mimisbrunnr",
     noteType: "reference",
     title: "Retrieval Trace Staging Node",
     sourcePrompt: "Draft a staging node for retrieval trace coverage.",

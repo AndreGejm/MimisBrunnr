@@ -1,3 +1,3 @@
-export type { NoteFrontmatter } from "@multi-agent-brain/domain";
-export type { CorpusId } from "@multi-agent-brain/domain";
-export type { NoteId } from "@multi-agent-brain/domain";
+export type { NoteFrontmatter } from "@mimir/domain";
+export type { CorpusId } from "@mimir/domain";
+export type { NoteId } from "@mimir/domain";

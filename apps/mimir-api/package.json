@@ -1,5 +1,5 @@
 {
-  "name": "@multi-agent-brain/brain-api",
+  "name": "@mimir/api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,7 +11,7 @@
     "serve": "node dist/main.js"
   },
   "dependencies": {
-    "@multi-agent-brain/contracts": "workspace:*",
-    "@multi-agent-brain/infrastructure": "workspace:*"
+    "@mimir/contracts": "workspace:*",
+    "@mimir/infrastructure": "workspace:*"
   }
 }

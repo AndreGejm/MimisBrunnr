@@ -1,5 +1,16 @@
 # Glossary
 
+## mimir
+
+The application, orchestrator, operator-facing product, and runtime identity.
+Use mimir when describing the whole system or the orchestration surface.
+
+## mimisbrunnr
+
+The AI context well inside mimir. mimisbrunnr owns governed memory,
+retrieval, context packet assembly, staging, validation, review, promotion,
+session archive recall, and durable context storage.
+
 ## Authority state
 
 High-level ownership category for a context artifact. Current code uses at least:
@@ -39,14 +50,16 @@ A namespace projection record exposed through tree and node-read surfaces. Curre
 
 ## Owner scope
 
-The current namespace owner scope is the corpus, such as `context_brain` or `general_notes`.
+The current namespace owner scope is the corpus, such as `mimisbrunnr` or `general_notes`. `mimisbrunnr` is a compatibility identifier for the mimisbrunnr corpus.
 
 ## Corpus
 
 A top-level note grouping. Tracked corpus values used throughout the contracts are:
 
-- `context_brain`
+- `mimisbrunnr`
 - `general_notes`
+
+Do not rename persisted corpus values without a migration. User-facing prose should call the stored AI context layer mimisbrunnr.
 
 ## Promotion outbox
 
@@ -79,7 +92,7 @@ Retrieval/chunk staleness classification:
 
 ## Model role
 
-Named runtime role that resolves to a provider/model binding, such as `coding_primary` or `brain_primary`.
+Named runtime role that resolves to a provider/model binding, such as `coding_primary` or `mimisbrunnr_primary`. `mimisbrunnr_primary` is a compatibility role name for mimisbrunnr reasoning/drafting.
 
 ## Paid escalation
 

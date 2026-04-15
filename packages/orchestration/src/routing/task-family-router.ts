@@ -1,4 +1,4 @@
-export type BrainCommand =
+export type MimisbrunnrCommand =
   | "search_context"
   | "search_session_archives"
   | "assemble_agent_context"
@@ -18,87 +18,87 @@ export type CodingCommand =
   | "list_agent_traces"
   | "show_tool_output";
 
-export type OrchestratorCommand = BrainCommand | CodingCommand;
+export type OrchestratorCommand = MimisbrunnrCommand | CodingCommand;
 
 export type TaskFamily =
-  | "brain_retrieval"
-  | "brain_context_packet"
-  | "brain_memory_update"
-  | "brain_validation"
-  | "brain_history"
+  | "mimisbrunnr_retrieval"
+  | "mimisbrunnr_context_packet"
+  | "mimisbrunnr_memory_update"
+  | "mimisbrunnr_validation"
+  | "mimisbrunnr_history"
   | "coding";
 
 export interface RoutedTask {
   command: OrchestratorCommand;
-  domain: "brain" | "coding";
+  domain: "mimisbrunnr" | "coding";
   family: TaskFamily;
 }
 
 const ROUTE_TABLE: Record<OrchestratorCommand, RoutedTask> = {
   search_context: {
     command: "search_context",
-    domain: "brain",
-    family: "brain_retrieval"
+    domain: "mimisbrunnr",
+    family: "mimisbrunnr_retrieval"
   },
   search_session_archives: {
     command: "search_session_archives",
-    domain: "brain",
-    family: "brain_retrieval"
+    domain: "mimisbrunnr",
+    family: "mimisbrunnr_retrieval"
   },
   assemble_agent_context: {
     command: "assemble_agent_context",
-    domain: "brain",
-    family: "brain_context_packet"
+    domain: "mimisbrunnr",
+    family: "mimisbrunnr_context_packet"
   },
   get_context_packet: {
     command: "get_context_packet",
-    domain: "brain",
-    family: "brain_context_packet"
+    domain: "mimisbrunnr",
+    family: "mimisbrunnr_context_packet"
   },
   fetch_decision_summary: {
     command: "fetch_decision_summary",
-    domain: "brain",
-    family: "brain_context_packet"
+    domain: "mimisbrunnr",
+    family: "mimisbrunnr_context_packet"
   },
   draft_note: {
     command: "draft_note",
-    domain: "brain",
-    family: "brain_memory_update"
+    domain: "mimisbrunnr",
+    family: "mimisbrunnr_memory_update"
   },
   create_session_archive: {
     command: "create_session_archive",
-    domain: "brain",
-    family: "brain_memory_update"
+    domain: "mimisbrunnr",
+    family: "mimisbrunnr_memory_update"
   },
   create_refresh_draft: {
     command: "create_refresh_draft",
-    domain: "brain",
-    family: "brain_memory_update"
+    domain: "mimisbrunnr",
+    family: "mimisbrunnr_memory_update"
   },
   create_refresh_drafts: {
     command: "create_refresh_drafts",
-    domain: "brain",
-    family: "brain_memory_update"
+    domain: "mimisbrunnr",
+    family: "mimisbrunnr_memory_update"
   },
   import_resource: {
     command: "import_resource",
-    domain: "brain",
-    family: "brain_memory_update"
+    domain: "mimisbrunnr",
+    family: "mimisbrunnr_memory_update"
   },
   validate_note: {
     command: "validate_note",
-    domain: "brain",
-    family: "brain_validation"
+    domain: "mimisbrunnr",
+    family: "mimisbrunnr_validation"
   },
   promote_note: {
     command: "promote_note",
-    domain: "brain",
-    family: "brain_memory_update"
+    domain: "mimisbrunnr",
+    family: "mimisbrunnr_memory_update"
   },
   query_history: {
     command: "query_history",
-    domain: "brain",
-    family: "brain_history"
+    domain: "mimisbrunnr",
+    family: "mimisbrunnr_history"
   },
   execute_coding_task: {
     command: "execute_coding_task",

@@ -16,16 +16,16 @@
     "verbatimModuleSyntax": true,
     "baseUrl": ".",
     "paths": {
-      "@multi-agent-brain/contracts": ["packages/contracts/src/index.ts"],
-      "@multi-agent-brain/contracts/*": ["packages/contracts/src/*"],
-      "@multi-agent-brain/domain": ["packages/domain/src/index.ts"],
-      "@multi-agent-brain/domain/*": ["packages/domain/src/*"],
-      "@multi-agent-brain/application": ["packages/application/src/index.ts"],
-      "@multi-agent-brain/application/*": ["packages/application/src/*"],
-      "@multi-agent-brain/orchestration": ["packages/orchestration/src/index.ts"],
-      "@multi-agent-brain/orchestration/*": ["packages/orchestration/src/*"],
-      "@multi-agent-brain/infrastructure": ["packages/infrastructure/src/index.ts"],
-      "@multi-agent-brain/infrastructure/*": ["packages/infrastructure/src/*"]
+      "@mimir/contracts": ["packages/contracts/src/index.ts"],
+      "@mimir/contracts/*": ["packages/contracts/src/*"],
+      "@mimir/domain": ["packages/domain/src/index.ts"],
+      "@mimir/domain/*": ["packages/domain/src/*"],
+      "@mimir/application": ["packages/application/src/index.ts"],
+      "@mimir/application/*": ["packages/application/src/*"],
+      "@mimir/orchestration": ["packages/orchestration/src/index.ts"],
+      "@mimir/orchestration/*": ["packages/orchestration/src/*"],
+      "@mimir/infrastructure": ["packages/infrastructure/src/index.ts"],
+      "@mimir/infrastructure/*": ["packages/infrastructure/src/*"]
     }
   }
 }

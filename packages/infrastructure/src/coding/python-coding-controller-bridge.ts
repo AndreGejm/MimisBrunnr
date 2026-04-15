@@ -1,15 +1,15 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
-import { classifyProviderError } from "@multi-agent-brain/application";
+import { classifyProviderError } from "@mimir/application";
 import type {
   ExecuteCodingTaskRequest,
   ExecuteCodingTaskResponse
-} from "@multi-agent-brain/contracts";
-import { QWEN3_CODER_LOCAL_PROFILE } from "@multi-agent-brain/domain";
+} from "@mimir/contracts";
+import { QWEN3_CODER_LOCAL_PROFILE } from "@mimir/domain";
 import type {
   CodingControllerBridge,
   ModelRoleBinding
-} from "@multi-agent-brain/orchestration";
+} from "@mimir/orchestration";
 
 export interface PythonCodingControllerBridgeOptions {
   pythonExecutable: string;

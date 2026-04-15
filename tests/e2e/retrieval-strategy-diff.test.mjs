@@ -45,7 +45,7 @@ test("flat and hierarchical retrieval can be compared side-by-side for the same 
 
   const validatedDefault = validateTransportRequest("search-context", {
     query: "writer promotion policy",
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     budget: {
       maxTokens: 600,
       maxSources: 3,
@@ -57,7 +57,7 @@ test("flat and hierarchical retrieval can be compared side-by-side for the same 
 
   const validatedHierarchical = validateTransportRequest("search-context", {
     query: "writer promotion policy",
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     budget: {
       maxTokens: 600,
       maxSources: 3,
@@ -116,7 +116,7 @@ async function retrieve(container, input) {
   return container.services.retrieveContextService.retrieveContext({
     actor: actor("retrieval"),
     query: input.query,
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     budget: {
       maxTokens: 600,
       maxSources: 3,
@@ -151,7 +151,7 @@ function comparePacketSelections(flatEvidence, hierarchicalEvidence) {
 }
 
 async function createHarness(t) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-retrieval-strategy-diff-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-retrieval-strategy-diff-"));
   const container = buildServiceContainer({
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
@@ -179,7 +179,7 @@ async function createHarness(t) {
 async function createAndPromote(container, input) {
   const draft = await container.services.stagingDraftService.createDraft({
     actor: actor("writer"),
-    targetCorpus: "context_brain",
+    targetCorpus: "mimisbrunnr",
     noteType: input.noteType,
     title: input.title,
     sourcePrompt: `Draft ${input.title}`,
@@ -195,7 +195,7 @@ async function createAndPromote(container, input) {
   const promoted = await container.services.promotionOrchestratorService.promoteDraft({
     actor: actor("orchestrator"),
     draftNoteId: draft.data.draftNoteId,
-    targetCorpus: "context_brain",
+    targetCorpus: "mimisbrunnr",
     promoteAsCurrentState: input.promoteAsCurrentState ?? false
   });
 

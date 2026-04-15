@@ -1,8 +1,11 @@
-# MultiagentBrain Complete Operator Manual
+# mimir Complete Operator Manual
 
-This manual is the practical operating guide for the current MultiagentBrain
-repository. It explains how to run it, how to store and retrieve information,
-how to validate and review notes, how the orchestrator routes work, how Docker
+This manual is the practical operating guide for the current mimir repository.
+mimir is the app and orchestrator. mimisbrunnr is the AI context well inside it:
+the governed memory well where information is staged, validated, promoted,
+persisted, retrieved, and assembled for agents. This manual explains how to run
+mimir, how to store and retrieve information in mimisbrunnr, how to validate and
+review notes, how the orchestrator routes work, how Docker
 Desktop and Docker Model Runner fit in, and how the Hermes-inspired local-agent
 features should be used without weakening the governed memory model.
 
@@ -12,7 +15,7 @@ out explicitly.
 
 ## Start Here If You Are New
 
-If this is your first time using MultiagentBrain, read the manual in this order:
+If this is your first time using mimir, read the manual in this order:
 
 1. Read this start section.
 2. Follow section 5 to install and build the workspace.
@@ -30,7 +33,7 @@ you understand validation and review.
 
 ### What You Need To Know First
 
-MultiagentBrain has two different ideas that are easy to confuse:
+mimisbrunnr has two different ideas that are easy to confuse:
 
 - Remembering a session: store a transcript archive for continuity. This is
   useful, searchable, and non-authoritative.
@@ -67,11 +70,11 @@ Examples:
 ```powershell
 corepack pnpm cli -- version
 corepack pnpm cli -- auth-status
-corepack pnpm cli -- search-context --json '{ "query": "example", "corpusIds": ["context_brain"], "budget": { "maxTokens": 1000, "maxSources": 3, "maxRawExcerpts": 1, "maxSummarySentences": 3 } }'
+corepack pnpm cli -- search-context --json '{ "query": "example", "corpusIds": ["mimisbrunnr"], "budget": { "maxTokens": 1000, "maxSources": 3, "maxRawExcerpts": 1, "maxSummarySentences": 3 } }'
 ```
 
-The package exposes `brain-cli` as its bin name after package linking, but a
-fresh clone does not provide a tracked global `mab` command. This manual uses
+The package exposes `mimir-cli` as the package bin name after package linking,
+but a fresh clone does not provide a tracked global `mimir` command. This manual uses
 `corepack pnpm cli --` so first-time users can run the examples directly from
 the workspace root.
 
@@ -84,7 +87,7 @@ are easier to read as a PowerShell here-string:
 $payload = @'
 {
   "query": "How should agents store durable memory?",
-  "corpusIds": ["context_brain", "general_notes"],
+  "corpusIds": ["mimisbrunnr", "general_notes"],
   "budget": {
     "maxTokens": 4000,
     "maxSources": 6,
@@ -129,9 +132,9 @@ a session archive. A session archive is not canonical memory.
 
 ## 1. Mental Model
 
-MultiagentBrain is a local-first memory and agent support system. Its core job
-is to keep durable knowledge governed, searchable, bounded, and reviewable so
-local agents can use memory without silently corrupting it.
+mimir is a local-first orchestration and agent support system. Its mimisbrunnr
+subsystem keeps durable knowledge governed, searchable, bounded, and reviewable
+so local agents can use memory without silently corrupting it.
 
 The system has three major responsibilities:
 
@@ -155,11 +158,11 @@ and tool outputs are useful context, but they are not durable fact authority.
 The implemented workspace is a TypeScript monorepo with a vendored Python
 runtime:
 
-- `apps/brain-cli`: JSON CLI entrypoint available through the root
+- `apps/mimir-cli`: JSON CLI entrypoint available through the root
   `corepack pnpm cli -- <command>` script; the package bin name is
-  `brain-cli` when linked.
-- `apps/brain-api`: local HTTP API.
-- `apps/brain-mcp`: stdio MCP server.
+  `mimir-cli` when linked.
+- `apps/mimir-api`: local HTTP API.
+- `apps/mimir-mcp`: stdio MCP server.
 - `packages/domain`: core domain types such as notes, chunks, context packets,
   session archives, traces, and tool-output spillover records.
 - `packages/contracts`: transport request/response contracts and MCP tool
@@ -167,7 +170,7 @@ runtime:
 - `packages/application`: use-case services for memory, retrieval, packets,
   history, imports, temporal refresh, session archives, and tool-output budgets.
 - `packages/orchestration`: actor authorization, routing, model-role registry,
-  brain controller, coding controller, and root orchestrator.
+  mimisbrunnr controller, coding controller, and root orchestrator.
 - `packages/infrastructure`: filesystem, SQLite, FTS, Qdrant, model-provider,
   auth registry, runtime health, transport validation, and Python bridge
   adapters.
@@ -199,10 +202,10 @@ The container wires:
 - SQLite FTS lexical index.
 - Qdrant vector index.
 - Embedding, reasoning, drafting, and reranker providers.
-- Brain-domain application services.
+- mimisbrunnr-domain application services.
 - Python coding bridge.
 - Actor authorization policy.
-- `MultiAgentOrchestrator`.
+- `MimirOrchestrator`.
 
 Runtime flow:
 
@@ -216,9 +219,9 @@ transport validation + actor context
 ActorAuthorizationPolicy
         |
         v
-MultiAgentOrchestrator
+MimirOrchestrator
         |
-        +--> BrainDomainController
+        +--> MimisbrunnrDomainController
         |       +--> retrieval
         |       +--> context packets
         |       +--> staging drafts
@@ -243,7 +246,7 @@ orchestration layers.
 
 ## 4. Authority And State Lifecycle
 
-MultiagentBrain uses separate state categories:
+mimir uses separate state categories:
 
 - Canonical memory: promoted Markdown notes in the canonical vault. This is the
   durable fact authority.
@@ -398,24 +401,24 @@ Expected behavior:
   summary.
 
 You may see a Node warning that SQLite is experimental. That warning comes from
-Node's built-in SQLite support. It is not a MultiagentBrain failure by itself.
+Node's built-in SQLite support. It is not a mimir failure by itself.
 
 Default local storage locations:
 
 | Storage | Default |
 | --- | --- |
-| Data root on Windows | `%USERPROFILE%\.multiagentbrain` |
-| Data root on non-Windows | `$HOME/.multiagentbrain` |
+| Data root on Windows | `%USERPROFILE%\.mimir` |
+| Data root on non-Windows | `$HOME/.mimir` |
 | Canonical vault | `$MAB_DATA_ROOT/vault/canonical` |
 | Staging vault | `$MAB_DATA_ROOT/vault/staging` |
-| SQLite state | `$MAB_DATA_ROOT/state/multi-agent-brain.sqlite` |
+| SQLite state | `$MAB_DATA_ROOT/state/mimisbrunnr.sqlite` |
 | Qdrant URL | `http://127.0.0.1:6333` |
 | API host/port | `127.0.0.1:8080` |
 
 If you want disposable test state, set `MAB_DATA_ROOT` before running commands:
 
 ```powershell
-$env:MAB_DATA_ROOT = "$env:USERPROFILE\.multiagentbrain-test"
+$env:MAB_DATA_ROOT = "$env:USERPROFILE\.mimir-test"
 corepack pnpm cli -- version
 ```
 
@@ -483,7 +486,7 @@ $archive = @'
   "messages": [
     {
       "role": "user",
-      "content": "I am learning MultiagentBrain for the first time."
+      "content": "I am learning mimir for the first time."
     },
     {
       "role": "assistant",
@@ -517,7 +520,7 @@ Step 4: assemble agent context from canonical memory plus session recall.
 $context = @'
 {
   "query": "What does this first-time session say about authority?",
-  "corpusIds": ["context_brain", "general_notes"],
+  "corpusIds": ["mimisbrunnr", "general_notes"],
   "budget": {
     "maxTokens": 3000,
     "maxSources": 4,
@@ -549,7 +552,7 @@ canonical memory.
 ```powershell
 $draft = @'
 {
-  "targetCorpus": "context_brain",
+  "targetCorpus": "mimisbrunnr",
   "noteType": "decision",
   "title": "Session archives are non-authoritative",
   "sourcePrompt": "Record the rule that session archives provide continuity but do not become fact authority.",
@@ -599,7 +602,7 @@ The tracked local API stack is `docker/compose.local.yml`.
 
 It runs:
 
-- `brain-api`.
+- `mimir-api`.
 - `qdrant`.
 - Named Docker volumes for canonical vault, staging vault, SQLite state, and
   Qdrant storage.
@@ -630,7 +633,7 @@ The local compose profile is more model-backed than generic in-process defaults:
 Typical local model roles:
 
 - `embedding_primary`: `docker.io/ai/qwen3-embedding:0.6B-F16`.
-- `brain_primary`: qwen3 reasoning/drafting model.
+- `mimisbrunnr_primary`: qwen3 reasoning/drafting model.
 - `reranker_primary`: qwen3 reranker model.
 - `coding_primary`: qwen3-coder.
 - `paid_escalation`: disabled unless explicitly configured.
@@ -746,7 +749,7 @@ If model-backed calls fail:
 Container logs:
 
 ```powershell
-docker compose -f docker/compose.local.yml logs brain-api
+docker compose -f docker/compose.local.yml logs mimir-api
 docker compose -f docker/compose.local.yml logs qdrant
 ```
 
@@ -755,10 +758,10 @@ docker compose -f docker/compose.local.yml logs qdrant
 The Docker MCP session profile is documented in
 `documentation/operations/docker-mcp-session.md` and configured through:
 
-- `docker/brain-mcp.Dockerfile`.
-- `docker/brain-mcp-session-entrypoint.mjs`.
-- `docker/brain-mcp-session.env.example`.
-- `docker/brain-mcp-session.actor-registry.example.json`.
+- `docker/mimir-mcp.Dockerfile`.
+- `docker/mimir-mcp-session-entrypoint.mjs`.
+- `docker/mimir-mcp-session.env.example`.
+- `docker/mimir-mcp-session.actor-registry.example.json`.
 - `docker/compose.mcp-session.yml`.
 
 This profile is for running the stdio MCP server in a container with startup
@@ -792,11 +795,24 @@ metadata on every tool call. The server injects the configured actor and token.
 Use the validation-only mode before wiring it to a client:
 
 ```powershell
-docker compose -f docker/compose.mcp-session.yml run --rm brain-mcp-session --validate-only
+docker compose -f docker/compose.mcp-session.yml run --rm mimir-mcp-session --validate-only
 ```
 
 Then configure your MCP client to launch the containerized command shown in
 `documentation/operations/docker-mcp-session.md`.
+
+Docker Desktop's MCP Toolkit is useful for checking the gateway-side MCP setup:
+
+```powershell
+docker mcp server list
+docker mcp tools list
+```
+
+Those commands list Docker Desktop gateway servers and exposed tools. They do
+not automatically register this repository's session-scoped mimir MCP container;
+use the explicit client snippet in
+`documentation/operations/docker-mcp-session.md` unless you later add a Docker
+MCP catalog entry for packaged installs.
 
 ### 7.1 First-Time Docker MCP Session Steps
 
@@ -811,7 +827,7 @@ corepack pnpm run docker:mcp:build
 2. Copy the example environment file.
 
 ```powershell
-Copy-Item docker\brain-mcp-session.env.example docker\brain-mcp-session.env
+Copy-Item docker\mimir-mcp-session.env.example docker\mimir-mcp-session.env
 ```
 
 3. Prepare host directories for mounted state.
@@ -828,13 +844,13 @@ Example test layout:
 4. Copy the example actor registry into the auth config directory and replace
    the example token with your own session token.
 
-5. Edit `docker/brain-mcp-session.env` so it points at those host paths and the
+5. Edit `docker/mimir-mcp-session.env` so it points at those host paths and the
    same actor ID/token as the registry.
 
 6. Validate without starting an MCP session.
 
 ```powershell
-docker compose -f docker/compose.mcp-session.yml run --rm brain-mcp-session --validate-only
+docker compose -f docker/compose.mcp-session.yml run --rm mimir-mcp-session --validate-only
 ```
 
 7. Only after validation passes, configure your MCP client to run the Docker
@@ -873,10 +889,10 @@ validated, bounded tool session.
 
 The three user-facing entrypoints share the same service container:
 
-- CLI: `apps/brain-cli/src/main.ts`.
-- HTTP: `apps/brain-api/src/server.ts`.
-- MCP: `apps/brain-mcp/src/main.ts` and
-  `apps/brain-mcp/src/tool-definitions.ts`.
+- CLI: `apps/mimir-cli/src/main.ts`.
+- HTTP: `apps/mimir-api/src/server.ts`.
+- MCP: `apps/mimir-mcp/src/main.ts` and
+  `apps/mimir-mcp/src/tool-definitions.ts`.
 
 The entrypoint choice depends on the job:
 
@@ -908,12 +924,12 @@ Output is always JSON.
 
 HTTP accepts actor context through request body or headers:
 
-- `x-brain-actor-id`.
-- `x-brain-actor-role`.
-- `x-brain-source`.
+- `x-mimir-actor-id`.
+- `x-mimir-actor-role`.
+- `x-mimir-source`.
 - `x-request-id`.
-- `x-brain-tool-name`.
-- `x-brain-actor-token`.
+- `x-mimir-tool-name`.
+- `x-mimir-actor-token`.
 
 ### MCP Protocol
 
@@ -1039,16 +1055,16 @@ Invoke-RestMethod `
   -Method Get `
   -Uri http://127.0.0.1:8080/v1/system/auth `
   -Headers @{
-    "x-brain-actor-id" = "operator-local"
-    "x-brain-actor-role" = "operator"
-    "x-brain-source" = "manual"
-    "x-brain-actor-token" = "<token>"
+    "x-mimir-actor-id" = "operator-local"
+    "x-mimir-actor-role" = "operator"
+    "x-mimir-source" = "manual"
+    "x-mimir-actor-token" = "<token>"
   }
 ```
 
 ### 8.4 MCP Basics
 
-Use MCP when an agent client should call MultiagentBrain tools directly.
+Use MCP when an agent client should call mimir tools directly.
 
 Local MCP server command after build:
 
@@ -1138,7 +1154,7 @@ Search context:
 ```powershell
 corepack pnpm cli -- search-context --json '{
   "query": "memory governance",
-  "corpusIds": ["context_brain"],
+  "corpusIds": ["mimisbrunnr"],
   "budget": {
     "maxTokens": 2000,
     "maxSources": 4,
@@ -1170,13 +1186,13 @@ Create a staging draft:
 
 ```powershell
 corepack pnpm cli -- draft-note --json '{
-  "targetCorpus": "context_brain",
+  "targetCorpus": "mimisbrunnr",
   "noteType": "decision",
   "title": "Agents use drafts before memory promotion",
   "sourcePrompt": "Document the write discipline for local agents.",
   "supportingSources": [
     {
-      "notePath": "documentation/manuals/multiagentbrain-complete-manual.md",
+      "notePath": "documentation/manuals/mimir-complete-manual.md",
       "headingPath": ["12. Storing Information"]
     }
   ],
@@ -1193,19 +1209,19 @@ Validate a note body:
 
 ```powershell
 corepack pnpm cli -- validate-note --json '{
-  "targetCorpus": "context_brain",
-  "notePath": "context_brain/agents-use-drafts-before-memory-promotion.md",
+  "targetCorpus": "mimisbrunnr",
+  "notePath": "mimisbrunnr/agents-use-drafts-before-memory-promotion.md",
   "frontmatter": {
     "noteId": "example-note-id",
     "title": "Agents use drafts before memory promotion",
-    "project": "multi-agent-brain",
+    "project": "mimir",
     "type": "decision",
     "status": "promoted",
     "updated": "2026-04-13",
     "summary": "Agents should create staging drafts for durable knowledge and leave canonical writes to reviewed promotion.",
-    "tags": ["project/multi-agent-brain", "domain/agent", "status/current"],
+    "tags": ["project/mimir", "domain/agent", "status/current"],
     "scope": "agent memory writes",
-    "corpusId": "context_brain",
+    "corpusId": "mimisbrunnr",
     "currentState": true,
     "supersedes": []
   },
@@ -1219,7 +1235,7 @@ Promote a reviewed draft:
 ```powershell
 corepack pnpm cli -- promote-note --json '{
   "draftNoteId": "draft-note-id",
-  "targetCorpus": "context_brain",
+  "targetCorpus": "mimisbrunnr",
   "expectedDraftRevision": "draft-revision",
   "promoteAsCurrentState": true
 }'
@@ -1229,7 +1245,7 @@ List namespace nodes:
 
 ```powershell
 corepack pnpm cli -- list-context-tree --json '{
-  "ownerScope": "context_brain",
+  "ownerScope": "mimisbrunnr",
   "authorityStates": ["canonical", "staging"]
 }'
 ```
@@ -1243,7 +1259,7 @@ corepack pnpm cli -- execute-coding-task --json '{
   "repoRoot": "<REPO_ROOT>",
   "memoryContext": {
     "query": "agents should create staging drafts before promotion",
-    "corpusIds": ["context_brain", "general_notes"],
+    "corpusIds": ["mimisbrunnr", "general_notes"],
     "budget": {
       "maxTokens": 4000,
       "maxSources": 5,
@@ -1258,18 +1274,18 @@ corepack pnpm cli -- execute-coding-task --json '{
 
 ## 10. Orchestrator
 
-`MultiAgentOrchestrator` is the central runtime boundary.
+`MimirOrchestrator` is the central runtime boundary.
 
 It does four things:
 
 - Authorizes the actor against the command.
 - Verifies the command routes to the expected domain.
-- Delegates brain commands to `BrainDomainController`.
+- Delegates mimisbrunnr commands to `MimisbrunnrDomainController`.
 - Delegates coding commands to `CodingDomainController`.
 
-The task-family router separates the brain domain from the coding domain.
+The task-family router separates the mimisbrunnr domain from the coding domain.
 
-Brain commands:
+mimisbrunnr commands:
 
 - `search_context`.
 - `search_session_archives`.
@@ -1398,13 +1414,13 @@ CLI example:
 
 ```powershell
 corepack pnpm cli -- draft-note --json '{
-  "targetCorpus": "context_brain",
+  "targetCorpus": "mimisbrunnr",
   "noteType": "decision",
   "title": "Use governed memory promotion for agent notes",
   "sourcePrompt": "Agents must not write canonical memory directly.",
   "supportingSources": [
     {
-      "notePath": "documentation/manuals/multiagentbrain-complete-manual.md",
+      "notePath": "documentation/manuals/mimir-complete-manual.md",
       "headingPath": ["Start Here If You Are New"]
     }
   ],
@@ -1433,7 +1449,7 @@ Draft request fields explained:
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `targetCorpus` | Yes | `context_brain` for governed project memory, `general_notes` for non-current general notes |
+| `targetCorpus` | Yes | `mimisbrunnr` for governed project memory, `general_notes` for non-current general notes |
 | `noteType` | Yes | One of the note schema types such as `decision`, `runbook`, `architecture`, `investigation`, or `policy` |
 | `title` | Yes | Human-readable note title |
 | `sourcePrompt` | Yes | Why this draft exists |
@@ -1513,7 +1529,7 @@ records an import job. It does not import directories directly.
 
 ```powershell
 corepack pnpm cli -- import-resource --json '{
-  "sourcePath": "documentation/planning/hermes-vs-multi-agent-brain-gap-analysis.md",
+  "sourcePath": "documentation/planning/hermes-vs-mimir-gap-analysis.md",
   "importKind": "reference_repo"
 }'
 ```
@@ -1584,19 +1600,19 @@ from `notePath`; the caller supplies frontmatter and body.
 ```powershell
 $candidate = @'
 {
-  "targetCorpus": "context_brain",
-  "notePath": "context_brain/session-archives-are-non-authoritative.md",
+  "targetCorpus": "mimisbrunnr",
+  "notePath": "mimisbrunnr/session-archives-are-non-authoritative.md",
   "frontmatter": {
     "noteId": "example-note-id",
     "title": "Session archives are non-authoritative",
-    "project": "multi-agent-brain",
+    "project": "mimir",
     "type": "decision",
     "status": "promoted",
     "updated": "2026-04-13",
     "summary": "Session archives provide continuity but do not create canonical fact authority.",
-    "tags": ["project/multi-agent-brain", "domain/retrieval", "status/current"],
+    "tags": ["project/mimir", "domain/retrieval", "status/current"],
     "scope": "memory governance",
-    "corpusId": "context_brain",
+    "corpusId": "mimisbrunnr",
     "currentState": true,
     "supersedes": []
   },
@@ -1622,8 +1638,8 @@ Read the response like this:
 | --- | --- | --- |
 | Missing required section | Body lacks a required heading for the note type | Add the exact required heading |
 | Unknown tag | Tag is not in the controlled vocabulary | Use an allowed tag or update the policy in code |
-| Wrong corpus path | `notePath` does not start with the target corpus | Move path under `context_brain/` or `general_notes/` |
-| General note marked current | `general_notes` cannot be current-state authority | Use `context_brain` or set `currentState: false` |
+| Wrong corpus path | `notePath` does not start with the target corpus | Move path under `mimisbrunnr/` or `general_notes/` |
+| General note marked current | `general_notes` cannot be current-state authority | Use `mimisbrunnr` or set `currentState: false` |
 | Date format invalid | Date is not `YYYY-MM-DD` | Normalize the date |
 | Superseded state inconsistent | Superseded note lacks `supersededBy` or current note has it | Fix supersession fields |
 
@@ -1648,12 +1664,12 @@ Recommended review checklist:
 
 When using Codex with the companion Superpowers workflows:
 
-- `multiagentbrain-note-capture` helps decide whether information should be
+- `mimir-note-capture` helps decide whether information should be
   rejected, session-only, merged, rewritten, escalated, or turned into a staged
   draft.
-- `multiagentbrain-note-review` applies adversarial review before staging or
+- `mimir-note-review` applies adversarial review before staging or
   promotion.
-- `multiagentbrain-memory-protocol` reminds the operator to checkpoint durable
+- `mimir-memory-protocol` reminds the operator to checkpoint durable
   knowledge at the end of meaningful work.
 
 Those are local operator workflows, not replacement authority paths. They
@@ -1696,7 +1712,7 @@ CLI example:
 ```powershell
 corepack pnpm cli -- promote-note --json '{
   "draftNoteId": "draft-note-id",
-  "targetCorpus": "context_brain",
+  "targetCorpus": "mimisbrunnr",
   "expectedDraftRevision": "known-draft-revision",
   "promoteAsCurrentState": true
 }'
@@ -1753,7 +1769,7 @@ After promotion, immediately verify:
 $verify = @'
 {
   "query": "Session archives are non-authoritative",
-  "corpusIds": ["context_brain"],
+  "corpusIds": ["mimisbrunnr"],
   "budget": {
     "maxTokens": 2000,
     "maxSources": 5,
@@ -1790,7 +1806,7 @@ Examples:
 | Current policy: agents must not write canonical memory directly | `true` |
 | Historical investigation from last month | `false` |
 | Current Docker MCP session runbook | `true` |
-| Imported reference notes from Hermes analysis | Usually `false` unless converted into a current MAB policy |
+| Imported reference notes from Hermes analysis | Usually `false` unless converted into a current mimisbrunnr policy |
 
 Current-state promotion can supersede older notes. That is useful, but it is
 also the reason promotion should be reviewed carefully.
@@ -1804,7 +1820,7 @@ CLI report:
 ```powershell
 corepack pnpm cli -- freshness-status --json '{
   "expiringWithinDays": 14,
-  "corpusId": "context_brain",
+  "corpusId": "mimisbrunnr",
   "limitPerCategory": 10
 }'
 ```
@@ -1812,7 +1828,7 @@ corepack pnpm cli -- freshness-status --json '{
 HTTP:
 
 ```text
-GET /v1/system/freshness?expiringWithinDays=14&corpusId=context_brain&limitPerCategory=10
+GET /v1/system/freshness?expiringWithinDays=14&corpusId=mimisbrunnr&limitPerCategory=10
 ```
 
 Refresh one note:
@@ -1829,7 +1845,7 @@ Refresh a bounded batch:
 
 ```powershell
 corepack pnpm cli -- create-refresh-drafts --json '{
-  "corpusId": "context_brain",
+  "corpusId": "mimisbrunnr",
   "expiringWithinDays": 14,
   "maxDrafts": 5,
   "sourceStates": ["expired", "expiring_soon"]
@@ -1860,7 +1876,7 @@ Search canonical context:
 ```powershell
 corepack pnpm cli -- search-context --json '{
   "query": "How should agents store durable memory?",
-  "corpusIds": ["context_brain", "general_notes"],
+  "corpusIds": ["mimisbrunnr", "general_notes"],
   "budget": {
     "maxTokens": 4000,
     "maxSources": 6,
@@ -1875,7 +1891,7 @@ corepack pnpm cli -- search-context --json '{
 Important request fields:
 
 - `query`: required search text.
-- `corpusIds`: one or more of `context_brain`, `general_notes`.
+- `corpusIds`: one or more of `mimisbrunnr`, `general_notes`.
 - `budget`: token/source/excerpt/summary bounds.
 - `intentHint`: optional intent override hint.
 - `noteTypePriority`: optional type preference.
@@ -1932,7 +1948,7 @@ corepack pnpm cli -- get-context-packet --json '{
       "stalenessClass": "current",
       "provenance": {
         "noteId": "example",
-        "notePath": "context_brain/example.md",
+        "notePath": "mimisbrunnr/example.md",
         "headingPath": ["Architecture"]
       }
     }
@@ -1971,7 +1987,7 @@ List tree:
 
 ```powershell
 corepack pnpm cli -- list-context-tree --json '{
-  "ownerScope": "context_brain",
+  "ownerScope": "mimisbrunnr",
   "authorityStates": ["canonical", "session"]
 }'
 ```
@@ -1980,7 +1996,7 @@ Read node:
 
 ```powershell
 corepack pnpm cli -- read-context-node --json '{
-  "uri": "mab://context_brain/note/<noteId>"
+  "uri": "mimir://mimisbrunnr/note/<noteId>"
 }'
 ```
 
@@ -1989,7 +2005,7 @@ search.
 
 The implemented owner scopes are:
 
-- `context_brain`.
+- `mimisbrunnr`.
 - `general_notes`.
 - `imports`.
 - `sessions`.
@@ -1998,7 +2014,7 @@ The implemented owner scopes are:
 For note nodes, the current URI shape is:
 
 ```text
-mab://<ownerScope>/note/<noteId>
+mimir://<ownerScope>/note/<noteId>
 ```
 
 The namespace service reads nodes that already exist in SQLite metadata. If you
@@ -2034,7 +2050,7 @@ local-agent prompts.
 ```powershell
 corepack pnpm cli -- assemble-agent-context --json '{
   "query": "How should a local agent update durable memory?",
-  "corpusIds": ["context_brain", "general_notes"],
+  "corpusIds": ["mimisbrunnr", "general_notes"],
   "budget": {
     "maxTokens": 6000,
     "maxSources": 6,
@@ -2059,7 +2075,7 @@ The result contains:
 The block starts with:
 
 ```xml
-<agent-context source="multi-agent-brain" authority="retrieved">
+<agent-context source="mimisbrunnr" authority="retrieved">
 ```
 
 It contains:
@@ -2075,7 +2091,7 @@ too large, it is truncated and marked.
 
 Hermes was used as architectural inspiration, not as a drop-in replacement.
 
-Useful ideas adapted into MultiagentBrain:
+Useful ideas adapted into mimir:
 
 - Session continuity as a separate read-side feature.
 - Layered context assembly for local agents.
@@ -2093,7 +2109,7 @@ Important things intentionally not copied from Hermes:
 - Broad messaging/gateway complexity.
 - Skill self-patching without review.
 
-The MultiagentBrain policy is stricter:
+The mimisbrunnr policy is stricter:
 
 - Hermes-like working memory can inform retrieval and session continuity.
 - It must not bypass staging, validation, promotion, audit, or operator review.
@@ -2165,7 +2181,7 @@ corepack pnpm cli -- execute-coding-task --json '{
   "repoRoot": "<REPO_ROOT>",
   "memoryContext": {
     "query": "vector retrieval degraded lexical retrieval active qdrant health",
-    "corpusIds": ["context_brain", "general_notes"],
+    "corpusIds": ["mimisbrunnr", "general_notes"],
     "budget": {
       "maxTokens": 5000,
       "maxSources": 6,
@@ -2335,7 +2351,7 @@ MAB_ROLE_<ROLE>_MAX_OUTPUT_TOKENS
 Roles:
 
 - `CODING_PRIMARY`.
-- `BRAIN_PRIMARY`.
+- `MIMISBRUNNR_PRIMARY`.
 - `EMBEDDING_PRIMARY`.
 - `RERANKER_PRIMARY`.
 - `PAID_ESCALATION`.
@@ -2598,7 +2614,7 @@ The HTTP server accepts JSON object bodies and has a 1 MB safety limit.
 
 ### MCP Tool Fails Validation
 
-Run `tools/list` or inspect `apps/brain-mcp/src/tool-definitions.ts` for the
+Run `tools/list` or inspect `apps/mimir-mcp/src/tool-definitions.ts` for the
 schema. MCP tool names use snake case, while CLI commands use kebab case.
 
 ### Promotion Fails With Duplicate
@@ -2697,7 +2713,7 @@ Use these files when you need source details:
 - `documentation/operations/docker-mcp-session.md`: containerized MCP session.
 - `documentation/local-agent-context.md`: local-agent context assembly.
 - `documentation/qwen3-coder-local-profile.md`: qwen3-coder local role profile.
-- `documentation/planning/hermes-vs-multi-agent-brain-gap-analysis.md`: Hermes gap
+- `documentation/planning/hermes-vs-mimir-gap-analysis.md`: Hermes gap
   analysis.
 - `documentation/superpowers/plans/2026-04-13-hermes-gap-bridge-implementation-plan.md`:
   implementation plan behind the Hermes bridge work.
@@ -2705,7 +2721,7 @@ Use these files when you need source details:
 
 ## 38. Final Operating Rule
 
-Use MultiagentBrain as a governed memory and context system, not as an
+Use mimisbrunnr as a governed memory and context system, not as an
 unbounded note dump.
 
 The strongest local-agent pattern is:
@@ -2727,4 +2743,4 @@ governed promotion updates canonical memory
 ```
 
 That is the main lesson from the Hermes comparison: borrow better read-side and
-agent-continuity ideas, but keep MultiagentBrain's stronger write discipline.
+agent-continuity ideas, but keep mimisbrunnr's stronger write discipline.

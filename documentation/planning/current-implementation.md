@@ -18,11 +18,11 @@ The running architecture is a local-first monorepo with clear boundaries:
   - filesystem repositories, SQLite adapters, FTS, Qdrant, health checks, provider implementations, and bootstrap
 - `packages/orchestration`
   - root routing, domain controllers, model-role resolution, and provider registry
-- `apps/brain-cli`
+- `apps/mimir-cli`
   - thin JSON CLI transport
-- `apps/brain-api`
+- `apps/mimir-api`
   - thin HTTP transport
-- `apps/brain-mcp`
+- `apps/mimir-mcp`
   - thin MCP stdio transport
 - `runtimes/local_experts`
   - vendored Python coding runtime used by the coding domain
@@ -33,7 +33,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 
 - service-container bootstrap that assembles the full runtime
 - deterministic root orchestrator
-- separate brain and coding domains
+- separate mimisbrunnr and coding domains
 - transport-agnostic application core
 
 ### Memory and storage
@@ -45,7 +45,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - shared release metadata derived from workspace version plus optional Git tag and commit overrides
 - auth issuer-secret support for centrally issued short-lived actor tokens
 - controlled tag vocabulary enforcement
-- corpus separation for `context_brain` and `general_notes`
+- corpus separation for `mimisbrunnr` and `general_notes`
 - SQLite metadata authority
 - SQLite audit history
 - shared SQLite connection strategy with WAL and busy-timeout configuration across metadata, audit, and FTS adapters
@@ -114,7 +114,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - `qwen3-coder`
 - `qwen3-reranker`
 - `docker.io/ai/qwen3-embedding:0.6B-F16`
-- host state defaults under `%USERPROFILE%\.multiagentbrain` on Windows or `$HOME/.multiagentbrain` elsewhere when `MAB_DATA_ROOT` and the explicit storage path variables are unset
+- host state defaults under `%USERPROFILE%\.mimir` on Windows or `$HOME/.mimir` elsewhere when `MAB_DATA_ROOT` and the explicit storage path variables are unset
 
 ## Transport Surfaces
 

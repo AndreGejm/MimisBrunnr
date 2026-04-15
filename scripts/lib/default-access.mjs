@@ -4,6 +4,28 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+export const COMPATIBILITY_LAUNCHER_NAMES = Object.freeze([
+  "mimir",
+  "mimir-cli",
+  "mimis",
+  "mimis-cli",
+  "mimisbrunnr",
+  "mimisbrunnr-cli",
+  "mimirbrunnr",
+  "mimirbrunnr-cli",
+  "mimirsbrunnr",
+  "mimirsbrunnr-cli",
+  "brain",
+  "brain-cli",
+  "brain.CLI",
+  "multiagentbrain",
+  "multiagentbrain-cli",
+  "multiagent-brain",
+  "multi-agent-brain",
+  "multi-agent-brain-cli",
+  "mab"
+]);
+
 function toTomlSingleQuoted(value) {
   return `'${String(value).replace(/'/g, "''")}'`;
 }
@@ -26,7 +48,7 @@ export function getDefaultCodexConfigPath() {
 }
 
 export function getDefaultInstallationManifestPath(homeDir = os.homedir()) {
-  return path.join(homeDir, ".multiagentbrain", "installation.json");
+  return path.join(homeDir, ".mimir", "installation.json");
 }
 
 export function getDefaultWindowsLauncherBinDir() {
@@ -38,19 +60,19 @@ export function getDefaultWindowsLauncherBinDir() {
 }
 
 export function getBuiltCliEntrypoint(repoRoot) {
-  return path.join(repoRoot, "apps", "brain-cli", "dist", "main.js");
+  return path.join(repoRoot, "apps", "mimir-cli", "dist", "main.js");
 }
 
 export function getBuiltMcpEntrypoint(repoRoot) {
-  return path.join(repoRoot, "apps", "brain-mcp", "dist", "main.js");
+  return path.join(repoRoot, "apps", "mimir-mcp", "dist", "main.js");
 }
 
 export function getCliWrapperPath(repoRoot) {
-  return path.join(repoRoot, "scripts", "launch-brain-cli.mjs");
+  return path.join(repoRoot, "scripts", "launch-mimir-cli.mjs");
 }
 
 export function getMcpWrapperPath(repoRoot) {
-  return path.join(repoRoot, "scripts", "launch-brain-mcp.mjs");
+  return path.join(repoRoot, "scripts", "launch-mimir-mcp.mjs");
 }
 
 export function renderCodexMcpServerBlock(name, command, args) {
@@ -193,12 +215,12 @@ export function evaluateDefaultAccess({
   codexConfigPath = getDefaultCodexConfigPath(),
   launcherBinDir = getDefaultWindowsLauncherBinDir(),
   manifestPath = getDefaultInstallationManifestPath(),
-  serverName = "multiagentbrain",
+  serverName = "mimir",
   pathValue = process.env.PATH ?? ""
 }) {
   const cliWrapperPath = getCliWrapperPath(repoRoot);
   const mcpWrapperPath = getMcpWrapperPath(repoRoot);
-  const launcherFiles = ["multiagentbrain.cmd", "mab.cmd"].map((fileName) => ({
+  const launcherFiles = COMPATIBILITY_LAUNCHER_NAMES.map((name) => `${name}.cmd`).map((fileName) => ({
     fileName,
     path: path.join(launcherBinDir, fileName),
     exists: existsSync(path.join(launcherBinDir, fileName))
@@ -280,7 +302,7 @@ export function evaluateDefaultAccess({
 
   if (!launchersInstalled || !launchersOnPath) {
     report.recommendations.push(
-      "Run install-multiagentbrain-launchers.mjs or install-default-access.mjs and ensure the launcher bin directory is on PATH."
+      "Run install-mimir-launchers.mjs or install-default-access.mjs and ensure the launcher bin directory is on PATH."
     );
   }
 
@@ -309,7 +331,7 @@ export function ensureBuiltEntrypoint(repoRoot, entrypointPath) {
 
   if (build.status !== 0 || !existsSync(entrypointPath)) {
     throw new Error(
-      `Failed to build MultiAgentBrain entrypoint at ${entrypointPath}.`
+      `Failed to build mimir entrypoint at ${entrypointPath}.`
     );
   }
 }

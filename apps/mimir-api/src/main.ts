@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
 import process from "node:process";
-import { createBrainApiServer } from "./server.js";
+import { createMimirApiServer } from "./server.js";
 
 async function main(): Promise<void> {
-  const api = createBrainApiServer();
+  const api = createMimirApiServer();
   await api.listen();
 
   process.stdout.write(
-    `brain-api listening on http://${api.env.apiHost}:${api.env.apiPort}\n`
+    `mimir API listening on http://${api.env.apiHost}:${api.env.apiPort}\n`
   );
 
   const shutdown = async () => {

@@ -4,7 +4,7 @@ import type {
   GetDecisionSummaryRequest,
   GetDecisionSummaryResponse,
   ServiceResult
-} from "@multi-agent-brain/contracts";
+} from "@mimir/contracts";
 
 type DecisionSummaryErrorCode = "summary_failed";
 
@@ -21,7 +21,7 @@ export class DecisionSummaryService {
       actor: request.actor,
       query: request.topic,
       budget: request.budget,
-      corpusIds: ["context_brain"],
+      corpusIds: ["mimisbrunnr"],
       intentHint: "decision_lookup",
       noteTypePriority: ["decision", "constraint", "architecture", "reference", "policy"],
       includeSuperseded: false,

@@ -5,7 +5,7 @@ import type {
   ContextRepresentationRecord,
   ContextRepresentationStore
 } from "../ports/context-representation-store.js";
-import type { ServiceResult } from "@multi-agent-brain/contracts";
+import type { ServiceResult } from "@mimir/contracts";
 
 export interface ContextRepresentationSet {
   noteId: string;

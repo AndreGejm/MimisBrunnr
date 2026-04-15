@@ -1,15 +1,15 @@
 services:
-  brain-api:
+  mimir-api:
     build:
       context: ..
-      dockerfile: docker/brain-api.Dockerfile
+      dockerfile: docker/mimir-api.Dockerfile
     environment:
       MAB_NODE_ENV: development
       MAB_VAULT_ROOT: /data/vault/canonical
       MAB_STAGING_ROOT: /data/vault/staging
-      MAB_SQLITE_PATH: /data/state/multi-agent-brain.sqlite
+      MAB_SQLITE_PATH: /data/state/mimisbrunnr.sqlite
       MAB_QDRANT_URL: http://qdrant:6333
-      MAB_QDRANT_COLLECTION: context_brain_chunks
+      MAB_QDRANT_COLLECTION: mimisbrunnr_chunks
       MAB_PROVIDER_DOCKER_OLLAMA_BASE_URL: http://model-runner.docker.internal:12434
       MAB_OLLAMA_BASE_URL: http://model-runner.docker.internal:12434
       MAB_OLLAMA_EMBEDDING_MODEL: docker.io/ai/qwen3-embedding:0.6B-F16
@@ -23,10 +23,10 @@ services:
       MAB_ROLE_CODING_PRIMARY_MODEL: qwen3-coder
       MAB_ROLE_CODING_PRIMARY_TEMPERATURE: 0
       MAB_ROLE_CODING_PRIMARY_SEED: 42
-      MAB_ROLE_BRAIN_PRIMARY_PROVIDER: docker_ollama
-      MAB_ROLE_BRAIN_PRIMARY_MODEL: qwen3:4B-F16
-      MAB_ROLE_BRAIN_PRIMARY_TEMPERATURE: 0
-      MAB_ROLE_BRAIN_PRIMARY_SEED: 42
+      MAB_ROLE_MIMISBRUNNR_PRIMARY_PROVIDER: docker_ollama
+      MAB_ROLE_MIMISBRUNNR_PRIMARY_MODEL: qwen3:4B-F16
+      MAB_ROLE_MIMISBRUNNR_PRIMARY_TEMPERATURE: 0
+      MAB_ROLE_MIMISBRUNNR_PRIMARY_SEED: 42
       MAB_ROLE_EMBEDDING_PRIMARY_PROVIDER: docker_ollama
       MAB_ROLE_EMBEDDING_PRIMARY_MODEL: docker.io/ai/qwen3-embedding:0.6B-F16
       MAB_ROLE_RERANKER_PRIMARY_PROVIDER: docker_ollama
@@ -43,9 +43,9 @@ services:
       - "model-runner.docker.internal:host-gateway"
       - "host.docker.internal:host-gateway"
     volumes:
-      - mab_canonical_vault:/data/vault/canonical
-      - mab_staging_vault:/data/vault/staging
-      - mab_state:/data/state
+      - mimir_canonical_vault:/data/vault/canonical
+      - mimir_staging_vault:/data/vault/staging
+      - mimir_state:/data/state
     depends_on:
       - qdrant
     healthcheck:
@@ -66,10 +66,10 @@ services:
     ports:
       - "6333:6333"
     volumes:
-      - mab_qdrant_storage:/qdrant/storage
+      - mimir_qdrant_storage:/qdrant/storage
 
 volumes:
-  mab_canonical_vault:
-  mab_staging_vault:
-  mab_state:
-  mab_qdrant_storage:
+  mimir_canonical_vault:
+  mimir_staging_vault:
+  mimir_state:
+  mimir_qdrant_storage:

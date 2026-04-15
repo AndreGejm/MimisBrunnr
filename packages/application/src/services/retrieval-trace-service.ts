@@ -1,9 +1,9 @@
-import type { RetrievalTraceRef } from "@multi-agent-brain/contracts";
+import type { RetrievalTraceRef } from "@mimir/contracts";
 import type {
   ContextPacketSource,
   QueryIntent,
   RetrievalTraceStrategy
-} from "@multi-agent-brain/domain";
+} from "@mimir/domain";
 
 export interface BuildRetrievalTraceInput {
   intent: QueryIntent;

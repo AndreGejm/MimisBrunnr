@@ -1,6 +1,6 @@
 # MCP Rollout And Go-Live Gates
 
-This document defines the rollout path for using Multi Agent Brain as an MCP tool across workspaces.
+This document defines the rollout path for using mimir as an MCP tool across workspaces.
 
 It answers two questions:
 

@@ -1,4 +1,4 @@
-import type { ChunkId, NoteId } from "@multi-agent-brain/domain";
+import type { ChunkId, NoteId } from "@mimir/domain";
 
 export interface ProvenanceRef {
   noteId: NoteId;

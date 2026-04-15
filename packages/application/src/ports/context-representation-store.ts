@@ -1,4 +1,4 @@
-import type { NoteId } from "@multi-agent-brain/domain";
+import type { NoteId } from "@mimir/domain";
 
 export type ContextRepresentationLayer = "L0" | "L1";
 

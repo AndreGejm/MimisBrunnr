@@ -5,7 +5,7 @@ import type {
   SessionArchiveService,
   StagingDraftService,
   TemporalRefreshService
-} from "@multi-agent-brain/application";
+} from "@mimir/application";
 import type {
   CreateSessionArchiveRequest,
   CreateRefreshDraftBatchRequest,
@@ -16,9 +16,9 @@ import type {
   SearchSessionArchivesRequest,
   ValidateNoteRequest,
   ValidateNoteResponse
-} from "@multi-agent-brain/contracts";
+} from "@mimir/contracts";
 
-export class BrainMemoryController {
+export class MimisbrunnrMemoryController {
   constructor(
     private readonly stagingDraftService: StagingDraftService,
     private readonly noteValidationService: NoteValidationService,

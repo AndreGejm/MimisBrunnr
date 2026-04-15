@@ -1,6 +1,6 @@
 import type { ActorContext } from "../common/actor-context.js";
 import type { ContextBudget } from "../common/context-budget.js";
-import type { CorpusId } from "@multi-agent-brain/domain";
+import type { CorpusId } from "@mimir/domain";
 
 export type CodingTaskType =
   | "triage"

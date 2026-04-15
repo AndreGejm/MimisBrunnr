@@ -1,7 +1,7 @@
 import {
   CONTEXT_REPRESENTATION_LAYERS,
   type ContextRepresentationLayer
-} from "@multi-agent-brain/domain";
+} from "@mimir/domain";
 
 export interface ContextRepresentationRef {
   nodeUri: string;

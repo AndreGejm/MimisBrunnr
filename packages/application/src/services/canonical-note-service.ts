@@ -4,8 +4,8 @@ import type {
   CanonicalNoteRepository
 } from "../ports/canonical-note-repository.js";
 import type { MetadataControlStore } from "../ports/metadata-control-store.js";
-import type { ControlledTag, CorpusId, NoteId } from "@multi-agent-brain/domain";
-import type { ServiceResult } from "@multi-agent-brain/contracts";
+import type { ControlledTag, CorpusId, NoteId } from "@mimir/domain";
+import type { ServiceResult } from "@mimir/contracts";
 
 type CanonicalNoteErrorCode = "not_found" | "write_failed";
 
@@ -129,12 +129,12 @@ export class CanonicalNoteService {
   prepareCurrentStateSnapshot(
     note: CanonicalNoteRecord
   ): ServiceResult<CanonicalNoteRecord, CanonicalNoteErrorCode> {
-    if (note.corpusId !== "context_brain" || !note.frontmatter.currentState) {
+    if (note.corpusId !== "mimisbrunnr" || !note.frontmatter.currentState) {
       return {
         ok: false,
         error: {
           code: "write_failed",
-          message: "Current-state snapshots can only be generated for context_brain current-state notes."
+          message: "Current-state snapshots can only be generated for mimisbrunnr current-state notes."
         }
       };
     }

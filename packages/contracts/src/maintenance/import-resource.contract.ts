@@ -1,5 +1,5 @@
 import type { ActorContext } from "../common/actor-context.js";
-import type { ImportJob, NoteId } from "@multi-agent-brain/domain";
+import type { ImportJob, NoteId } from "@mimir/domain";
 
 export interface ImportResourceRequest {
   actor: ActorContext;

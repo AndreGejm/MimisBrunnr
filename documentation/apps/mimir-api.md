@@ -1,11 +1,11 @@
-# brain-api
+# mimir-api
 
 HTTP adapter over the shared runtime container.
 
 ## Entrypoints
 
-- `apps/brain-api/src/main.ts`
-- `apps/brain-api/src/server.ts`
+- `apps/mimir-api/src/main.ts`
+- `apps/mimir-api/src/server.ts`
 
 ## Routes
 
@@ -47,7 +47,7 @@ HTTP adapter over the shared runtime container.
 ## Behavior
 
 - validates JSON request bodies through shared transport validation
-- injects actor defaults from body and `x-brain-*` headers
+- injects actor defaults from body and `x-mimir-*` headers
 - delegates into the shared orchestrator or shared services
 - exposes liveness and readiness health reports
 - maps service/auth/validation failures to HTTP status codes
@@ -68,7 +68,7 @@ pnpm api
 
 ### Verified facts
 
-- This README is based on `apps/brain-api/src/server.ts`
+- This README is based on `apps/mimir-api/src/server.ts`
 
 ### Assumptions
 

@@ -6,6 +6,7 @@ import process from "node:process";
 
 import {
   buildInstallationManifest,
+  COMPATIBILITY_LAUNCHER_NAMES,
   evaluateDefaultAccess,
   getCliWrapperPath,
   getDefaultCodexConfigPath,
@@ -25,7 +26,7 @@ function parseArgs(argv) {
     dryRun: false,
     manifestPath: getDefaultInstallationManifestPath(),
     repoRoot: getRepoRootFromScript(import.meta.url),
-    serverName: "multiagentbrain"
+    serverName: "mimir"
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -85,16 +86,11 @@ const updatedConfig = upsertCodexMcpServerBlock(
   process.execPath,
   [mcpWrapperPath]
 );
-const launchers = [
-  {
-    fileName: "multiagentbrain.cmd",
-    content: renderWindowsCmdShim(process.execPath, cliWrapperPath)
-  },
-  {
-    fileName: "mab.cmd",
-    content: renderWindowsCmdShim(process.execPath, cliWrapperPath)
-  }
-];
+const launcherNames = COMPATIBILITY_LAUNCHER_NAMES;
+const launchers = launcherNames.map((launcherName) => ({
+  fileName: `${launcherName}.cmd`,
+  content: renderWindowsCmdShim(process.execPath, cliWrapperPath)
+}));
 const manifest = buildInstallationManifest({
   repoRoot: options.repoRoot,
   manifestPath: options.manifestPath,

@@ -20,7 +20,7 @@ function parseArgs(argv) {
     configPath: getDefaultCodexConfigPath(),
     dryRun: false,
     manifestPath: getDefaultInstallationManifestPath(),
-    serverName: "multiagentbrain"
+    serverName: "mimir"
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -73,7 +73,7 @@ const manifest = buildInstallationManifest({
   manifestPath: options.manifestPath,
   codexConfigPath: options.configPath,
   launcherBinDir: getDefaultWindowsLauncherBinDir(),
-  launcherNames: ["multiagentbrain", "mab"],
+  launcherNames: ["mimir"],
   serverName: options.serverName
 });
 

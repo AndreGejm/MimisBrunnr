@@ -1,4 +1,4 @@
-import type { LocalAgentTraceRecord } from "@multi-agent-brain/domain";
+import type { LocalAgentTraceRecord } from "@mimir/domain";
 import type { ActorContext } from "../common/actor-context.js";
 
 export interface ListAgentTracesRequest {

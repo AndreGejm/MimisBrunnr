@@ -15,45 +15,45 @@ importers:
         specifier: ^5.8.3
         version: 5.9.3
 
-  apps/brain-api:
+  apps/mimir-api:
     dependencies:
-      '@multi-agent-brain/contracts':
+      '@mimir/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@multi-agent-brain/infrastructure':
+      '@mimir/infrastructure':
         specifier: workspace:*
         version: link:../../packages/infrastructure
 
-  apps/brain-cli:
+  apps/mimir-cli:
     dependencies:
-      '@multi-agent-brain/contracts':
+      '@mimir/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@multi-agent-brain/infrastructure':
+      '@mimir/infrastructure':
         specifier: workspace:*
         version: link:../../packages/infrastructure
 
-  apps/brain-mcp:
+  apps/mimir-mcp:
     dependencies:
-      '@multi-agent-brain/contracts':
+      '@mimir/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@multi-agent-brain/infrastructure':
+      '@mimir/infrastructure':
         specifier: workspace:*
         version: link:../../packages/infrastructure
 
   packages/application:
     dependencies:
-      '@multi-agent-brain/contracts':
+      '@mimir/contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@multi-agent-brain/domain':
+      '@mimir/domain':
         specifier: workspace:*
         version: link:../domain
 
   packages/contracts:
     dependencies:
-      '@multi-agent-brain/domain':
+      '@mimir/domain':
         specifier: workspace:*
         version: link:../domain
 
@@ -61,28 +61,28 @@ importers:
 
   packages/infrastructure:
     dependencies:
-      '@multi-agent-brain/application':
+      '@mimir/application':
         specifier: workspace:*
         version: link:../application
-      '@multi-agent-brain/contracts':
+      '@mimir/contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@multi-agent-brain/domain':
+      '@mimir/domain':
         specifier: workspace:*
         version: link:../domain
-      '@multi-agent-brain/orchestration':
+      '@mimir/orchestration':
         specifier: workspace:*
         version: link:../orchestration
 
   packages/orchestration:
     dependencies:
-      '@multi-agent-brain/application':
+      '@mimir/application':
         specifier: workspace:*
         version: link:../application
-      '@multi-agent-brain/contracts':
+      '@mimir/contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@multi-agent-brain/domain':
+      '@mimir/domain':
         specifier: workspace:*
         version: link:../domain
 

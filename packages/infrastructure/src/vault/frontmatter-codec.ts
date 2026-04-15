@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { NoteFrontmatter } from "@multi-agent-brain/domain";
+import type { NoteFrontmatter } from "@mimir/domain";
 
 const FRONTMATTER_KEYS: (keyof NoteFrontmatter)[] = [
   "noteId",

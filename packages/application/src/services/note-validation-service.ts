@@ -3,12 +3,12 @@ import type {
   CorpusId,
   NoteFrontmatter,
   NoteType
-} from "@multi-agent-brain/domain";
+} from "@mimir/domain";
 import type {
   NoteValidationIssue,
   ValidateNoteRequest,
   ValidateNoteResponse
-} from "@multi-agent-brain/contracts";
+} from "@mimir/contracts";
 
 type ValidationSeverity = NoteValidationIssue["severity"];
 
@@ -44,7 +44,7 @@ const CONTROLLED_TAG_REGISTRY = new Set<ControlledTag>([
   "artifact/qdrant",
   "artifact/sqlite",
   "artifact/vault",
-  "project/multi-agent-brain",
+  "project/mimir",
   "project/zengram",
   "risk/contradiction",
   "risk/duplicate-memory",
@@ -204,7 +204,7 @@ export class NoteValidationService {
       }
 
       if (normalizedPath.startsWith("general_notes/current-state/")) {
-        violations.push(issue("notePath", "Current-state snapshot notes must live in the context_brain corpus.", "error"));
+        violations.push(issue("notePath", "Current-state snapshot notes must live in the mimisbrunnr corpus.", "error"));
       }
     }
   }

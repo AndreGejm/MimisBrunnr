@@ -6,9 +6,9 @@ These are the current high-value invariants enforced or strongly implied by trac
 
 The three tracked transport adapters should remain shells over shared services and orchestration:
 
-- `apps/brain-api`
-- `apps/brain-cli`
-- `apps/brain-mcp`
+- `apps/mimir-api`
+- `apps/mimir-cli`
+- `apps/mimir-mcp`
 
 They currently handle:
 

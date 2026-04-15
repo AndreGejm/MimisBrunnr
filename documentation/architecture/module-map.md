@@ -11,9 +11,9 @@ This is the current package/module map based on tracked manifests and imports.
 | `packages/application` | Business services and port interfaces | `packages/application/src/index.ts` | orchestration, infrastructure | `packages/contracts`, `packages/domain` | high |
 | `packages/orchestration` | Command routing, auth, controllers, model-role resolution | `packages/orchestration/src/index.ts` | infrastructure | `packages/application`, `packages/contracts`, `packages/domain` | high |
 | `packages/infrastructure` | Runtime bootstrapping, adapters, providers, health, env loading | `packages/infrastructure/src/index.ts` | apps | `packages/application`, `packages/contracts`, `packages/domain`, `packages/orchestration` | high |
-| `apps/brain-api` | HTTP adapter | `apps/brain-api/src/server.ts` | users, operators, tests | `@multi-agent-brain/contracts`, `@multi-agent-brain/infrastructure` | high |
-| `apps/brain-cli` | CLI adapter | `apps/brain-cli/src/main.ts` | developers, operators, tests | `@multi-agent-brain/contracts`, `@multi-agent-brain/infrastructure` | high |
-| `apps/brain-mcp` | stdio MCP adapter | `apps/brain-mcp/src/main.ts`, `apps/brain-mcp/src/tool-definitions.ts` | MCP clients, tests | `@multi-agent-brain/contracts`, `@multi-agent-brain/infrastructure` | high |
+| `apps/mimir-api` | HTTP adapter | `apps/mimir-api/src/server.ts` | users, operators, tests | `@mimir/contracts`, `@mimir/infrastructure` | high |
+| `apps/mimir-cli` | CLI adapter | `apps/mimir-cli/src/main.ts` | developers, operators, tests | `@mimir/contracts`, `@mimir/infrastructure` | high |
+| `apps/mimir-mcp` | stdio MCP adapter | `apps/mimir-mcp/src/main.ts`, `apps/mimir-mcp/src/tool-definitions.ts` | MCP clients, tests | `@mimir/contracts`, `@mimir/infrastructure` | high |
 | `runtimes/local_experts` | Vendored Python coding worker | `runtimes/local_experts/bridge.py` | `PythonCodingControllerBridge` | Python-local modules and allowed tool functions | high for coding path only |
 
 ## Shared runtime container

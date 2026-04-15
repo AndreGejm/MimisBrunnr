@@ -1,4 +1,4 @@
-import type { ChunkId, ChunkRecord, CorpusId, NoteId, NoteType } from "@multi-agent-brain/domain";
+import type { ChunkId, ChunkRecord, CorpusId, NoteId, NoteType } from "@mimir/domain";
 
 export interface LexicalSearchHit {
   chunkId: ChunkId;

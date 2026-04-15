@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AuditLog } from "../ports/audit-log.js";
-import type { QueryHistoryRequest, QueryHistoryResponse, ServiceResult } from "@multi-agent-brain/contracts";
-import type { AuditEntry } from "@multi-agent-brain/domain";
+import type { QueryHistoryRequest, QueryHistoryResponse, ServiceResult } from "@mimir/contracts";
+import type { AuditEntry } from "@mimir/domain";
 
 type AuditHistoryErrorCode = "forbidden" | "query_failed" | "write_failed";
 

@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import type { LocalAgentTraceRecord, LocalAgentTraceStore } from "@multi-agent-brain/domain";
+import type { LocalAgentTraceRecord, LocalAgentTraceStore } from "@mimir/domain";
 import {
   acquireSharedSqliteConnection,
   type SharedSqliteConnection

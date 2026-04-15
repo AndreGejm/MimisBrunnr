@@ -2,8 +2,8 @@ import type {
   ChunkRecord,
   PacketType,
   QueryIntent
-} from "@multi-agent-brain/domain";
-import type { ContextCandidate } from "@multi-agent-brain/contracts";
+} from "@mimir/domain";
+import type { ContextCandidate } from "@mimir/contracts";
 
 export interface ScoredChunkCandidate extends ContextCandidate {
   chunk: ChunkRecord;

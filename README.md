@@ -1,8 +1,10 @@
-# Multi Agent Brain
+# mimir
 
-Local-first TypeScript monorepo for governed note memory, bounded retrieval, auth-gated transport adapters, and a vendored Python coding runtime.
+mimir is a local-first TypeScript app and orchestrator for governed AI context, bounded retrieval, auth-gated transport adapters, and a vendored Python coding runtime.
 
-For a first-time user and operator manual covering setup, Docker Desktop, the orchestrator, Hermes-derived local-agent ideas, storing information, validation, review, retrieval, MCP, and troubleshooting, see `documentation/manuals/multiagentbrain-complete-manual.md`.
+mimisbrunnr is the AI context well inside mimir: the durable knowledge store and memory well where information is staged, validated, promoted, persisted, searched, and assembled into context packets. See `documentation/reference/terminology.md` for the canonical naming contract.
+
+For a first-time user and operator manual covering setup, Docker Desktop, the orchestrator, Hermes-derived local-agent ideas, storing information, validation, review, retrieval, MCP, and troubleshooting, see `documentation/manuals/mimir-complete-manual.md`.
 
 Release metadata:
 
@@ -15,7 +17,7 @@ Release metadata:
 The tracked repository currently implements:
 
 - a layered workspace with `packages/domain`, `packages/contracts`, `packages/application`, `packages/orchestration`, and `packages/infrastructure`
-- three transport adapters over the same shared runtime: HTTP (`apps/brain-api`), CLI (`apps/brain-cli`), and stdio MCP (`apps/brain-mcp`)
+- three transport adapters over the same shared mimir runtime: HTTP (`apps/mimir-api`), CLI (`apps/mimir-cli`), and stdio MCP (`apps/mimir-mcp`)
 - filesystem-backed canonical and staging note stores
 - SQLite-backed metadata, audit, issued-token, revocation, session-archive, import-job, namespace, representation, local-agent trace, and tool-output spillover stores
 - SQLite FTS lexical retrieval plus a Qdrant-backed vector adapter
@@ -40,8 +42,8 @@ HTTP / CLI / MCP
 buildServiceContainer()
         |
         +--> ActorAuthorizationPolicy
-        +--> MultiAgentOrchestrator
-        |       +--> BrainDomainController
+        +--> MimirOrchestrator
+        |       +--> MimisbrunnrDomainController
         |       \--> CodingDomainController
         |
         +--> Application services
@@ -104,12 +106,17 @@ workspace commands as `corepack pnpm ...` directly.
 
 Configuration is read from `process.env` by `packages/infrastructure/src/config/env.ts`.
 
+The current technical compatibility prefix is still `MAB_`. Treat `MAB_` as a
+legacy-compatible environment prefix until a dedicated environment migration
+adds and verifies broader `MIMIR_*` aliases. New user-facing prose should say
+mimir for the app/orchestrator and mimisbrunnr for the stored context layer.
+
 Important:
 
 - `.env.example` is reference material only
 - the Node entrypoints do not auto-load `.env`
-- if `MAB_DATA_ROOT` is unset on Windows, host state defaults under `%USERPROFILE%\.multiagentbrain`
-- if `MAB_DATA_ROOT` is unset on non-Windows platforms, host state defaults under `$HOME/.multiagentbrain`
+- if `MAB_DATA_ROOT` is unset on Windows, host state defaults under `%USERPROFILE%\.mimir`
+- if `MAB_DATA_ROOT` is unset on non-Windows platforms, host state defaults under `$HOME/.mimir`
 - `MAB_VAULT_ROOT`, `MAB_STAGING_ROOT`, and `MAB_SQLITE_PATH` can still override the derived paths individually
 
 If you want repo-local development state, set `MAB_VAULT_ROOT`,
@@ -127,9 +134,9 @@ This profile keeps state inside the repository and matches the provider mix used
 MAB_NODE_ENV=development
 MAB_VAULT_ROOT=./vault/canonical
 MAB_STAGING_ROOT=./vault/staging
-MAB_SQLITE_PATH=./state/multi-agent-brain.sqlite
+MAB_SQLITE_PATH=./state/mimisbrunnr.sqlite
 MAB_QDRANT_URL=http://127.0.0.1:6333
-MAB_QDRANT_COLLECTION=context_brain_chunks
+MAB_QDRANT_COLLECTION=mimisbrunnr_chunks
 MAB_EMBEDDING_PROVIDER=hash
 MAB_REASONING_PROVIDER=heuristic
 MAB_DRAFTING_PROVIDER=disabled
@@ -164,19 +171,19 @@ Entrypoints:
 The repository now tracks two Docker runtime shapes:
 
 - `docker/compose.local.yml` for the local HTTP runtime
-- `docker/brain-mcp.Dockerfile` plus `docker/brain-mcp-session-entrypoint.mjs`
+- `docker/mimir-mcp.Dockerfile` plus `docker/mimir-mcp-session-entrypoint.mjs`
   for an on-demand stdio MCP session container
 
 ### What the compose profile starts
 
-- `brain-api`
+- `mimir-api`
 - `qdrant`
 
 ### What it configures
 
 - canonical notes under `/data/vault/canonical`
 - staging drafts under `/data/vault/staging`
-- SQLite state under `/data/state/multi-agent-brain.sqlite`
+- SQLite state under `/data/state/mimisbrunnr.sqlite`
 - Qdrant at `http://qdrant:6333`
 - model-backed providers against `http://model-runner.docker.internal:12434`
 - embedding, reasoning, drafting, and reranking bound to the Docker/Ollama-compatible stack
@@ -211,9 +218,9 @@ Important profile note:
 
 Tracked Docker MCP assets:
 
-- `docker/brain-mcp.Dockerfile`
-- `docker/brain-mcp-session.env.example`
-- `docker/brain-mcp-session.actor-registry.example.json`
+- `docker/mimir-mcp.Dockerfile`
+- `docker/mimir-mcp-session.env.example`
+- `docker/mimir-mcp-session.actor-registry.example.json`
 - `docker/compose.mcp-session.yml`
 - `documentation/operations/docker-mcp-session.md`
 
@@ -227,14 +234,14 @@ Validate the profile before connecting a client:
 
 ```bash
 docker run --rm \
-  --env-file docker/brain-mcp-session.env \
+  --env-file docker/mimir-mcp-session.env \
   --mount type=bind,src=<HOST_CANONICAL_ROOT>,dst=/data/vault/canonical \
   --mount type=bind,src=<HOST_STAGING_ROOT>,dst=/data/vault/staging \
   --mount type=bind,src=<HOST_STATE_ROOT>,dst=/data/state \
   --mount type=bind,src=<HOST_AUTH_CONFIG_ROOT>,dst=/config/auth,readonly \
   --add-host host.docker.internal:host-gateway \
   --add-host model-runner.docker.internal:host-gateway \
-  multi-agent-brain-mcp-session:local \
+  mimir-mcp-session:local \
   --validate-only
 ```
 
@@ -242,14 +249,14 @@ Launch the MCP session:
 
 ```bash
 docker run --rm -i \
-  --env-file docker/brain-mcp-session.env \
+  --env-file docker/mimir-mcp-session.env \
   --mount type=bind,src=<HOST_CANONICAL_ROOT>,dst=/data/vault/canonical \
   --mount type=bind,src=<HOST_STAGING_ROOT>,dst=/data/vault/staging \
   --mount type=bind,src=<HOST_STATE_ROOT>,dst=/data/state \
   --mount type=bind,src=<HOST_AUTH_CONFIG_ROOT>,dst=/config/auth,readonly \
   --add-host host.docker.internal:host-gateway \
   --add-host model-runner.docker.internal:host-gateway \
-  multi-agent-brain-mcp-session:local
+  mimir-mcp-session:local
 ```
 
 This mode is intentionally session-scoped. It keeps canonical, staging, state,
@@ -258,7 +265,7 @@ Qdrant, or the fixed session actor contract are missing.
 
 ## MCP setup
 
-The tracked MCP adapter is a stdio server exposed by `apps/brain-mcp`.
+The tracked MCP adapter is a stdio server exposed by `apps/mimir-mcp`.
 
 ### Local stdio MCP server
 
@@ -281,7 +288,7 @@ If your MCP client accepts a local command, point it at the built server:
 {
   "command": "pnpm",
   "args": ["mcp"],
-  "cwd": "/absolute/path/to/multi-agent-brain"
+  "cwd": "<REPO_ROOT>"
 }
 ```
 
@@ -291,7 +298,7 @@ If your machine does not have a working global `pnpm` shim, use:
 {
   "command": "corepack",
   "args": ["pnpm", "mcp"],
-  "cwd": "/absolute/path/to/multi-agent-brain"
+  "cwd": "<REPO_ROOT>"
 }
 ```
 
@@ -300,8 +307,8 @@ If your client prefers an explicit Node entrypoint after build, use:
 ```json
 {
   "command": "node",
-  "args": ["apps/brain-mcp/dist/main.js"],
-  "cwd": "/absolute/path/to/multi-agent-brain"
+  "args": ["apps/mimir-mcp/dist/main.js"],
+  "cwd": "<REPO_ROOT>"
 }
 ```
 
@@ -312,10 +319,10 @@ always-on background container.
 
 Recommended setup:
 
-1. build `docker/brain-mcp.Dockerfile`
-2. copy `docker/brain-mcp-session.env.example` to `docker/brain-mcp-session.env`
+1. build `docker/mimir-mcp.Dockerfile`
+2. copy `docker/mimir-mcp-session.env.example` to `docker/mimir-mcp-session.env`
 3. mount canonical, staging, state, and config explicitly
-4. run `docker run --rm -i ... multi-agent-brain-mcp-session:local`
+4. run `docker run --rm -i ... mimir-mcp-session:local`
 
 See `documentation/operations/docker-mcp-session.md` for the exact command shape,
 validation step, and MCP client snippet.
@@ -438,8 +445,8 @@ Start here if you are using an automated reviewer or coding agent:
 
 - This README is based on tracked code in `apps/`, `packages/`, `docker/`, `runtimes/`, `tests/`, and `documentation/`
 - Runtime defaults come from `packages/infrastructure/src/config/env.ts`
-- Transport surfaces come from `apps/brain-api/src/server.ts`, `apps/brain-cli/src/main.ts`, and `apps/brain-mcp/src/main.ts`
-- Docker behavior comes from `docker/brain-api.Dockerfile` and `docker/compose.local.yml`
+- Transport surfaces come from `apps/mimir-api/src/server.ts`, `apps/mimir-cli/src/main.ts`, and `apps/mimir-mcp/src/main.ts`
+- Docker behavior comes from `docker/mimir-api.Dockerfile`, `docker/compose.local.yml`, `docker/mimir-mcp.Dockerfile`, `docker/compose.mcp-session.yml`, and `docker/mimir-mcp-session-entrypoint.mjs`
 - Test commands come from the root `package.json`
 
 ### Assumptions
@@ -448,4 +455,4 @@ Start here if you are using an automated reviewer or coding agent:
 
 ### TODO gaps
 
-- If the repo adds a tracked Docker MCP profile, dotenv loading, CI, deployment descriptors, or migration tooling, update this README and the setup/reference docs together
+- If the repo adds dotenv loading, CI, deployment descriptors, migration tooling, or another Docker/MCP runtime shape, update this README and the setup/reference docs together

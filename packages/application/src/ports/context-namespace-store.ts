@@ -2,7 +2,7 @@ import type {
   ContextAuthorityState,
   ContextNode,
   ContextOwnerScope
-} from "@multi-agent-brain/domain";
+} from "@mimir/domain";
 
 export interface ContextNamespaceStore {
   listNodes(input: {

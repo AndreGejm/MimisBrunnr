@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
-import type { LexicalIndex, LexicalSearchHit } from "@multi-agent-brain/application";
-import type { ChunkRecord, CorpusId, NoteId, NoteType } from "@multi-agent-brain/domain";
+import type { LexicalIndex, LexicalSearchHit } from "@mimir/application";
+import type { ChunkRecord, CorpusId, NoteId, NoteType } from "@mimir/domain";
 import {
   acquireSharedSqliteConnection,
   type SharedSqliteConnection

@@ -1,4 +1,4 @@
-import type { ImportOrchestrationService } from "@multi-agent-brain/application";
+import type { ImportOrchestrationService } from "@mimir/application";
 import type {
   AssembleAgentContextRequest,
   AssembleContextPacketRequest,
@@ -15,14 +15,14 @@ import type {
   SearchSessionArchivesRequest,
   ValidateNoteRequest,
   ValidateNoteResponse
-} from "@multi-agent-brain/contracts";
-import type { BrainMemoryController } from "./brain-memory-controller.js";
-import type { BrainRetrievalController } from "./brain-retrieval-controller.js";
+} from "@mimir/contracts";
+import type { MimisbrunnrMemoryController } from "./mimisbrunnr-memory-controller.js";
+import type { MimisbrunnrRetrievalController } from "./mimisbrunnr-retrieval-controller.js";
 
-export class BrainDomainController {
+export class MimisbrunnrDomainController {
   constructor(
-    private readonly retrievalController: BrainRetrievalController,
-    private readonly memoryController: BrainMemoryController,
+    private readonly retrievalController: MimisbrunnrRetrievalController,
+    private readonly memoryController: MimisbrunnrMemoryController,
     private readonly importOrchestrationService: ImportOrchestrationService
   ) {}
 

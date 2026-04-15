@@ -1,5 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
-import type { ActorRole, TransportKind } from "@multi-agent-brain/contracts";
+import type { ActorRole, TransportKind } from "@mimir/contracts";
 import type { OrchestratorCommand } from "../routing/task-family-router.js";
 import type { AdministrativeAction } from "./administrative-action.js";
 

@@ -22,14 +22,14 @@ import type {
   SearchSessionArchivesRequest,
   ShowToolOutputRequest,
   ValidateNoteRequest
-} from "@multi-agent-brain/contracts";
+} from "@mimir/contracts";
 import {
   ActorAuthorizationError,
   buildServiceContainer,
   loadEnvironment,
   TransportValidationError,
   validateTransportRequest
-} from "@multi-agent-brain/infrastructure";
+} from "@mimir/infrastructure";
 import { MCP_TOOL_DEFINITIONS, getToolDefinition } from "./tool-definitions.js";
 
 type JsonRpcId = string | number | null;
@@ -159,7 +159,7 @@ async function handleRequest(request: JsonRpcRequest): Promise<unknown> {
             }
           },
           serverInfo: {
-            name: "multi-agent-brain-mcp",
+            name: "mimir-mcp",
             version: container.env.release.version
           }
         }
@@ -377,7 +377,7 @@ function buildActorContext(
     actorId: input.actorId ?? `${toolName}-mcp`,
     actorRole: input.actorRole ?? defaultRole,
     transport: "mcp",
-    source: input.source ?? "brain-mcp",
+    source: input.source ?? "mimir-mcp",
     requestId: input.requestId ?? randomUUID(),
     initiatedAt: input.initiatedAt ?? now,
     toolName: input.toolName ?? toolName,
@@ -420,7 +420,7 @@ function loadDefaultSessionActor():
     | undefined;
   const authToken = process.env.MAB_MCP_DEFAULT_ACTOR_AUTH_TOKEN?.trim();
   const source =
-    process.env.MAB_MCP_DEFAULT_SOURCE?.trim() || "brain-mcp-session";
+    process.env.MAB_MCP_DEFAULT_SOURCE?.trim() || "mimir-mcp-session";
 
   if (!actorId || !actorRole || !authToken) {
     return undefined;

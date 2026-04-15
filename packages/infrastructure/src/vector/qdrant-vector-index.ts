@@ -2,13 +2,13 @@ import type {
   VectorIndex,
   VectorIndexHealthSnapshot,
   VectorSearchHit
-} from "@multi-agent-brain/application";
+} from "@mimir/application";
 import type {
   ChunkStalenessClass,
   CorpusId,
   NoteId,
   NoteType
-} from "@multi-agent-brain/domain";
+} from "@mimir/domain";
 
 type FetchImplementation = typeof fetch;
 type VectorDistance = "Cosine" | "Dot" | "Euclid";

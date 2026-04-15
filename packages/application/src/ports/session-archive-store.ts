@@ -1,8 +1,8 @@
-import type { SearchSessionArchivesResponse } from "@multi-agent-brain/contracts";
+import type { SearchSessionArchivesResponse } from "@mimir/contracts";
 import type {
   SessionArchive,
   SessionArchiveMessage
-} from "@multi-agent-brain/domain";
+} from "@mimir/domain";
 
 export interface SessionArchiveSearchQuery {
   query: string;

@@ -13,8 +13,8 @@ corepack pnpm api
 
 Entrypoint files:
 
-- `apps/brain-api/src/main.ts`
-- `apps/brain-api/src/server.ts`
+- `apps/mimir-api/src/main.ts`
+- `apps/mimir-api/src/server.ts`
 
 The API listens on `MAB_API_HOST:MAB_API_PORT` and prints the bound address on startup.
 
@@ -27,7 +27,7 @@ corepack pnpm cli -- auth-status
 
 Entrypoint file:
 
-- `apps/brain-cli/src/main.ts`
+- `apps/mimir-cli/src/main.ts`
 
 The CLI is JSON-in / JSON-out for command handlers that accept payloads.
 
@@ -39,8 +39,8 @@ corepack pnpm mcp
 
 Entrypoint files:
 
-- `apps/brain-mcp/src/main.ts`
-- `apps/brain-mcp/src/tool-definitions.ts`
+- `apps/mimir-mcp/src/main.ts`
+- `apps/mimir-mcp/src/tool-definitions.ts`
 
 This is a stdio MCP server that uses Content-Length framing.
 
@@ -55,20 +55,20 @@ docker compose -f docker/compose.local.yml up --build
 
 Tracked runtime assets:
 
-- `docker/brain-api.Dockerfile`
+- `docker/mimir-api.Dockerfile`
 - `docker/compose.local.yml`
 
 ### Docker MCP session
 
 ```bash
-docker run --rm -i ... multi-agent-brain-mcp-session:local
+docker run --rm -i ... mimir-mcp-session:local
 ```
 
 Tracked runtime assets:
 
-- `docker/brain-mcp.Dockerfile`
-- `docker/brain-mcp-session-entrypoint.mjs`
-- `docker/brain-mcp-session.env.example`
+- `docker/mimir-mcp.Dockerfile`
+- `docker/mimir-mcp-session-entrypoint.mjs`
+- `docker/mimir-mcp-session.env.example`
 - `docker/compose.mcp-session.yml`
 - `documentation/operations/docker-mcp-session.md`
 
@@ -77,12 +77,12 @@ Tracked runtime assets:
 All three Node entrypoints build the same shared container through `packages/infrastructure/src/bootstrap/build-service-container.ts`.
 
 The Docker MCP session wrapper validates the environment before launching
-`apps/brain-mcp/dist/main.js`, but it does not replace the MCP server itself.
+`apps/mimir-mcp/dist/main.js`, but it does not replace the MCP server itself.
 
 That shared container wires:
 
 - auth policy
-- orchestrator
+- mimir orchestrator
 - application services
 - filesystem repositories
 - SQLite-backed stores
@@ -131,7 +131,7 @@ Uses the same checks, but Qdrant failure is a fatal readiness issue.
 The Docker MCP session profile does not expose HTTP health endpoints.
 
 Readiness is defined by successful preflight validation in
-`docker/brain-mcp-session-entrypoint.mjs`.
+`docker/mimir-mcp-session-entrypoint.mjs`.
 
 Validation covers:
 

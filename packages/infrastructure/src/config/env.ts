@@ -7,7 +7,7 @@ import type {
   ActorRegistryEntry,
   ModelRole,
   ModelRoleBinding
-} from "@multi-agent-brain/orchestration";
+} from "@mimir/orchestration";
 import {
   loadReleaseMetadata,
   type ReleaseMetadata
@@ -16,7 +16,7 @@ import {
 const DEFAULT_WORKSPACE_ROOT = fileURLToPath(
   new URL("../../../../", import.meta.url)
 );
-const DEFAULT_DATA_ROOT_NAME = ".multiagentbrain";
+const DEFAULT_DATA_ROOT_NAME = ".mimir";
 
 export interface AppEnvironment {
   nodeEnv: "development" | "test" | "production";
@@ -107,9 +107,9 @@ export function loadEnvironment(env: NodeJS.ProcessEnv = process.env): AppEnviro
     vaultRoot: env.MAB_VAULT_ROOT ?? path.join(dataRoot, "vault", "canonical"),
     stagingRoot: env.MAB_STAGING_ROOT ?? path.join(dataRoot, "vault", "staging"),
     sqlitePath:
-      env.MAB_SQLITE_PATH ?? path.join(dataRoot, "state", "multi-agent-brain.sqlite"),
+      env.MAB_SQLITE_PATH ?? path.join(dataRoot, "state", "mimisbrunnr.sqlite"),
     qdrantUrl: env.MAB_QDRANT_URL ?? "http://127.0.0.1:6333",
-    qdrantCollection: env.MAB_QDRANT_COLLECTION ?? "context_brain_chunks",
+    qdrantCollection: env.MAB_QDRANT_COLLECTION ?? "mimisbrunnr_chunks",
     qdrantSoftFail: parseBoolean(env.MAB_QDRANT_SOFT_FAIL, true),
     ollamaBaseUrl: env.MAB_OLLAMA_BASE_URL ?? "http://127.0.0.1:12434",
     ollamaEmbeddingModel: env.MAB_OLLAMA_EMBEDDING_MODEL ?? "docker.io/ai/qwen3-embedding:0.6B-F16",
@@ -198,9 +198,9 @@ export function normalizeEnvironment(input: Partial<AppEnvironment>): AppEnviron
     vaultRoot: input.vaultRoot ?? path.join(dataRoot, "vault", "canonical"),
     stagingRoot: input.stagingRoot ?? path.join(dataRoot, "vault", "staging"),
     sqlitePath:
-      input.sqlitePath ?? path.join(dataRoot, "state", "multi-agent-brain.sqlite"),
+      input.sqlitePath ?? path.join(dataRoot, "state", "mimisbrunnr.sqlite"),
     qdrantUrl: input.qdrantUrl ?? "http://127.0.0.1:6333",
-    qdrantCollection: input.qdrantCollection ?? "context_brain_chunks",
+    qdrantCollection: input.qdrantCollection ?? "mimisbrunnr_chunks",
     qdrantSoftFail: input.qdrantSoftFail ?? true,
     ollamaBaseUrl: input.ollamaBaseUrl ?? providerEndpoints.dockerOllamaBaseUrl,
     ollamaEmbeddingModel:
@@ -253,10 +253,10 @@ export function normalizeEnvironment(input: Partial<AppEnvironment>): AppEnviron
     baseEnvironment.roleBindings.embedding_primary.modelId ??
     baseEnvironment.ollamaEmbeddingModel;
   baseEnvironment.ollamaReasoningModel =
-    baseEnvironment.roleBindings.brain_primary.modelId ??
+    baseEnvironment.roleBindings.mimisbrunnr_primary.modelId ??
     baseEnvironment.ollamaReasoningModel;
   baseEnvironment.ollamaDraftingModel =
-    baseEnvironment.roleBindings.brain_primary.modelId ??
+    baseEnvironment.roleBindings.mimisbrunnr_primary.modelId ??
     baseEnvironment.ollamaDraftingModel;
 
   return baseEnvironment;
@@ -307,7 +307,9 @@ function buildRoleBindingsFromProcessEnvironment(
 
   return mergeRoleBindings(legacy, {
     coding_primary: buildRoleBindingOverride(env, "coding_primary"),
-    brain_primary: buildRoleBindingOverride(env, "brain_primary"),
+    mimisbrunnr_primary: buildRoleBindingOverride(env, "mimisbrunnr_primary", [
+      "MAB_ROLE_MIMIR_BRUNNR_PRIMARY"
+    ]),
     embedding_primary: buildRoleBindingOverride(env, "embedding_primary"),
     reranker_primary: buildRoleBindingOverride(env, "reranker_primary"),
     paid_escalation: buildRoleBindingOverride(env, "paid_escalation")
@@ -316,16 +318,22 @@ function buildRoleBindingsFromProcessEnvironment(
 
 function buildRoleBindingOverride(
   env: NodeJS.ProcessEnv,
-  role: ModelRole
+  role: ModelRole,
+  aliasPrefixes: string[] = []
 ): ModelRoleBinding | undefined {
   const prefix = `MAB_ROLE_${role.toUpperCase()}`;
-  const providerId = env[`${prefix}_PROVIDER`];
-  const modelId = env[`${prefix}_MODEL`];
-  const temperature = parseOptionalNumber(env[`${prefix}_TEMPERATURE`]);
-  const seed = parseOptionalNumber(env[`${prefix}_SEED`]);
-  const timeoutMs = parseOptionalNumber(env[`${prefix}_TIMEOUT_MS`]);
-  const maxInputChars = parseOptionalNumber(env[`${prefix}_MAX_INPUT_CHARS`]);
-  const maxOutputTokens = parseOptionalNumber(env[`${prefix}_MAX_OUTPUT_TOKENS`]);
+  const readValue = (suffix: string): string | undefined =>
+    coalesceString(
+      env[`${prefix}_${suffix}`],
+      ...aliasPrefixes.map((aliasPrefix) => env[`${aliasPrefix}_${suffix}`])
+    );
+  const providerId = readValue("PROVIDER");
+  const modelId = readValue("MODEL");
+  const temperature = parseOptionalNumber(readValue("TEMPERATURE"));
+  const seed = parseOptionalNumber(readValue("SEED"));
+  const timeoutMs = parseOptionalNumber(readValue("TIMEOUT_MS"));
+  const maxInputChars = parseOptionalNumber(readValue("MAX_INPUT_CHARS"));
+  const maxOutputTokens = parseOptionalNumber(readValue("MAX_OUTPUT_TOKENS"));
 
   if (
     !providerId &&
@@ -376,7 +384,7 @@ function buildRoleBindingsFromLegacy(
         ? "internal_heuristic"
         : "docker_ollama";
 
-  const brainModel = coalesceString(
+  const mimisbrunnrModel = coalesceString(
     input.ollamaReasoningModel,
     input.ollamaDraftingModel,
     "qwen3:4B-F16"
@@ -393,10 +401,10 @@ function buildRoleBindingsFromLegacy(
       maxInputChars: 30_000,
       maxOutputTokens: 4_000
     },
-    brain_primary: {
-      role: "brain_primary",
+    mimisbrunnr_primary: {
+      role: "mimisbrunnr_primary",
       providerId: draftingProviderId !== "disabled" ? draftingProviderId : reasoningProviderId,
-      modelId: brainModel,
+      modelId: mimisbrunnrModel,
       temperature: 0,
       seed: 42,
       timeoutMs: 30_000,

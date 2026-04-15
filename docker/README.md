@@ -4,12 +4,12 @@ Tracked container assets for the local HTTP runtime live here.
 
 ## Files
 
-- `docker/brain-api.Dockerfile`
+- `docker/mimir-api.Dockerfile`
 - `docker/compose.local.yml`
 
 ## Current behavior
 
-`docker/brain-api.Dockerfile`:
+`docker/mimir-api.Dockerfile`:
 
 - builds the workspace with Node 22
 - runs `pnpm install --frozen-lockfile`
@@ -18,7 +18,7 @@ Tracked container assets for the local HTTP runtime live here.
 
 `docker/compose.local.yml`:
 
-- runs `brain-api`
+- runs `mimir-api`
 - runs `qdrant`
 - maps the API to `8080:8080`
 - binds persistent named volumes for canonical vault, staging vault, SQLite state, and Qdrant storage
@@ -44,7 +44,7 @@ docker compose -f docker/compose.local.yml up --build
 
 ### Verified facts
 
-- This README is based on `docker/brain-api.Dockerfile` and `docker/compose.local.yml`
+- This README is based on `docker/mimir-api.Dockerfile` and `docker/compose.local.yml`
 
 ### Assumptions
 

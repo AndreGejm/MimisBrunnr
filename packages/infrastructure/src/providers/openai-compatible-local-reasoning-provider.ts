@@ -1,10 +1,10 @@
-import { withBoundedProviderRetry } from "@multi-agent-brain/application";
-import type { LocalReasoningProvider } from "@multi-agent-brain/application";
+import { withBoundedProviderRetry } from "@mimir/application";
+import type { LocalReasoningProvider } from "@mimir/application";
 import type {
   AnswerabilityDisposition,
   QueryIntent
-} from "@multi-agent-brain/domain";
-import type { ContextCandidate } from "@multi-agent-brain/contracts";
+} from "@mimir/domain";
+import type { ContextCandidate } from "@mimir/contracts";
 
 interface OpenAiCompatibleLocalReasoningProviderOptions {
   baseUrl: string;

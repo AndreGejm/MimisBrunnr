@@ -3,13 +3,13 @@ import type {
   AssembleContextPacketRequest,
   AssembleContextPacketResponse,
   ContextCandidate
-} from "@multi-agent-brain/contracts";
+} from "@mimir/contracts";
 import type {
   AnswerConfidence,
   AnswerabilityDisposition,
   ContextPacket,
   QueryIntent
-} from "@multi-agent-brain/domain";
+} from "@mimir/domain";
 import { packetTypeForIntent } from "./retrieval-candidate.js";
 
 export class ContextPacketService {

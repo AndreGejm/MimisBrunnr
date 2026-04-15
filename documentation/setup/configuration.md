@@ -16,12 +16,12 @@ In order of practical use:
 
 Default values from `packages/infrastructure/src/config/env.ts`:
 
-- data root: `%USERPROFILE%\.multiagentbrain` on Windows or `$HOME/.multiagentbrain` elsewhere
+- data root: `%USERPROFILE%\.mimir` on Windows or `$HOME/.mimir` elsewhere
 - canonical vault root: `$MAB_DATA_ROOT/vault/canonical`
 - staging root: `$MAB_DATA_ROOT/vault/staging`
-- SQLite path: `$MAB_DATA_ROOT/state/multi-agent-brain.sqlite`
+- SQLite path: `$MAB_DATA_ROOT/state/mimisbrunnr.sqlite`
 - Qdrant URL: `http://127.0.0.1:6333`
-- Qdrant collection: `context_brain_chunks`
+- Qdrant collection: `mimisbrunnr_chunks`
 
 If you want repo-local state, override `MAB_VAULT_ROOT`, `MAB_STAGING_ROOT`,
 and `MAB_SQLITE_PATH`.
@@ -48,7 +48,7 @@ The compose profile overrides these generic defaults and forces a model-backed c
 The runtime resolves five named model roles:
 
 - `coding_primary`
-- `brain_primary`
+- `mimisbrunnr_primary`
 - `embedding_primary`
 - `reranker_primary`
 - `paid_escalation`
@@ -66,7 +66,7 @@ Legacy/default bindings are generated in `buildRoleBindingsFromLegacy()` and can
 Examples:
 
 - `MAB_ROLE_CODING_PRIMARY_MODEL=qwen3-coder`
-- `MAB_ROLE_BRAIN_PRIMARY_PROVIDER=docker_ollama`
+- `MAB_ROLE_MIMISBRUNNR_PRIMARY_PROVIDER=docker_ollama`
 - `MAB_ROLE_PAID_ESCALATION_PROVIDER=paid_openai_compat`
 
 ## Auth configuration

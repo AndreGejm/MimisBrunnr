@@ -11,15 +11,15 @@ from tkinter import messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
 
-class BrainCliError(RuntimeError):
+class MimirCliError(RuntimeError):
     pass
 
 
-class BrainReviewClient:
+class MimirReviewClient:
     def __init__(self, repo_root: Path, node_executable: str = "node") -> None:
         self.repo_root = repo_root
         self.node_executable = node_executable
-        self.cli_entry = repo_root / "apps" / "brain-cli" / "dist" / "main.js"
+        self.cli_entry = repo_root / "apps" / "mimir-cli" / "dist" / "main.js"
 
     def list_review_queue(self) -> list[dict]:
         response = self._run_cli("list-review-queue", {})
@@ -39,8 +39,8 @@ class BrainReviewClient:
 
     def _run_cli(self, command: str, payload: dict) -> dict:
         if not self.cli_entry.exists():
-            raise BrainCliError(
-                f"Could not find built brain-cli entrypoint at {self.cli_entry}. "
+            raise MimirCliError(
+                f"Could not find built mimir-cli entrypoint at {self.cli_entry}. "
                 "Run `corepack pnpm build` in the repo first."
             )
 
@@ -60,7 +60,7 @@ class BrainReviewClient:
                     check=False,
                 )
             except FileNotFoundError as error:
-                raise BrainCliError(
+                raise MimirCliError(
                     f"Could not find Node executable `{self.node_executable}`. "
                     "Set MAB_REVIEW_NODE_EXECUTABLE or install Node on PATH."
                 ) from error
@@ -73,23 +73,23 @@ class BrainReviewClient:
         try:
             response = json.loads(stdout) if stdout else {}
         except json.JSONDecodeError as error:
-            raise BrainCliError(
-                f"Failed to parse brain-cli output for {command}: {error}\n{stdout or stderr}"
+            raise MimirCliError(
+                f"Failed to parse mimir-cli output for {command}: {error}\n{stdout or stderr}"
             ) from error
 
         if completed.returncode != 0 or response.get("ok") is False:
             error = response.get("error", {})
             message = error.get("message") or stderr or f"{command} failed."
-            raise BrainCliError(message)
+            raise MimirCliError(message)
 
         return response
 
 
 class ReviewApp(tk.Tk):
-    def __init__(self, client: BrainReviewClient) -> None:
+    def __init__(self, client: MimirReviewClient) -> None:
         super().__init__()
         self.client = client
-        self.title("Multi-Agent-Brain Review Queue")
+        self.title("mimir Review Queue")
         self.geometry("1120x760")
         self.minsize(920, 640)
 
@@ -176,7 +176,7 @@ class ReviewApp(tk.Tk):
 
         try:
             self.queue = self.client.list_review_queue()
-        except BrainCliError as error:
+        except MimirCliError as error:
             messagebox.showerror("Review Queue Error", str(error), parent=self)
             self.queue = []
             self.current_index = 0
@@ -215,7 +215,7 @@ class ReviewApp(tk.Tk):
 
         try:
             self.current_note = self.client.read_review_note(draft_note_id)
-        except BrainCliError as error:
+        except MimirCliError as error:
             messagebox.showerror("Review Note Error", str(error), parent=self)
             self.current_note = None
             self._render_empty("Could not read the selected review note.")
@@ -285,7 +285,7 @@ class ReviewApp(tk.Tk):
             else:
                 result = self.client.reject_note(draft_note_id)
                 self._set_status(self._format_action_status("Rejected", draft_note_id, result))
-        except BrainCliError as error:
+        except MimirCliError as error:
             messagebox.showerror(f"{action_label} Error", str(error), parent=self)
             self._set_status(f"{action_label} failed.")
             self._set_busy(False)
@@ -358,7 +358,7 @@ def main() -> None:
         os.environ.get("MAB_REVIEW_REPO_ROOT", str(Path(__file__).resolve().parents[1]))
     )
     node_executable = os.environ.get("MAB_REVIEW_NODE_EXECUTABLE", "node")
-    client = BrainReviewClient(repo_root, node_executable=node_executable)
+    client = MimirReviewClient(repo_root, node_executable=node_executable)
     app = ReviewApp(client)
     app.mainloop()
 

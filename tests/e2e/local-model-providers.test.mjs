@@ -244,12 +244,12 @@ test("ollama reranker provider returns candidates in model-selected order", asyn
         summary: "First candidate",
         scope: "current state",
         qualifiers: [],
-        tags: ["project/multi-agent-brain"],
+        tags: ["project/mimir"],
         stalenessClass: "current",
         provenance: {
           noteId: "note-1",
           chunkId: "chunk-1",
-          notePath: "context_brain/decision/one.md",
+          notePath: "mimisbrunnr/decision/one.md",
           headingPath: ["Context"]
         }
       },
@@ -259,12 +259,12 @@ test("ollama reranker provider returns candidates in model-selected order", asyn
         summary: "Second candidate",
         scope: "current state",
         qualifiers: [],
-        tags: ["project/multi-agent-brain"],
+        tags: ["project/mimir"],
         stalenessClass: "current",
         provenance: {
           noteId: "note-2",
           chunkId: "chunk-2",
-          notePath: "context_brain/decision/two.md",
+          notePath: "mimisbrunnr/decision/two.md",
           headingPath: ["Decision"]
         }
       },
@@ -274,12 +274,12 @@ test("ollama reranker provider returns candidates in model-selected order", asyn
         summary: "Third candidate",
         scope: "current state",
         qualifiers: [],
-        tags: ["project/multi-agent-brain"],
+        tags: ["project/mimir"],
         stalenessClass: "current",
         provenance: {
           noteId: "note-3",
           chunkId: "chunk-3",
-          notePath: "context_brain/decision/three.md",
+          notePath: "mimisbrunnr/decision/three.md",
           headingPath: ["Consequences"]
         }
       }
@@ -292,8 +292,8 @@ test("ollama reranker provider returns candidates in model-selected order", asyn
 });
 
 test("staging draft service uses the drafting provider output before deterministic validation", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-drafting-"));
-  const sqlitePath = path.join(root, "state", "multi-agent-brain.sqlite");
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-drafting-"));
+  const sqlitePath = path.join(root, "state", "mimisbrunnr.sqlite");
   const metadataControlStore = new infrastructure.SqliteMetadataControlStore(sqlitePath);
 
   t.after(async () => {
@@ -319,12 +319,12 @@ test("staging draft service uses the drafting provider output before determinist
           frontmatter: {
             noteId: request.frontmatterOverrides?.noteId ?? randomUUID(),
             title: request.title,
-            project: "multi-agent-brain",
+            project: "mimir",
             type: request.noteType,
             status: "draft",
             updated: new Date().toISOString().slice(0, 10),
             summary: request.sourcePrompt,
-            tags: ["project/multi-agent-brain", "status/draft"],
+            tags: ["project/mimir", "status/draft"],
             scope: "staging",
             corpusId: request.targetCorpus,
             currentState: false
@@ -361,7 +361,7 @@ test("staging draft service uses the drafting provider output before determinist
       requestId: randomUUID(),
       initiatedAt: new Date().toISOString()
     },
-    targetCorpus: "context_brain",
+    targetCorpus: "mimisbrunnr",
     noteType: "decision",
     title: "Local Drafted Decision",
     sourcePrompt: "Create a promoted drafting policy.",

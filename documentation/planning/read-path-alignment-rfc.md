@@ -1,6 +1,6 @@
 # Read-Path Alignment RFC
 
-This document defines the next architectural evolution of Multi Agent Brain after the source-level review against OpenViking.
+This document defines the next architectural evolution of mimir after the source-level review against OpenViking.
 
 The goal is to align the read path with the strongest OpenViking ideas without weakening the existing authority plane.
 
@@ -29,12 +29,12 @@ This RFC does not authorize:
 The architectural review stands:
 
 - OpenViking is the correct inspiration for read-path evolution.
-- Multi Agent Brain remains the stronger authority and governance core.
+- mimisbrunnr remains the stronger authority and governance core.
 - The right move is additive convergence over the current authority plane, not replacement.
 
 ## Inspiration Classification
 
-| Idea From OpenViking | Classification | Interpretation For Multi Agent Brain |
+| Idea From OpenViking | Classification | Interpretation For mimir |
 | --- | --- | --- |
 | Filesystem-native context namespace | adapt carefully | Add a namespace projection over existing authority stores; do not replace them |
 | L0/L1/L2 context layers | adapt carefully | Add derived representations tied to authoritative sources and promotion events |
@@ -112,7 +112,7 @@ Every node in the namespace must expose the following fields.
 | Field | Required | Description |
 | --- | --- | --- |
 | `uri` | yes | Stable namespace URI used across CLI, HTTP, MCP, and audit traces |
-| `ownerScope` | yes | Namespace owner scope such as `context_brain`, `general_notes`, `imports`, `sessions`, or `system` |
+| `ownerScope` | yes | Namespace owner scope such as `mimisbrunnr`, `general_notes`, `imports`, `sessions`, or `system` |
 | `contextKind` | yes | Node kind such as `directory`, `note`, `resource`, `instruction`, `skill_artifact`, `session_archive`, or `extraction_draft` |
 | `authorityState` | yes | One of the six authority states defined in this RFC |
 | `sourceType` | yes | Backing source such as `canonical_note`, `staging_draft`, `import_artifact`, `session_archive`, `derived_projection`, or `external_reference` |
@@ -133,25 +133,25 @@ The freshness payload must include:
 - `freshnessClass`
 - `freshnessReason`
 
-`freshnessClass` must remain compatible with current Multi Agent Brain validity semantics and must not be replaced by generic recency or hotness.
+`freshnessClass` must remain compatible with current mimisbrunnr validity semantics and must not be replaced by generic recency or hotness.
 
 ### Namespace URI Shape
 
 The namespace URI format is:
 
-- `mab://<owner-scope>/<context-kind>/<stable-id>`
+- `mimir://<owner-scope>/<context-kind>/<stable-id>`
 
 Examples:
 
-- `mab://context_brain/note/<note-id>`
-- `mab://general_notes/note/<note-id>`
-- `mab://imports/resource/<import-id>`
-- `mab://sessions/session_archive/<archive-id>`
-- `mab://system/instruction/<instruction-id>`
+- `mimir://mimisbrunnr/note/<note-id>`
+- `mimir://general_notes/note/<note-id>`
+- `mimir://imports/resource/<import-id>`
+- `mimir://sessions/session_archive/<archive-id>`
+- `mimir://system/instruction/<instruction-id>`
 
 Representation layers are not separate authority roots. They are addressed as representations of a base node, for example:
 
-- base node: `mab://context_brain/note/<note-id>`
+- base node: `mimir://mimisbrunnr/note/<note-id>`
 - requested layer: `L0`, `L1`, or `L2`
 
 This prevents derived layers from masquerading as independent authorities.
@@ -194,7 +194,7 @@ Representation rules:
 
 ## Retrieval Strategy Contract
 
-Multi Agent Brain keeps two retrieval strategies during the transition:
+mimisbrunnr keeps two retrieval strategies during the transition:
 
 - `flat`: the current reference baseline
 - `hierarchical`: the new opt-in strategy

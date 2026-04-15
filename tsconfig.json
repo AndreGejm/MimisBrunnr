@@ -1,9 +1,9 @@
 {
   "files": [],
   "references": [
-    { "path": "./apps/brain-api" },
-    { "path": "./apps/brain-cli" },
-    { "path": "./apps/brain-mcp" },
+    { "path": "./apps/mimir-api" },
+    { "path": "./apps/mimir-cli" },
+    { "path": "./apps/mimir-mcp" },
     { "path": "./packages/domain" },
     { "path": "./packages/contracts" },
     { "path": "./packages/application" },

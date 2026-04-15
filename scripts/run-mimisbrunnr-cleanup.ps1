@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Runs orchestrator-owned memory cleanup for MultiAgentBrain.
+Runs mimisbrunnr cleanup through mimir.
 
 .DESCRIPTION
 This script is a thin operator wrapper over the governed memory librarian. It
@@ -12,7 +12,7 @@ safe archive actions.
 #>
 [CmdletBinding()]
 param(
-  [ValidateSet("all", "general_notes", "context_brain")]
+  [ValidateSet("all", "general_notes", "mimisbrunnr")]
   [string] $Corpus = "all",
 
   [ValidateRange(1, 10000)]
@@ -48,19 +48,39 @@ param(
 $ErrorActionPreference = "Stop"
 
 $RuntimeRepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$DefaultWindowsCanonicalVaultRoot = "F:\Dev\AI Context Brain"
-$DefaultCanonicalVaultRoot = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
-  $DefaultWindowsCanonicalVaultRoot
+$DefaultWindowsDataRoot = "F:\Dev\Mimisbrunnr"
+$DefaultDataRoot = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+  $DefaultWindowsDataRoot
+} elseif (-not [string]::IsNullOrWhiteSpace($env:HOME)) {
+  Join-Path $env:HOME ".mimir"
 } else {
-  Join-Path $RuntimeRepoRoot "vault\canonical"
+  Join-Path $RuntimeRepoRoot ".mimir"
 }
+$DataRoot = if ([string]::IsNullOrWhiteSpace($env:MAB_DATA_ROOT)) {
+  $DefaultDataRoot
+} else {
+  $env:MAB_DATA_ROOT
+}
+$DefaultCanonicalVaultRoot = Join-Path $DataRoot "vault\canonical"
+$DefaultStagingRoot = Join-Path $DataRoot "vault\staging"
+$DefaultSqlitePath = Join-Path $DataRoot "state\mimisbrunnr.sqlite"
 $VaultRoot = if ([string]::IsNullOrWhiteSpace($env:MAB_VAULT_ROOT)) {
   $DefaultCanonicalVaultRoot
 } else {
   $env:MAB_VAULT_ROOT
 }
+$StagingRoot = if ([string]::IsNullOrWhiteSpace($env:MAB_STAGING_ROOT)) {
+  $DefaultStagingRoot
+} else {
+  $env:MAB_STAGING_ROOT
+}
+$SqlitePath = if ([string]::IsNullOrWhiteSpace($env:MAB_SQLITE_PATH)) {
+  $DefaultSqlitePath
+} else {
+  $env:MAB_SQLITE_PATH
+}
 $CliExecutable = (Get-Command "node" -ErrorAction Stop).Source
-$CliPrefixArgs = @(Join-Path $RuntimeRepoRoot "scripts\launch-brain-cli.mjs")
+$CliPrefixArgs = @(Join-Path $RuntimeRepoRoot "scripts\launch-mimir-cli.mjs")
 
 function Write-CleanupStatus {
   param(
@@ -84,7 +104,7 @@ function Write-CleanupProgress {
 
   if (-not $Json) {
     Write-Progress `
-      -Activity "MultiAgentBrain cleanup" `
+      -Activity "mimisbrunnr cleanup" `
       -Status $Status `
       -PercentComplete $PercentComplete
   }
@@ -92,11 +112,11 @@ function Write-CleanupProgress {
 
 function Complete-CleanupProgress {
   if (-not $Json) {
-    Write-Progress -Activity "MultiAgentBrain cleanup" -Completed
+    Write-Progress -Activity "mimisbrunnr cleanup" -Completed
   }
 }
 
-function Invoke-MultiAgentBrain {
+function Invoke-Mimir {
   param(
     [Parameter(Mandatory = $true)]
     [string] $Command,
@@ -122,14 +142,22 @@ function Invoke-MultiAgentBrain {
   )
   $arguments = @($CliPrefixArgs + @($Command, "--input", $inputPath))
   $previousNodeNoWarnings = $env:NODE_NO_WARNINGS
-  $previousBrainProvider = $env:MAB_ROLE_BRAIN_PRIMARY_PROVIDER
+  $previousDataRoot = $env:MAB_DATA_ROOT
+  $previousVaultRoot = $env:MAB_VAULT_ROOT
+  $previousStagingRoot = $env:MAB_STAGING_ROOT
+  $previousSqlitePath = $env:MAB_SQLITE_PATH
+  $previousMimisbrunnrProvider = $env:MAB_ROLE_MIMISBRUNNR_PRIMARY_PROVIDER
   $env:NODE_NO_WARNINGS = "1"
+  $env:MAB_DATA_ROOT = $DataRoot
+  $env:MAB_VAULT_ROOT = $VaultRoot
+  $env:MAB_STAGING_ROOT = $StagingRoot
+  $env:MAB_SQLITE_PATH = $SqlitePath
   switch ($ProviderModeOverride) {
     "heuristic" {
-      $env:MAB_ROLE_BRAIN_PRIMARY_PROVIDER = "internal_heuristic"
+      $env:MAB_ROLE_MIMISBRUNNR_PRIMARY_PROVIDER = "internal_heuristic"
     }
     "model" {
-      $env:MAB_ROLE_BRAIN_PRIMARY_PROVIDER = "docker_ollama"
+      $env:MAB_ROLE_MIMISBRUNNR_PRIMARY_PROVIDER = "docker_ollama"
     }
   }
   $startedAt = Get-Date
@@ -152,7 +180,7 @@ function Invoke-MultiAgentBrain {
         $elapsedSeconds -ge $TimeoutSeconds
       ) {
         $process.Kill()
-        throw "MultiAgentBrain command '$Command' timed out after $TimeoutSeconds seconds."
+        throw "mimir command '$Command' timed out after $TimeoutSeconds seconds."
       }
 
       if (($now - $lastStatusAt).TotalSeconds -ge $StatusIntervalSeconds) {
@@ -168,24 +196,28 @@ function Invoke-MultiAgentBrain {
     $stderr = [System.IO.File]::ReadAllText($stderrPath)
   } finally {
     $env:NODE_NO_WARNINGS = $previousNodeNoWarnings
-    $env:MAB_ROLE_BRAIN_PRIMARY_PROVIDER = $previousBrainProvider
+    $env:MAB_DATA_ROOT = $previousDataRoot
+    $env:MAB_VAULT_ROOT = $previousVaultRoot
+    $env:MAB_STAGING_ROOT = $previousStagingRoot
+    $env:MAB_SQLITE_PATH = $previousSqlitePath
+    $env:MAB_ROLE_MIMISBRUNNR_PRIMARY_PROVIDER = $previousMimisbrunnrProvider
     [System.IO.File]::Delete($inputPath)
     [System.IO.File]::Delete($stdoutPath)
     [System.IO.File]::Delete($stderrPath)
   }
   if ($exitCode -ne 0) {
-    throw "MultiAgentBrain command '$Command' failed with exit code $exitCode.`n$stdout`n$stderr"
+    throw "mimir command '$Command' failed with exit code $exitCode.`n$stdout`n$stderr"
   }
 
   try {
     return $stdout | ConvertFrom-Json
   } catch {
-    throw "MultiAgentBrain command '$Command' did not return JSON.`n$stdout`n$stderr"
+    throw "mimir command '$Command' did not return JSON.`n$stdout`n$stderr"
   }
 }
 
 $corpora = if ($Corpus -eq "all") {
-  @("general_notes", "context_brain")
+  @("general_notes", "mimisbrunnr")
 } else {
   @($Corpus)
 }
@@ -228,7 +260,8 @@ switch ($ReviewDepth) {
   }
 }
 
-Write-CleanupStatus "Loading MultiAgentBrain cleanup runner."
+Write-CleanupStatus "Loading mimisbrunnr cleanup runner."
+Write-CleanupStatus "mimisbrunnr data root: $DataRoot"
 Write-CleanupStatus "Memory vault: $VaultRoot"
 Write-CleanupStatus "Runtime repo: $RuntimeRepoRoot"
 Write-CleanupStatus "Target corpora: $($corpora -join ', ')"
@@ -258,7 +291,7 @@ try {
         -Status "Running $($phase.label) cleanup for $corpusId" `
         -PercentComplete ([int] ((($step - 1) * 100) / $totalSteps))
 
-      $run = Invoke-MultiAgentBrain "run-memory-librarian" @{
+      $run = Invoke-Mimir "run-memory-librarian" @{
         corpusId = $corpusId
         maxNotes = [int] $phase.maxNotes
         applySafeActions = [bool] $phase.applySafeActions
@@ -278,7 +311,7 @@ try {
           -Status "Reading persisted run record for $corpusId" `
           -PercentComplete ([int] ((($step - 1) * 100) / $totalSteps))
 
-        $record = Invoke-MultiAgentBrain "read-memory-librarian-run" @{
+        $record = Invoke-Mimir "read-memory-librarian-run" @{
           runId = $run.data.runId
         } `
           -ProviderModeOverride $phase.providerMode `
@@ -323,7 +356,10 @@ try {
 
 $summary = [pscustomobject] @{
   ok = $true
+  dataRoot = $DataRoot
   vaultRoot = $VaultRoot
+  stagingRoot = $StagingRoot
+  sqlitePath = $SqlitePath
   runtimeRepoRoot = $RuntimeRepoRoot
   applySafeActions = -not $DryRun
   maxNotes = $MaxNotes
@@ -348,7 +384,8 @@ if ($Json) {
   exit 0
 }
 
-Write-Host "MultiAgentBrain cleanup complete"
+Write-Host "mimisbrunnr cleanup complete"
+Write-Host "mimisbrunnr data root: $DataRoot"
 Write-Host "Memory vault: $VaultRoot"
 Write-Host "Runtime repo: $RuntimeRepoRoot"
 Write-Host "Mode: $(if ($DryRun) { "dry run" } else { "apply safe actions" })"

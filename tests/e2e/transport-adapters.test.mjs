@@ -8,9 +8,9 @@ import test from "node:test";
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
-test("brain-cli exposes shared release metadata through the version command", async () => {
+test("mimir-cli exposes shared release metadata through the version command", async () => {
   const result = await runNodeCommand(
-    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
     ["version"],
     {
       ...process.env,
@@ -24,15 +24,16 @@ test("brain-cli exposes shared release metadata through the version command", as
   assert.equal(result.exitCode, 0, result.stderr);
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.ok, true);
+  assert.equal(payload.release.applicationName, "mimir");
   assert.equal(payload.release.version, "0.2.0");
   assert.equal(payload.release.gitTag, "v0.2.0");
   assert.equal(payload.release.gitCommit, "0123456789abcdef");
   assert.equal(payload.release.releaseChannel, "tagged");
 });
 
-test("brain-cli accepts a leading argument separator for root workspace passthrough", async () => {
+test("mimir-cli accepts a leading argument separator for root workspace passthrough", async () => {
   const result = await runNodeCommand(
-    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
     ["--", "version"],
     {
       ...process.env,
@@ -43,11 +44,12 @@ test("brain-cli accepts a leading argument separator for root workspace passthro
   assert.equal(result.exitCode, 0, result.stderr);
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.ok, true);
+  assert.equal(payload.release.applicationName, "mimir");
   assert.equal(payload.release.version, "0.2.1");
 });
 
-test("brain-cli exposes auth registry status for operators", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-auth-status-"));
+test("mimir-cli exposes auth registry status for operators", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-cli-auth-status-"));
   const env = cliEnvironment(root, {
     MAB_AUTH_MODE: "enforced",
     MAB_AUTH_ISSUER_SECRET: "cli-issuer-secret",
@@ -55,7 +57,7 @@ test("brain-cli exposes auth registry status for operators", async () => {
       {
         actorId: "operator-cli",
         actorRole: "operator",
-        source: "brain-cli",
+        source: "mimir-cli",
         allowedTransports: ["cli"],
         allowedCommands: ["query_history"],
         authTokens: [
@@ -68,7 +70,7 @@ test("brain-cli exposes auth registry status for operators", async () => {
     ])
   });
   const result = await runNodeCommand(
-    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
     ["auth-status"],
     env
   );
@@ -84,8 +86,8 @@ test("brain-cli exposes auth registry status for operators", async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-test("brain-cli lists recorded issued actor tokens through the operator control surface", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-issued-tokens-"));
+test("mimir-cli lists recorded issued actor tokens through the operator control surface", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-cli-issued-tokens-"));
   const env = {
     ...cliEnvironment(root),
     MAB_AUTH_ISSUER_SECRET: "cli-issued-secret"
@@ -96,14 +98,14 @@ test("brain-cli lists recorded issued actor tokens through the operator control 
   });
 
   const issueResult = await runNodeCommand(
-    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
     [
       "issue-auth-token",
       "--json",
       JSON.stringify({
         actorId: "cli-issued-actor",
         actorRole: "operator",
-        source: "brain-cli",
+        source: "mimir-cli",
         ttlMinutes: 60
       })
     ],
@@ -113,7 +115,7 @@ test("brain-cli lists recorded issued actor tokens through the operator control 
   assert.equal(issueResult.exitCode, 0, issueResult.stderr);
 
   const listResult = await runNodeCommand(
-    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
     [
       "auth-issued-tokens",
       "--json",
@@ -133,7 +135,7 @@ test("brain-cli lists recorded issued actor tokens through the operator control 
   assert.equal(payload.issuedTokens[0].lifecycleStatus, "active");
 });
 
-test("brain-cli can introspect issued actor tokens against the current auth policy", async () => {
+test("mimir-cli can introspect issued actor tokens against the current auth policy", async () => {
   const { issueActorAccessToken } = await import(
     pathToFileURL(
       path.join(process.cwd(), "packages", "infrastructure", "dist", "index.js")
@@ -144,7 +146,7 @@ test("brain-cli can introspect issued actor tokens against the current auth poli
     {
       actorId: "validate-note-http",
       actorRole: "orchestrator",
-      source: "brain-api",
+      source: "mimir-api",
       allowedTransports: ["http"],
       allowedCommands: ["validate_note"],
       validUntil: new Date(Date.now() + 3_600_000).toISOString(),
@@ -154,7 +156,7 @@ test("brain-cli can introspect issued actor tokens against the current auth poli
   );
 
   const result = await runNodeCommand(
-    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
     [
       "auth-introspect-token",
       "--json",
@@ -172,7 +174,7 @@ test("brain-cli can introspect issued actor tokens against the current auth poli
         {
           actorId: "validate-note-http",
           actorRole: "orchestrator",
-          source: "brain-api",
+          source: "mimir-api",
           allowedTransports: ["http"],
           allowedCommands: ["validate_note"]
         }
@@ -190,8 +192,8 @@ test("brain-cli can introspect issued actor tokens against the current auth poli
   assert.equal(payload.inspection.matchedActor.actorId, "validate-note-http");
 });
 
-test("brain-cli lists and reads namespace nodes through the shared context namespace service", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-namespace-"));
+test("mimir-cli lists and reads namespace nodes through the shared context namespace service", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-cli-namespace-"));
   const canonical = await seedCanonicalTemporalNote(root, {
     title: "CLI Namespace Canonical Node",
     scope: "cli-namespace",
@@ -208,12 +210,12 @@ test("brain-cli lists and reads namespace nodes through the shared context names
   });
 
   const listResult = await runNodeCommand(
-    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
     [
       "list-context-tree",
       "--json",
       JSON.stringify({
-        ownerScope: "context_brain",
+        ownerScope: "mimisbrunnr",
         authorityStates: ["canonical", "staging"]
       })
     ],
@@ -226,25 +228,25 @@ test("brain-cli lists and reads namespace nodes through the shared context names
   assert.ok(
     listPayload.data.nodes.some(
       (node) =>
-        node.uri === `mab://context_brain/note/${canonical.noteId}` &&
+        node.uri === `mimir://mimisbrunnr/note/${canonical.noteId}` &&
         node.authorityState === "canonical"
     )
   );
   assert.ok(
     listPayload.data.nodes.some(
       (node) =>
-        node.uri === `mab://context_brain/note/${staging.draftNoteId}` &&
+        node.uri === `mimir://mimisbrunnr/note/${staging.draftNoteId}` &&
         node.authorityState === "staging"
     )
   );
 
   const readResult = await runNodeCommand(
-    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
     [
       "read-context-node",
       "--json",
       JSON.stringify({
-        uri: `mab://context_brain/note/${canonical.noteId}`
+        uri: `mimir://mimisbrunnr/note/${canonical.noteId}`
       })
     ],
     cliEnvironment(root)
@@ -253,18 +255,18 @@ test("brain-cli lists and reads namespace nodes through the shared context names
   assert.equal(readResult.exitCode, 0, readResult.stderr);
   const readPayload = JSON.parse(readResult.stdout);
   assert.equal(readPayload.ok, true);
-  assert.equal(readPayload.data.node.uri, `mab://context_brain/note/${canonical.noteId}`);
+  assert.equal(readPayload.data.node.uri, `mimir://mimisbrunnr/note/${canonical.noteId}`);
   assert.equal(readPayload.data.node.authorityState, "canonical");
   assert.equal(readPayload.data.node.sourceType, "canonical_note");
-  assert.equal(readPayload.data.node.ownerScope, "context_brain");
+  assert.equal(readPayload.data.node.ownerScope, "mimisbrunnr");
 });
 
-test("brain-cli exposes temporal freshness status and refresh candidates for operators", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-freshness-"));
-  const sqlitePath = path.join(root, "state", "multi-agent-brain.sqlite");
+test("mimir-cli exposes temporal freshness status and refresh candidates for operators", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-cli-freshness-"));
+  const sqlitePath = path.join(root, "state", "mimisbrunnr.sqlite");
   await seedTemporalValidityNote(sqlitePath, {
     noteId: "expired-cli-freshness-note",
-    notePath: "context_brain/reference/expired-cli-freshness-note.md",
+    notePath: "mimisbrunnr/reference/expired-cli-freshness-note.md",
     validFrom: "2026-03-01",
     validUntil: addDaysIso(currentDateIso(), -1),
     summary: "CLI freshness status should show expired refresh candidates."
@@ -274,8 +276,8 @@ test("brain-cli exposes temporal freshness status and refresh candidates for ope
   });
 
   const result = await runNodeCommand(
-    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
-    ["freshness-status"],
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    ["freshness-status", "--json", JSON.stringify({ corpusId: "mimir_brunnr" })],
     cliEnvironment(root)
   );
 
@@ -287,8 +289,8 @@ test("brain-cli exposes temporal freshness status and refresh candidates for ope
   assert.equal(payload.freshness.expiredCurrentState[0].state, "expired");
 });
 
-test("brain-cli creates governed refresh drafts for expired current-state notes", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-refresh-draft-"));
+test("mimir-cli creates governed refresh drafts for expired current-state notes", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-cli-refresh-draft-"));
   const seeded = await seedCanonicalTemporalNote(root, {
     title: "CLI Refresh Workflow",
     scope: "cli-refresh-workflow",
@@ -300,7 +302,7 @@ test("brain-cli creates governed refresh drafts for expired current-state notes"
   });
 
   const result = await runNodeCommand(
-    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
     [
       "create-refresh-draft",
       "--json",
@@ -320,8 +322,8 @@ test("brain-cli creates governed refresh drafts for expired current-state notes"
   assert.deepEqual(payload.data.frontmatter.supersedes, [seeded.noteId]);
 });
 
-test("brain-cli creates a bounded batch of refresh drafts from current freshness candidates", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-refresh-drafts-"));
+test("mimir-cli creates a bounded batch of refresh drafts from current freshness candidates", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-cli-refresh-drafts-"));
   await seedCanonicalTemporalNotes(root, [
     {
       title: "CLI Batch Refresh A",
@@ -348,7 +350,7 @@ test("brain-cli creates a bounded batch of refresh drafts from current freshness
   });
 
   const result = await runNodeCommand(
-    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
     [
       "create-refresh-drafts",
       "--json",
@@ -372,16 +374,16 @@ test("brain-cli creates a bounded batch of refresh drafts from current freshness
   );
 });
 
-test("brain-cli can mint issued actor access tokens when the issuer secret is configured", async () => {
+test("mimir-cli can mint issued actor access tokens when the issuer secret is configured", async () => {
   const result = await runNodeCommand(
-    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
     [
       "issue-auth-token",
       "--json",
       JSON.stringify({
         actorId: "validate-note-http",
         actorRole: "orchestrator",
-        source: "brain-api",
+        source: "mimir-api",
         allowedTransports: ["http"],
         allowedCommands: ["validate_note"],
         ttlMinutes: 60
@@ -400,20 +402,20 @@ test("brain-cli can mint issued actor access tokens when the issuer secret is co
   assert.equal(payload.claims.actorId, "validate-note-http");
 });
 
-test("brain-cli can revoke issued actor tokens through the file-backed revocation store", async (t) => {
+test("mimir-cli can revoke issued actor tokens through the file-backed revocation store", async (t) => {
   const { issueActorAccessToken } = await import(
     pathToFileURL(
       path.join(process.cwd(), "packages", "infrastructure", "dist", "index.js")
     ).href
   );
 
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-revoke-token-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-cli-revoke-token-"));
   const revocationPath = path.join(root, "config", "revoked-issued-token-ids.json");
   const issuedToken = issueActorAccessToken(
     {
       actorId: "validate-note-http",
       actorRole: "orchestrator",
-      source: "brain-api",
+      source: "mimir-api",
       allowedTransports: ["http"],
       allowedCommands: ["validate_note"],
       validUntil: new Date(Date.now() + 3_600_000).toISOString(),
@@ -427,7 +429,7 @@ test("brain-cli can revoke issued actor tokens through the file-backed revocatio
   });
 
   const revokeResult = await runNodeCommand(
-    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
     [
       "revoke-auth-token",
       "--json",
@@ -450,7 +452,7 @@ test("brain-cli can revoke issued actor tokens through the file-backed revocatio
   assert.equal(revokePayload.persisted, true);
 
   const introspectResult = await runNodeCommand(
-    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
     [
       "auth-introspect-token",
       "--json",
@@ -475,8 +477,8 @@ test("brain-cli can revoke issued actor tokens through the file-backed revocatio
   assert.equal(introspectPayload.inspection.reason, "revoked_issued_token");
 });
 
-test("brain-cli drafts notes through the staging service with JSON input", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-"));
+test("mimir-cli drafts notes through the staging service with JSON input", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-cli-"));
   t.after(async () => {
     await rm(root, { recursive: true, force: true });
   });
@@ -485,7 +487,7 @@ test("brain-cli drafts notes through the staging service with JSON input", async
   await writeFile(
     requestPath,
     JSON.stringify({
-      targetCorpus: "context_brain",
+      targetCorpus: "mimisbrunnr",
       noteType: "decision",
       title: "CLI Draft Policy",
       sourcePrompt: "Draft a CLI policy note.",
@@ -499,7 +501,7 @@ test("brain-cli drafts notes through the staging service with JSON input", async
     path.join(
       process.cwd(),
       "apps",
-      "brain-cli",
+      "mimir-cli",
       "dist",
       "main.js"
     ),
@@ -510,12 +512,12 @@ test("brain-cli drafts notes through the staging service with JSON input", async
   assert.equal(result.exitCode, 0, result.stderr);
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.ok, true);
-  assert.equal(payload.data.frontmatter.corpusId, "context_brain");
-  assert.match(payload.data.draftPath, /^context_brain\//);
+  assert.equal(payload.data.frontmatter.corpusId, "mimisbrunnr");
+  assert.match(payload.data.draftPath, /^mimisbrunnr\//);
 });
 
-test("brain-cli exposes direct context-packet assembly as a thin transport command", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-packet-"));
+test("mimir-cli exposes direct context-packet assembly as a thin transport command", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-cli-packet-"));
   t.after(async () => {
     await rm(root, { recursive: true, force: true });
   });
@@ -540,11 +542,11 @@ test("brain-cli exposes direct context-packet assembly as a thin transport comma
           rawText: "Architecture context for bounded retrieval packets with provenance attached.",
           scope: "architecture",
           qualifiers: ["bounded retrieval"],
-          tags: ["project/multi-agent-brain"],
+          tags: ["project/mimir"],
           stalenessClass: "current",
           provenance: {
             noteId: "note-1",
-            notePath: "context_brain/architecture/retrieval.md",
+            notePath: "mimisbrunnr/architecture/retrieval.md",
             headingPath: ["Summary"]
           }
         }
@@ -554,7 +556,7 @@ test("brain-cli exposes direct context-packet assembly as a thin transport comma
   );
 
   const result = await runNodeCommand(
-    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
     ["get-context-packet", "--input", requestPath],
     cliEnvironment(root)
   );
@@ -566,8 +568,8 @@ test("brain-cli exposes direct context-packet assembly as a thin transport comma
   assert.equal(payload.packet.evidence[0].noteId, "note-1");
 });
 
-test("brain-cli rejects malformed request payloads at ingress", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-invalid-"));
+test("mimir-cli rejects malformed request payloads at ingress", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-cli-invalid-"));
   t.after(async () => {
     await rm(root, { recursive: true, force: true });
   });
@@ -590,7 +592,7 @@ test("brain-cli rejects malformed request payloads at ingress", async (t) => {
   );
 
   const result = await runNodeCommand(
-    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
     ["get-context-packet", "--input", requestPath],
     cliEnvironment(root)
   );
@@ -601,8 +603,8 @@ test("brain-cli rejects malformed request payloads at ingress", async (t) => {
   assert.equal(payload.error.code, "validation_failed");
 });
 
-test("brain-cli executes coding tasks through the vendored runtime bridge", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-cli-coding-"));
+test("mimir-cli executes coding tasks through the vendored runtime bridge", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-cli-coding-"));
   const repoRoot = path.join(root, "repo");
   await fsMkdir(path.join(repoRoot, ".git"), { recursive: true });
   await fsMkdir(path.join(repoRoot, "src"), { recursive: true });
@@ -628,7 +630,7 @@ test("brain-cli executes coding tasks through the vendored runtime bridge", asyn
   );
 
   const result = await runNodeCommand(
-    path.join(process.cwd(), "apps", "brain-cli", "dist", "main.js"),
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
     ["execute-coding-task", "--input", requestPath],
     cliEnvironment(root, {
       MAB_PROVIDER_DOCKER_OLLAMA_BASE_URL: "http://127.0.0.1:1",
@@ -643,21 +645,21 @@ test("brain-cli executes coding tasks through the vendored runtime bridge", asyn
   assert.doesNotMatch(payload.reason, /allowed_patch_root|LOCAL_EXPERT_REPO_ROOT/i);
 });
 
-test("brain-api exposes validation as a thin HTTP transport over services", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-"));
-  const { createBrainApiServer } = await import(
+test("mimir-api exposes validation as a thin HTTP transport over services", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-api-"));
+  const { createMimirApiServer } = await import(
     pathToFileURL(
-      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+      path.join(process.cwd(), "apps", "mimir-api", "dist", "server.js")
     ).href
   );
 
-  const api = createBrainApiServer({
+  const api = createMimirApiServer({
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
     stagingRoot: path.join(root, "vault", "staging"),
-    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
     qdrantUrl: "http://127.0.0.1:6333",
-    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    qdrantCollection: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
     embeddingProvider: "hash",
     reasoningProvider: "heuristic",
     draftingProvider: "disabled",
@@ -689,20 +691,20 @@ test("brain-api exposes validation as a thin HTTP transport over services", asyn
       "content-type": "application/json"
     },
     body: JSON.stringify({
-      targetCorpus: "context_brain",
-      notePath: "context_brain/decision/invalid-http-note.md",
+      targetCorpus: "mimisbrunnr",
+      notePath: "mimisbrunnr/decision/invalid-http-note.md",
       validationMode: "promotion",
       frontmatter: {
         noteId,
         title: "Invalid HTTP Decision",
-        project: "multi-agent-brain",
+        project: "mimir",
         type: "decision",
         status: "promoted",
         updated: currentDateIso(),
         summary: "Missing required sections.",
-        tags: ["project/multi-agent-brain", "domain/orchestration", "status/promoted"],
+        tags: ["project/mimir", "domain/orchestration", "status/promoted"],
         scope: "validation",
-        corpusId: "context_brain",
+        corpusId: "mimisbrunnr",
         currentState: false
       },
       body: "## Context\n\nOnly one section exists."
@@ -715,11 +717,11 @@ test("brain-api exposes validation as a thin HTTP transport over services", asyn
   assert.ok(payload.violations.some((issue) => issue.field === "body.sections"));
 });
 
-test("brain-api exposes shared release metadata through the system version route", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-version-"));
-  const { createBrainApiServer } = await import(
+test("mimir-api exposes shared release metadata through the system version route", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-api-version-"));
+  const { createMimirApiServer } = await import(
     pathToFileURL(
-      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+      path.join(process.cwd(), "apps", "mimir-api", "dist", "server.js")
     ).href
   );
   const { loadEnvironment } = await import(
@@ -728,7 +730,7 @@ test("brain-api exposes shared release metadata through the system version route
     ).href
   );
 
-  const api = createBrainApiServer(
+  const api = createMimirApiServer(
     loadEnvironment({
       ...process.env,
       MAB_NODE_ENV: "test",
@@ -738,9 +740,9 @@ test("brain-api exposes shared release metadata through the system version route
       MAB_RELEASE_CHANNEL: "tagged",
       MAB_VAULT_ROOT: path.join(root, "vault", "canonical"),
       MAB_STAGING_ROOT: path.join(root, "vault", "staging"),
-      MAB_SQLITE_PATH: path.join(root, "state", "multi-agent-brain.sqlite"),
+      MAB_SQLITE_PATH: path.join(root, "state", "mimisbrunnr.sqlite"),
       MAB_QDRANT_URL: "http://127.0.0.1:6333",
-      MAB_QDRANT_COLLECTION: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+      MAB_QDRANT_COLLECTION: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
       MAB_EMBEDDING_PROVIDER: "hash",
       MAB_REASONING_PROVIDER: "heuristic",
       MAB_DRAFTING_PROVIDER: "disabled",
@@ -769,13 +771,37 @@ test("brain-api exposes shared release metadata through the system version route
   assert.equal(payload.release.releaseChannel, "tagged");
 });
 
+test("loadEnvironment accepts old and new mimisbrunnr role env names", async () => {
+  const { loadEnvironment } = await import(
+    "../../packages/infrastructure/dist/index.js"
+  );
+
+  const legacy = loadEnvironment({
+    MAB_ROLE_MIMIR_BRUNNR_PRIMARY_PROVIDER: "internal_heuristic",
+    MAB_ROLE_MIMIR_BRUNNR_PRIMARY_MODEL: "legacy-model"
+  });
+  assert.equal(
+    legacy.roleBindings.mimisbrunnr_primary.providerId,
+    "internal_heuristic"
+  );
+  assert.equal(legacy.roleBindings.mimisbrunnr_primary.modelId, "legacy-model");
+
+  const current = loadEnvironment({
+    MAB_ROLE_MIMISBRUNNR_PRIMARY_PROVIDER: "docker_ollama",
+    MAB_ROLE_MIMISBRUNNR_PRIMARY_MODEL: "current-model",
+    MAB_ROLE_MIMIR_BRUNNR_PRIMARY_PROVIDER: "internal_heuristic",
+    MAB_ROLE_MIMIR_BRUNNR_PRIMARY_MODEL: "legacy-model"
+  });
+  assert.equal(current.roleBindings.mimisbrunnr_primary.providerId, "docker_ollama");
+  assert.equal(current.roleBindings.mimisbrunnr_primary.modelId, "current-model");
+});
 test("loadEnvironment derives storage paths from MAB_DATA_ROOT", async () => {
   const { loadEnvironment } = await import(
     pathToFileURL(
       path.join(process.cwd(), "packages", "infrastructure", "dist", "index.js")
     ).href
   );
-  const dataRoot = path.join(os.tmpdir(), `mab-data-root-${randomUUID()}`);
+  const dataRoot = path.join(os.tmpdir(), `mimir-data-root-${randomUUID()}`);
 
   const environment = loadEnvironment({
     ...process.env,
@@ -789,25 +815,25 @@ test("loadEnvironment derives storage paths from MAB_DATA_ROOT", async () => {
   assert.equal(environment.stagingRoot, path.join(dataRoot, "vault", "staging"));
   assert.equal(
     environment.sqlitePath,
-    path.join(dataRoot, "state", "multi-agent-brain.sqlite")
+    path.join(dataRoot, "state", "mimisbrunnr.sqlite")
   );
 });
 
-test("brain-api exposes auth registry status through the system auth route", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-auth-status-"));
-  const { createBrainApiServer } = await import(
+test("mimir-api exposes auth registry status through the system auth route", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-api-auth-status-"));
+  const { createMimirApiServer } = await import(
     pathToFileURL(
-      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+      path.join(process.cwd(), "apps", "mimir-api", "dist", "server.js")
     ).href
   );
 
-  const api = createBrainApiServer({
+  const api = createMimirApiServer({
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
     stagingRoot: path.join(root, "vault", "staging"),
-    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
     qdrantUrl: "http://127.0.0.1:6333",
-    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    qdrantCollection: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
     embeddingProvider: "hash",
     reasoningProvider: "heuristic",
     draftingProvider: "disabled",
@@ -823,7 +849,7 @@ test("brain-api exposes auth registry status through the system auth route", asy
           actorId: "operator-http",
           actorRole: "operator",
           authToken: "operator-http-secret",
-          source: "brain-api-admin",
+          source: "mimir-api-admin",
           allowedTransports: ["http"],
           allowedAdminActions: ["view_auth_status"]
         }
@@ -846,10 +872,10 @@ test("brain-api exposes auth registry status through the system auth route", asy
 
   const response = await fetch(`${baseUrl}/v1/system/auth`, {
     headers: {
-      "x-brain-actor-id": "operator-http",
-      "x-brain-actor-role": "operator",
-      "x-brain-source": "brain-api-admin",
-      "x-brain-actor-token": "operator-http-secret"
+      "x-mimir-actor-id": "operator-http",
+      "x-mimir-actor-role": "operator",
+      "x-mimir-source": "mimir-api-admin",
+      "x-mimir-actor-token": "operator-http-secret"
     }
   });
   assert.equal(response.status, 200);
@@ -861,21 +887,21 @@ test("brain-api exposes auth registry status through the system auth route", asy
   assert.equal(payload.issuedTokens.total, 0);
 });
 
-test("brain-api can issue short-lived actor tokens through the protected auth route", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-issue-token-"));
-  const { createBrainApiServer } = await import(
+test("mimir-api can issue short-lived actor tokens through the protected auth route", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-api-issue-token-"));
+  const { createMimirApiServer } = await import(
     pathToFileURL(
-      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+      path.join(process.cwd(), "apps", "mimir-api", "dist", "server.js")
     ).href
   );
 
-  const api = createBrainApiServer({
+  const api = createMimirApiServer({
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
     stagingRoot: path.join(root, "vault", "staging"),
-    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
     qdrantUrl: "http://127.0.0.1:6333",
-    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    qdrantCollection: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
     embeddingProvider: "hash",
     reasoningProvider: "heuristic",
     draftingProvider: "disabled",
@@ -891,7 +917,7 @@ test("brain-api can issue short-lived actor tokens through the protected auth ro
           actorId: "operator-http",
           actorRole: "operator",
           authToken: "operator-http-secret",
-          source: "brain-api-admin",
+          source: "mimir-api-admin",
           allowedTransports: ["http"],
           allowedAdminActions: [
             "issue_auth_token",
@@ -902,7 +928,7 @@ test("brain-api can issue short-lived actor tokens through the protected auth ro
         {
           actorId: "validate-note-http",
           actorRole: "orchestrator",
-          source: "brain-api",
+          source: "mimir-api",
           allowedTransports: ["http"],
           allowedCommands: ["validate_note"]
         }
@@ -924,15 +950,15 @@ test("brain-api can issue short-lived actor tokens through the protected auth ro
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-brain-actor-id": "operator-http",
-      "x-brain-actor-role": "operator",
-      "x-brain-source": "brain-api-admin",
-      "x-brain-actor-token": "operator-http-secret"
+      "x-mimir-actor-id": "operator-http",
+      "x-mimir-actor-role": "operator",
+      "x-mimir-source": "mimir-api-admin",
+      "x-mimir-actor-token": "operator-http-secret"
     },
     body: JSON.stringify({
       actorId: "validate-note-http",
       actorRole: "orchestrator",
-      source: "brain-api",
+      source: "mimir-api",
       allowedTransports: ["http"],
       allowedCommands: ["validate_note"],
       ttlMinutes: 60
@@ -949,10 +975,10 @@ test("brain-api can issue short-lived actor tokens through the protected auth ro
     `${baseUrl}/v1/system/auth/issued-tokens?includeRevoked=true`,
     {
       headers: {
-        "x-brain-actor-id": "operator-http",
-        "x-brain-actor-role": "operator",
-        "x-brain-source": "brain-api-admin",
-        "x-brain-actor-token": "operator-http-secret"
+        "x-mimir-actor-id": "operator-http",
+        "x-mimir-actor-role": "operator",
+        "x-mimir-source": "mimir-api-admin",
+        "x-mimir-actor-token": "operator-http-secret"
       }
     }
   );
@@ -966,21 +992,21 @@ test("brain-api can issue short-lived actor tokens through the protected auth ro
   assert.equal(issuedTokensPayload.issuedTokens[0].lifecycleStatus, "active");
 });
 
-test("brain-api can introspect actor tokens through the protected auth route", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-introspect-token-"));
-  const { createBrainApiServer } = await import(
+test("mimir-api can introspect actor tokens through the protected auth route", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-api-introspect-token-"));
+  const { createMimirApiServer } = await import(
     pathToFileURL(
-      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+      path.join(process.cwd(), "apps", "mimir-api", "dist", "server.js")
     ).href
   );
 
-  const api = createBrainApiServer({
+  const api = createMimirApiServer({
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
     stagingRoot: path.join(root, "vault", "staging"),
-    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
     qdrantUrl: "http://127.0.0.1:6333",
-    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    qdrantCollection: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
     embeddingProvider: "hash",
     reasoningProvider: "heuristic",
     draftingProvider: "disabled",
@@ -996,14 +1022,14 @@ test("brain-api can introspect actor tokens through the protected auth route", a
           actorId: "operator-http",
           actorRole: "operator",
           authToken: "operator-http-secret",
-          source: "brain-api-admin",
+          source: "mimir-api-admin",
           allowedTransports: ["http"],
           allowedAdminActions: ["issue_auth_token", "inspect_auth_token"]
         },
         {
           actorId: "validate-note-http",
           actorRole: "orchestrator",
-          source: "brain-api",
+          source: "mimir-api",
           allowedTransports: ["http"],
           allowedCommands: ["validate_note"]
         }
@@ -1025,15 +1051,15 @@ test("brain-api can introspect actor tokens through the protected auth route", a
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-brain-actor-id": "operator-http",
-      "x-brain-actor-role": "operator",
-      "x-brain-source": "brain-api-admin",
-      "x-brain-actor-token": "operator-http-secret"
+      "x-mimir-actor-id": "operator-http",
+      "x-mimir-actor-role": "operator",
+      "x-mimir-source": "mimir-api-admin",
+      "x-mimir-actor-token": "operator-http-secret"
     },
     body: JSON.stringify({
       actorId: "validate-note-http",
       actorRole: "orchestrator",
-      source: "brain-api",
+      source: "mimir-api",
       allowedTransports: ["http"],
       allowedCommands: ["validate_note"],
       ttlMinutes: 60
@@ -1047,10 +1073,10 @@ test("brain-api can introspect actor tokens through the protected auth route", a
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-brain-actor-id": "operator-http",
-      "x-brain-actor-role": "operator",
-      "x-brain-source": "brain-api-admin",
-      "x-brain-actor-token": "operator-http-secret"
+      "x-mimir-actor-id": "operator-http",
+      "x-mimir-actor-role": "operator",
+      "x-mimir-source": "mimir-api-admin",
+      "x-mimir-actor-token": "operator-http-secret"
     },
     body: JSON.stringify({
       token: issuedPayload.issuedToken,
@@ -1069,12 +1095,12 @@ test("brain-api can introspect actor tokens through the protected auth route", a
   assert.equal(payload.inspection.matchedActor.actorId, "validate-note-http");
 });
 
-test("brain-api revokes issued actor tokens and rejects them immediately afterward", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-revoke-token-"));
+test("mimir-api revokes issued actor tokens and rejects them immediately afterward", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-api-revoke-token-"));
   const revocationPath = path.join(root, "config", "revoked-issued-token-ids.json");
-  const { createBrainApiServer } = await import(
+  const { createMimirApiServer } = await import(
     pathToFileURL(
-      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+      path.join(process.cwd(), "apps", "mimir-api", "dist", "server.js")
     ).href
   );
   const { issueActorAccessToken } = await import(
@@ -1084,13 +1110,13 @@ test("brain-api revokes issued actor tokens and rejects them immediately afterwa
   );
 
   const issuerSecret = "api-revoke-secret";
-  const api = createBrainApiServer({
+  const api = createMimirApiServer({
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
     stagingRoot: path.join(root, "vault", "staging"),
-    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
     qdrantUrl: "http://127.0.0.1:6333",
-    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    qdrantCollection: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
     embeddingProvider: "hash",
     reasoningProvider: "heuristic",
     draftingProvider: "disabled",
@@ -1106,14 +1132,14 @@ test("brain-api revokes issued actor tokens and rejects them immediately afterwa
           actorId: "operator-http",
           actorRole: "operator",
           authToken: "operator-http-secret",
-          source: "brain-api-admin",
+          source: "mimir-api-admin",
           allowedTransports: ["http"],
           allowedAdminActions: ["revoke_auth_token"]
         },
         {
           actorId: "validate-note-http",
           actorRole: "orchestrator",
-          source: "brain-api",
+          source: "mimir-api",
           allowedTransports: ["http"],
           allowedCommands: ["validate_note"]
         }
@@ -1137,7 +1163,7 @@ test("brain-api revokes issued actor tokens and rejects them immediately afterwa
     {
       actorId: "validate-note-http",
       actorRole: "orchestrator",
-      source: "brain-api",
+      source: "mimir-api",
       allowedTransports: ["http"],
       allowedCommands: ["validate_note"],
       validUntil: new Date(Date.now() + 3_600_000).toISOString(),
@@ -1150,10 +1176,10 @@ test("brain-api revokes issued actor tokens and rejects them immediately afterwa
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-brain-actor-id": "operator-http",
-      "x-brain-actor-role": "operator",
-      "x-brain-source": "brain-api-admin",
-      "x-brain-actor-token": "operator-http-secret"
+      "x-mimir-actor-id": "operator-http",
+      "x-mimir-actor-role": "operator",
+      "x-mimir-source": "mimir-api-admin",
+      "x-mimir-actor-token": "operator-http-secret"
     },
     body: JSON.stringify({
       token: issuedToken,
@@ -1171,29 +1197,29 @@ test("brain-api revokes issued actor tokens and rejects them immediately afterwa
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-brain-actor-token": issuedToken
+      "x-mimir-actor-token": issuedToken
     },
     body: JSON.stringify({
       actor: {
         actorId: "validate-note-http",
         actorRole: "orchestrator",
-        source: "brain-api",
+        source: "mimir-api",
         authToken: issuedToken
       },
-      targetCorpus: "context_brain",
-      notePath: "context_brain/decision/revoked-token-note.md",
+      targetCorpus: "mimisbrunnr",
+      notePath: "mimisbrunnr/decision/revoked-token-note.md",
       validationMode: "promotion",
       frontmatter: {
         noteId: randomUUID(),
         title: "Revoked Token Note",
-        project: "multi-agent-brain",
+        project: "mimir",
         type: "decision",
         status: "promoted",
         updated: currentDateIso(),
         summary: "Revoked issued tokens should fail immediately.",
-        tags: ["project/multi-agent-brain", "domain/orchestration", "status/promoted"],
+        tags: ["project/mimir", "domain/orchestration", "status/promoted"],
         scope: "auth",
-        corpusId: "context_brain",
+        corpusId: "mimisbrunnr",
         currentState: false
       },
       body: [
@@ -1221,30 +1247,30 @@ test("brain-api revokes issued actor tokens and rejects them immediately afterwa
   assert.equal(validatePayload.error.code, "unauthorized");
 });
 
-test("brain-api exposes temporal freshness reports through the system freshness route", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-freshness-"));
-  const sqlitePath = path.join(root, "state", "multi-agent-brain.sqlite");
+test("mimir-api exposes temporal freshness reports through the system freshness route", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-api-freshness-"));
+  const sqlitePath = path.join(root, "state", "mimisbrunnr.sqlite");
   await seedTemporalValidityNote(sqlitePath, {
     noteId: "expiring-api-freshness-note",
-    notePath: "context_brain/reference/expiring-api-freshness-note.md",
+    notePath: "mimisbrunnr/reference/expiring-api-freshness-note.md",
     validFrom: addDaysIso(currentDateIso(), -7),
     validUntil: addDaysIso(currentDateIso(), 3),
     summary: "API freshness route should show expiring refresh candidates."
   });
 
-  const { createBrainApiServer } = await import(
+  const { createMimirApiServer } = await import(
     pathToFileURL(
-      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+      path.join(process.cwd(), "apps", "mimir-api", "dist", "server.js")
     ).href
   );
 
-  const api = createBrainApiServer({
+  const api = createMimirApiServer({
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
     stagingRoot: path.join(root, "vault", "staging"),
     sqlitePath,
     qdrantUrl: "http://127.0.0.1:6333",
-    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    qdrantCollection: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
     embeddingProvider: "hash",
     reasoningProvider: "heuristic",
     draftingProvider: "disabled",
@@ -1277,8 +1303,8 @@ test("brain-api exposes temporal freshness reports through the system freshness 
   assert.equal(payload.freshness.expiringSoonCurrentState[0].state, "expiring_soon");
 });
 
-test("brain-api creates governed refresh drafts through the temporal freshness route", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-refresh-draft-"));
+test("mimir-api creates governed refresh drafts through the temporal freshness route", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-api-refresh-draft-"));
   const seeded = await seedCanonicalTemporalNote(root, {
     title: "API Refresh Workflow",
     scope: "api-refresh-workflow",
@@ -1286,19 +1312,19 @@ test("brain-api creates governed refresh drafts through the temporal freshness r
     validUntil: addDaysIso(currentDateIso(), -1)
   });
 
-  const { createBrainApiServer } = await import(
+  const { createMimirApiServer } = await import(
     pathToFileURL(
-      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+      path.join(process.cwd(), "apps", "mimir-api", "dist", "server.js")
     ).href
   );
 
-  const api = createBrainApiServer({
+  const api = createMimirApiServer({
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
     stagingRoot: path.join(root, "vault", "staging"),
-    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
     qdrantUrl: "http://127.0.0.1:6333",
-    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    qdrantCollection: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
     embeddingProvider: "hash",
     reasoningProvider: "heuristic",
     draftingProvider: "disabled",
@@ -1338,21 +1364,21 @@ test("brain-api creates governed refresh drafts through the temporal freshness r
   assert.deepEqual(payload.data.frontmatter.supersedes, [seeded.noteId]);
 });
 
-test("brain-api exposes direct context-packet assembly over HTTP", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-packet-"));
-  const { createBrainApiServer } = await import(
+test("mimir-api exposes direct context-packet assembly over HTTP", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-api-packet-"));
+  const { createMimirApiServer } = await import(
     pathToFileURL(
-      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+      path.join(process.cwd(), "apps", "mimir-api", "dist", "server.js")
     ).href
   );
 
-  const api = createBrainApiServer({
+  const api = createMimirApiServer({
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
     stagingRoot: path.join(root, "vault", "staging"),
-    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
     qdrantUrl: "http://127.0.0.1:6333",
-    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    qdrantCollection: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
     embeddingProvider: "hash",
     reasoningProvider: "heuristic",
     draftingProvider: "disabled",
@@ -1391,11 +1417,11 @@ test("brain-api exposes direct context-packet assembly over HTTP", async (t) => 
           summary: "HTTP route can assemble a bounded packet directly.",
           scope: "architecture",
           qualifiers: ["bounded retrieval"],
-          tags: ["project/multi-agent-brain"],
+          tags: ["project/mimir"],
           stalenessClass: "current",
           provenance: {
             noteId: "note-http-1",
-            notePath: "context_brain/architecture/http-packet.md",
+            notePath: "mimisbrunnr/architecture/http-packet.md",
             headingPath: ["Summary"]
           }
         }
@@ -1409,21 +1435,21 @@ test("brain-api exposes direct context-packet assembly over HTTP", async (t) => 
   assert.equal(payload.packet.evidence[0].noteId, "note-http-1");
 });
 
-test("brain-api rejects malformed request payloads at ingress", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-invalid-"));
-  const { createBrainApiServer } = await import(
+test("mimir-api rejects malformed request payloads at ingress", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-api-invalid-"));
+  const { createMimirApiServer } = await import(
     pathToFileURL(
-      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+      path.join(process.cwd(), "apps", "mimir-api", "dist", "server.js")
     ).href
   );
 
-  const api = createBrainApiServer({
+  const api = createMimirApiServer({
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
     stagingRoot: path.join(root, "vault", "staging"),
-    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
     qdrantUrl: "http://127.0.0.1:6333",
-    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    qdrantCollection: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
     embeddingProvider: "hash",
     reasoningProvider: "heuristic",
     draftingProvider: "disabled",
@@ -1448,7 +1474,7 @@ test("brain-api rejects malformed request payloads at ingress", async (t) => {
     },
     body: JSON.stringify({
       query: "invalid budget",
-      corpusIds: ["context_brain"],
+      corpusIds: ["mimisbrunnr"],
       budget: {
         maxTokens: "320",
         maxSources: 2,
@@ -1464,21 +1490,21 @@ test("brain-api rejects malformed request payloads at ingress", async (t) => {
   assert.equal(payload.error.code, "validation_failed");
 });
 
-test("brain-api enforces registered actor tokens when auth mode is enforced", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-auth-"));
-  const { createBrainApiServer } = await import(
+test("mimir-api enforces registered actor tokens when auth mode is enforced", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-api-auth-"));
+  const { createMimirApiServer } = await import(
     pathToFileURL(
-      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+      path.join(process.cwd(), "apps", "mimir-api", "dist", "server.js")
     ).href
   );
 
-  const api = createBrainApiServer({
+  const api = createMimirApiServer({
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
     stagingRoot: path.join(root, "vault", "staging"),
-    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
     qdrantUrl: "http://127.0.0.1:6333",
-    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    qdrantCollection: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
     embeddingProvider: "hash",
     reasoningProvider: "heuristic",
     draftingProvider: "disabled",
@@ -1494,7 +1520,7 @@ test("brain-api enforces registered actor tokens when auth mode is enforced", as
           actorId: "validate-note-http",
           actorRole: "orchestrator",
           authToken: "http-secret",
-          source: "brain-api",
+          source: "mimir-api",
           allowedTransports: ["http"],
           allowedCommands: ["validate_note"]
         }
@@ -1516,20 +1542,20 @@ test("brain-api enforces registered actor tokens when auth mode is enforced", as
       "content-type": "application/json"
     },
     body: JSON.stringify({
-      targetCorpus: "context_brain",
-      notePath: "context_brain/decision/auth-note.md",
+      targetCorpus: "mimisbrunnr",
+      notePath: "mimisbrunnr/decision/auth-note.md",
       validationMode: "promotion",
       frontmatter: {
         noteId: randomUUID(),
         title: "Auth Note",
-        project: "multi-agent-brain",
+        project: "mimir",
         type: "decision",
         status: "promoted",
         updated: currentDateIso(),
         summary: "Should require a token.",
-        tags: ["project/multi-agent-brain", "domain/orchestration", "status/promoted"],
+        tags: ["project/mimir", "domain/orchestration", "status/promoted"],
         scope: "auth",
-        corpusId: "context_brain",
+        corpusId: "mimisbrunnr",
         currentState: false
       },
       body: [
@@ -1560,29 +1586,29 @@ test("brain-api enforces registered actor tokens when auth mode is enforced", as
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-brain-actor-token": "http-secret"
+      "x-mimir-actor-token": "http-secret"
     },
     body: JSON.stringify({
       actor: {
         actorId: "validate-note-http",
         actorRole: "orchestrator",
-        source: "brain-api",
+        source: "mimir-api",
         authToken: "http-secret"
       },
-      targetCorpus: "context_brain",
-      notePath: "context_brain/decision/auth-note.md",
+      targetCorpus: "mimisbrunnr",
+      notePath: "mimisbrunnr/decision/auth-note.md",
       validationMode: "promotion",
       frontmatter: {
         noteId: randomUUID(),
         title: "Auth Note",
-        project: "multi-agent-brain",
+        project: "mimir",
         type: "decision",
         status: "promoted",
         updated: currentDateIso(),
         summary: "Should validate once authenticated.",
-        tags: ["project/multi-agent-brain", "domain/orchestration", "status/promoted"],
+        tags: ["project/mimir", "domain/orchestration", "status/promoted"],
         scope: "auth",
-        corpusId: "context_brain",
+        corpusId: "mimisbrunnr",
         currentState: false
       },
       body: [
@@ -1610,8 +1636,8 @@ test("brain-api enforces registered actor tokens when auth mode is enforced", as
   assert.equal(authenticatedPayload.valid, true);
 });
 
-test("brain-api loads a file-backed actor registry and honors rotated credential windows", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-auth-file-"));
+test("mimir-api loads a file-backed actor registry and honors rotated credential windows", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-api-auth-file-"));
   const registryPath = path.join(root, "config", "actor-registry.json");
   await fsMkdir(path.dirname(registryPath), { recursive: true });
   const now = Date.now();
@@ -1636,7 +1662,7 @@ test("brain-api loads a file-backed actor registry and honors rotated credential
                 validUntil: new Date(now + 3_600_000).toISOString()
               }
             ],
-            source: "brain-api",
+            source: "mimir-api",
             allowedTransports: ["http"],
             allowedCommands: ["validate_note"]
           }
@@ -1648,9 +1674,9 @@ test("brain-api loads a file-backed actor registry and honors rotated credential
     "utf8"
   );
 
-  const { createBrainApiServer } = await import(
+  const { createMimirApiServer } = await import(
     pathToFileURL(
-      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+      path.join(process.cwd(), "apps", "mimir-api", "dist", "server.js")
     ).href
   );
   const { loadEnvironment } = await import(
@@ -1659,15 +1685,15 @@ test("brain-api loads a file-backed actor registry and honors rotated credential
     ).href
   );
 
-  const api = createBrainApiServer(
+  const api = createMimirApiServer(
     loadEnvironment({
       ...process.env,
       MAB_NODE_ENV: "test",
       MAB_VAULT_ROOT: path.join(root, "vault", "canonical"),
       MAB_STAGING_ROOT: path.join(root, "vault", "staging"),
-      MAB_SQLITE_PATH: path.join(root, "state", "multi-agent-brain.sqlite"),
+      MAB_SQLITE_PATH: path.join(root, "state", "mimisbrunnr.sqlite"),
       MAB_QDRANT_URL: "http://127.0.0.1:6333",
-      MAB_QDRANT_COLLECTION: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+      MAB_QDRANT_COLLECTION: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
       MAB_EMBEDDING_PROVIDER: "hash",
       MAB_REASONING_PROVIDER: "heuristic",
       MAB_DRAFTING_PROVIDER: "disabled",
@@ -1692,23 +1718,23 @@ test("brain-api loads a file-backed actor registry and honors rotated credential
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-brain-actor-token": "expired-http-secret"
+      "x-mimir-actor-token": "expired-http-secret"
     },
     body: JSON.stringify({
-      targetCorpus: "context_brain",
-      notePath: "context_brain/decision/auth-file-note.md",
+      targetCorpus: "mimisbrunnr",
+      notePath: "mimisbrunnr/decision/auth-file-note.md",
       validationMode: "promotion",
       frontmatter: {
         noteId: randomUUID(),
         title: "Auth File Note",
-        project: "multi-agent-brain",
+        project: "mimir",
         type: "decision",
         status: "promoted",
         updated: currentDateIso(),
         summary: "File-backed auth should reject expired credentials.",
-        tags: ["project/multi-agent-brain", "domain/orchestration", "status/promoted"],
+        tags: ["project/mimir", "domain/orchestration", "status/promoted"],
         scope: "auth",
-        corpusId: "context_brain",
+        corpusId: "mimisbrunnr",
         currentState: false
       },
       body: [
@@ -1740,23 +1766,23 @@ test("brain-api loads a file-backed actor registry and honors rotated credential
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-brain-actor-token": "current-http-secret"
+      "x-mimir-actor-token": "current-http-secret"
     },
     body: JSON.stringify({
-      targetCorpus: "context_brain",
-      notePath: "context_brain/decision/auth-file-note.md",
+      targetCorpus: "mimisbrunnr",
+      notePath: "mimisbrunnr/decision/auth-file-note.md",
       validationMode: "promotion",
       frontmatter: {
         noteId: randomUUID(),
         title: "Auth File Note",
-        project: "multi-agent-brain",
+        project: "mimir",
         type: "decision",
         status: "promoted",
         updated: currentDateIso(),
         summary: "File-backed auth should accept active credentials.",
-        tags: ["project/multi-agent-brain", "domain/orchestration", "status/promoted"],
+        tags: ["project/mimir", "domain/orchestration", "status/promoted"],
         scope: "auth",
-        corpusId: "context_brain",
+        corpusId: "mimisbrunnr",
         currentState: false
       },
       body: [
@@ -1784,11 +1810,11 @@ test("brain-api loads a file-backed actor registry and honors rotated credential
   assert.equal(currentPayload.valid, true);
 });
 
-test("brain-api accepts centrally issued actor tokens for registered actors", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-issued-token-"));
-  const { createBrainApiServer } = await import(
+test("mimir-api accepts centrally issued actor tokens for registered actors", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-api-issued-token-"));
+  const { createMimirApiServer } = await import(
     pathToFileURL(
-      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+      path.join(process.cwd(), "apps", "mimir-api", "dist", "server.js")
     ).href
   );
   const { issueActorAccessToken } = await import(
@@ -1798,13 +1824,13 @@ test("brain-api accepts centrally issued actor tokens for registered actors", as
   );
 
   const issuerSecret = "issued-token-secret";
-  const api = createBrainApiServer({
+  const api = createMimirApiServer({
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
     stagingRoot: path.join(root, "vault", "staging"),
-    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
     qdrantUrl: "http://127.0.0.1:6333",
-    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    qdrantCollection: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
     embeddingProvider: "hash",
     reasoningProvider: "heuristic",
     draftingProvider: "disabled",
@@ -1819,7 +1845,7 @@ test("brain-api accepts centrally issued actor tokens for registered actors", as
         {
           actorId: "validate-note-http",
           actorRole: "orchestrator",
-          source: "brain-api",
+          source: "mimir-api",
           allowedTransports: ["http"],
           allowedCommands: ["validate_note"]
         }
@@ -1841,7 +1867,7 @@ test("brain-api accepts centrally issued actor tokens for registered actors", as
     {
       actorId: "validate-note-http",
       actorRole: "orchestrator",
-      source: "brain-api",
+      source: "mimir-api",
       allowedTransports: ["http"],
       allowedCommands: ["validate_note"],
       validUntil: new Date(Date.now() + 3_600_000).toISOString(),
@@ -1854,29 +1880,29 @@ test("brain-api accepts centrally issued actor tokens for registered actors", as
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-brain-actor-token": issuedToken
+      "x-mimir-actor-token": issuedToken
     },
     body: JSON.stringify({
       actor: {
         actorId: "validate-note-http",
         actorRole: "orchestrator",
-        source: "brain-api",
+        source: "mimir-api",
         authToken: issuedToken
       },
-      targetCorpus: "context_brain",
-      notePath: "context_brain/decision/issued-token-note.md",
+      targetCorpus: "mimisbrunnr",
+      notePath: "mimisbrunnr/decision/issued-token-note.md",
       validationMode: "promotion",
       frontmatter: {
         noteId: randomUUID(),
         title: "Issued Token Note",
-        project: "multi-agent-brain",
+        project: "mimir",
         type: "decision",
         status: "promoted",
         updated: currentDateIso(),
         summary: "Issued tokens should work for registered operators.",
-        tags: ["project/multi-agent-brain", "domain/orchestration", "status/promoted"],
+        tags: ["project/mimir", "domain/orchestration", "status/promoted"],
         scope: "auth",
-        corpusId: "context_brain",
+        corpusId: "mimisbrunnr",
         currentState: false
       },
       body: [
@@ -1904,21 +1930,21 @@ test("brain-api accepts centrally issued actor tokens for registered actors", as
   assert.equal(payload.valid, true);
 });
 
-test("brain-api lists and reads namespace nodes through the shared context namespace service", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-namespace-"));
-  const { createBrainApiServer } = await import(
+test("mimir-api lists and reads namespace nodes through the shared context namespace service", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-api-namespace-"));
+  const { createMimirApiServer } = await import(
     pathToFileURL(
-      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+      path.join(process.cwd(), "apps", "mimir-api", "dist", "server.js")
     ).href
   );
 
-  const api = createBrainApiServer({
+  const api = createMimirApiServer({
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
     stagingRoot: path.join(root, "vault", "staging"),
-    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
     qdrantUrl: "http://127.0.0.1:6333",
-    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    qdrantCollection: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
     embeddingProvider: "hash",
     reasoningProvider: "heuristic",
     draftingProvider: "disabled",
@@ -1953,7 +1979,7 @@ test("brain-api lists and reads namespace nodes through the shared context names
       "content-type": "application/json"
     },
     body: JSON.stringify({
-      ownerScope: "context_brain",
+      ownerScope: "mimisbrunnr",
       authorityStates: ["canonical", "staging"]
     })
   });
@@ -1964,14 +1990,14 @@ test("brain-api lists and reads namespace nodes through the shared context names
   assert.ok(
     treePayload.data.nodes.some(
       (node) =>
-        node.uri === `mab://context_brain/note/${canonical.noteId}` &&
+        node.uri === `mimir://mimisbrunnr/note/${canonical.noteId}` &&
         node.authorityState === "canonical"
     )
   );
   assert.ok(
     treePayload.data.nodes.some(
       (node) =>
-        node.uri === `mab://context_brain/note/${staging.draftNoteId}` &&
+        node.uri === `mimir://mimisbrunnr/note/${staging.draftNoteId}` &&
         node.authorityState === "staging"
     )
   );
@@ -1982,19 +2008,19 @@ test("brain-api lists and reads namespace nodes through the shared context names
       "content-type": "application/json"
     },
     body: JSON.stringify({
-      uri: `mab://context_brain/note/${canonical.noteId}`
+      uri: `mimir://mimisbrunnr/note/${canonical.noteId}`
     })
   });
 
   assert.equal(nodeResponse.status, 200);
   const nodePayload = await nodeResponse.json();
   assert.equal(nodePayload.ok, true);
-  assert.equal(nodePayload.data.node.uri, `mab://context_brain/note/${canonical.noteId}`);
+  assert.equal(nodePayload.data.node.uri, `mimir://mimisbrunnr/note/${canonical.noteId}`);
   assert.equal(nodePayload.data.node.authorityState, "canonical");
 });
 
-test("brain-api exposes coding execution through the root orchestrator", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-api-coding-"));
+test("mimir-api exposes coding execution through the root orchestrator", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-api-coding-"));
   const repoRoot = path.join(root, "repo");
   await fsMkdir(path.join(repoRoot, ".git"), { recursive: true });
   await fsMkdir(path.join(repoRoot, "src"), { recursive: true });
@@ -2003,17 +2029,17 @@ test("brain-api exposes coding execution through the root orchestrator", async (
     'def greet(name: str) -> str:\n    return f"Hello, {name}"\n',
     "utf8"
   );
-  const { createBrainApiServer } = await import(
-    pathToFileURL(path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")).href
+  const { createMimirApiServer } = await import(
+    pathToFileURL(path.join(process.cwd(), "apps", "mimir-api", "dist", "server.js")).href
   );
 
-  const api = createBrainApiServer({
+  const api = createMimirApiServer({
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
     stagingRoot: path.join(root, "vault", "staging"),
-    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
     qdrantUrl: "http://127.0.0.1:6333",
-    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    qdrantCollection: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
     embeddingProvider: "hash",
     reasoningProvider: "heuristic",
     draftingProvider: "disabled",
@@ -2060,9 +2086,9 @@ function cliEnvironment(root, overrides = {}) {
     MAB_NODE_ENV: "test",
     MAB_VAULT_ROOT: path.join(root, "vault", "canonical"),
     MAB_STAGING_ROOT: path.join(root, "vault", "staging"),
-    MAB_SQLITE_PATH: path.join(root, "state", "multi-agent-brain.sqlite"),
+    MAB_SQLITE_PATH: path.join(root, "state", "mimisbrunnr.sqlite"),
     MAB_QDRANT_URL: "http://127.0.0.1:6333",
-    MAB_QDRANT_COLLECTION: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    MAB_QDRANT_COLLECTION: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
     MAB_EMBEDDING_PROVIDER: "hash",
     MAB_REASONING_PROVIDER: "heuristic",
     MAB_DRAFTING_PROVIDER: "disabled",
@@ -2123,7 +2149,7 @@ async function seedTemporalValidityNote(sqlitePath, input) {
   try {
     await store.upsertNote({
       noteId: input.noteId,
-      corpusId: "context_brain",
+      corpusId: "mimisbrunnr",
       notePath: input.notePath,
       noteType: "reference",
       lifecycleState: "promoted",
@@ -2134,7 +2160,7 @@ async function seedTemporalValidityNote(sqlitePath, input) {
       validUntil: input.validUntil,
       summary: input.summary,
       scope: "temporal-validity",
-      tags: ["project/multi-agent-brain", "status/current"],
+      tags: ["project/mimir", "status/current"],
       contentHash: `sha256:${input.noteId}`,
       semanticSignature: input.noteId
     });
@@ -2159,9 +2185,9 @@ async function seedCanonicalTemporalNotes(root, inputs) {
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
     stagingRoot: path.join(root, "vault", "staging"),
-    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
     qdrantUrl: "http://127.0.0.1:6333",
-    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    qdrantCollection: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
     embeddingProvider: "hash",
     reasoningProvider: "heuristic",
     draftingProvider: "disabled",
@@ -2173,7 +2199,7 @@ async function seedCanonicalTemporalNotes(root, inputs) {
     for (const input of inputs) {
       const draft = await container.services.stagingDraftService.createDraft({
         actor: testActor("writer"),
-        targetCorpus: "context_brain",
+        targetCorpus: "mimisbrunnr",
         noteType: "reference",
         title: input.title,
         sourcePrompt: `Refresh seed for ${input.title}`,
@@ -2194,7 +2220,7 @@ async function seedCanonicalTemporalNotes(root, inputs) {
       const promoted = await container.services.promotionOrchestratorService.promoteDraft({
         actor: testActor("orchestrator"),
         draftNoteId: draft.data.draftNoteId,
-        targetCorpus: "context_brain",
+        targetCorpus: "mimisbrunnr",
         promoteAsCurrentState: true
       });
 
@@ -2219,9 +2245,9 @@ async function seedStagingDraft(root, input) {
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
     stagingRoot: path.join(root, "vault", "staging"),
-    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
     qdrantUrl: "http://127.0.0.1:6333",
-    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    qdrantCollection: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
     embeddingProvider: "hash",
     reasoningProvider: "heuristic",
     draftingProvider: "disabled",
@@ -2232,7 +2258,7 @@ async function seedStagingDraft(root, input) {
   try {
     const draft = await container.services.stagingDraftService.createDraft({
       actor: testActor("writer"),
-      targetCorpus: "context_brain",
+      targetCorpus: "mimisbrunnr",
       noteType: "reference",
       title: input.title,
       sourcePrompt: `Seed staging draft for ${input.title}`,

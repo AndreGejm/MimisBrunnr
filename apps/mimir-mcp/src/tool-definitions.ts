@@ -1,4 +1,4 @@
-import type { ActorRole } from "@multi-agent-brain/contracts";
+import type { ActorRole } from "@mimir/contracts";
 
 export interface McpToolDefinition {
   name: string;
@@ -33,7 +33,7 @@ export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
             query: { type: "string" },
             corpusIds: {
               type: "array",
-              items: { type: "string", enum: ["context_brain", "general_notes"] }
+              items: { type: "string", enum: ["mimisbrunnr", "general_notes"] }
             },
             budget: {
               type: "object",
@@ -104,7 +104,7 @@ export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
         corpusIds: {
           type: "array",
           minItems: 1,
-          items: { type: "string", enum: ["context_brain", "general_notes"] }
+          items: { type: "string", enum: ["mimisbrunnr", "general_notes"] }
         },
         budget: {
           type: "object",
@@ -158,7 +158,7 @@ export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
         corpusIds: {
           type: "array",
           minItems: 1,
-          items: { type: "string", enum: ["context_brain", "general_notes"] }
+          items: { type: "string", enum: ["mimisbrunnr", "general_notes"] }
         },
         budget: {
           type: "object",
@@ -319,7 +319,7 @@ export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
         actor: { type: "object" },
         asOf: { type: "string" },
         expiringWithinDays: { type: "number" },
-        corpusId: { type: "string", enum: ["context_brain", "general_notes"] },
+        corpusId: { type: "string", enum: ["mimisbrunnr", "general_notes"] },
         limitPerCategory: { type: "number" },
         maxDrafts: { type: "number" },
         sourceStates: {
@@ -360,7 +360,7 @@ export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
       additionalProperties: true,
       properties: {
         actor: { type: "object" },
-        targetCorpus: { type: "string", enum: ["context_brain", "general_notes"] },
+        targetCorpus: { type: "string", enum: ["mimisbrunnr", "general_notes"] },
         noteType: { type: "string" },
         title: { type: "string" },
         sourcePrompt: { type: "string" },
@@ -406,7 +406,7 @@ export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
       additionalProperties: true,
       properties: {
         actor: { type: "object" },
-        targetCorpus: { type: "string", enum: ["context_brain", "general_notes"] },
+        targetCorpus: { type: "string", enum: ["mimisbrunnr", "general_notes"] },
         notePath: { type: "string" },
         frontmatter: { type: "object" },
         body: { type: "string" },
@@ -426,7 +426,7 @@ export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
       properties: {
         actor: { type: "object" },
         draftNoteId: { type: "string" },
-        targetCorpus: { type: "string", enum: ["context_brain", "general_notes"] },
+        targetCorpus: { type: "string", enum: ["mimisbrunnr", "general_notes"] },
         expectedDraftRevision: { type: "string" },
         targetPath: { type: "string" },
         promoteAsCurrentState: { type: "boolean" }

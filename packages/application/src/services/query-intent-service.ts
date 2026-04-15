@@ -4,8 +4,8 @@ import type {
   AnswerabilityDisposition,
   PacketType,
   QueryIntent
-} from "@multi-agent-brain/domain";
-import type { ContextCandidate } from "@multi-agent-brain/contracts";
+} from "@mimir/domain";
+import type { ContextCandidate } from "@mimir/contracts";
 
 export class QueryIntentService {
   constructor(private readonly provider?: LocalReasoningProvider) {}

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { CanonicalNoteRecord } from "../ports/canonical-note-repository.js";
-import type { ChunkRecord, ChunkStalenessClass } from "@multi-agent-brain/domain";
+import type { ChunkRecord, ChunkStalenessClass } from "@mimir/domain";
 
 export interface ChunkingOptions {
   targetChunkCharacters?: number;

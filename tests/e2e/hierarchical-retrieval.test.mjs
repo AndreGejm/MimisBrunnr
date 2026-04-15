@@ -17,7 +17,7 @@ test("hierarchical retrieval is opt-in and preserves bounded packet guarantees",
 
   const validated = validateTransportRequest("search-context", {
     query: "Hierarchical Retrieval Canonical Node",
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     budget: {
       maxTokens: 1200,
       maxSources: 3,
@@ -31,7 +31,7 @@ test("hierarchical retrieval is opt-in and preserves bounded packet guarantees",
   const flatResult = await container.services.retrieveContextService.retrieveContext({
     actor: actor("retrieval"),
     query: "Hierarchical Retrieval Canonical Node",
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     budget: {
       maxTokens: 1200,
       maxSources: 3,
@@ -47,7 +47,7 @@ test("hierarchical retrieval is opt-in and preserves bounded packet guarantees",
   const hierarchicalResult = await container.services.retrieveContextService.retrieveContext({
     actor: actor("retrieval"),
     query: "Hierarchical Retrieval Canonical Node",
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     budget: {
       maxTokens: 1200,
       maxSources: 3,
@@ -66,7 +66,7 @@ test("hierarchical retrieval is opt-in and preserves bounded packet guarantees",
 });
 
 async function createHarness(t) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-hierarchical-retrieval-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-hierarchical-retrieval-"));
   const container = buildServiceContainer({
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
@@ -95,20 +95,20 @@ async function createCanonicalNote(container) {
   const noteId = randomUUID();
   const result = await container.services.canonicalNoteService.writeCanonicalNote({
     noteId,
-    corpusId: "context_brain",
-    notePath: "context_brain/hierarchy/canonical-node.md",
+    corpusId: "mimisbrunnr",
+    notePath: "mimisbrunnr/hierarchy/canonical-node.md",
     revision: "",
     frontmatter: {
       noteId,
       title: "Hierarchical Retrieval Canonical Node",
-      project: "multi-agent-brain",
+      project: "mimir",
       type: "reference",
       status: "promoted",
       updated: currentDateIso(),
       summary: "Canonical note for hierarchical retrieval coverage.",
-      tags: ["project/multi-agent-brain", "domain/retrieval", "status/promoted"],
+      tags: ["project/mimir", "domain/retrieval", "status/promoted"],
       scope: "hierarchy",
-      corpusId: "context_brain",
+      corpusId: "mimisbrunnr",
       currentState: true
     },
     body: [
@@ -133,7 +133,7 @@ async function createCanonicalNote(container) {
 async function createStagingDraft(container) {
   const result = await container.services.stagingDraftService.createDraft({
     actor: actor("writer"),
-    targetCorpus: "context_brain",
+    targetCorpus: "mimisbrunnr",
     noteType: "reference",
     title: "Hierarchical Retrieval Staging Node",
     sourcePrompt: "Draft a staging node for hierarchical retrieval coverage.",

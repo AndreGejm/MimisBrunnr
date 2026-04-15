@@ -1,6 +1,6 @@
 import { mkdir, readdir } from "node:fs/promises";
 import path from "node:path";
-import type { CorpusId } from "@multi-agent-brain/domain";
+import type { CorpusId } from "@mimir/domain";
 
 export function normalizeNotePath(notePath: string, corpusId: CorpusId): string {
   const posixPath = notePath.replace(/\\/g, "/").replace(/^\/+/, "").trim();

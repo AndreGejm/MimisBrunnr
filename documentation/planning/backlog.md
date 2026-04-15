@@ -26,7 +26,7 @@ For rollout readiness and the MCP adoption path, see [`go-live-gates.md`](./go-l
 
 ## Rollout-Critical Priority
 
-If the goal is to make Multi Agent Brain the default MCP tool across all workspaces, the next backlog order is:
+If the goal is to make mimir the default MCP tool across all workspaces, the next backlog order is:
 
 1. close the remaining shared-rollout hardening under `BK-001`
 2. close the remaining freshness-governance work under `BK-007`
@@ -76,7 +76,7 @@ The next implementation order now begins with the stricter read-path governance 
 | CA-002 | Implement filesystem-backed staging note repository | Requirement-Writer-Staging-Plane | medium | done | WF-004 | `packages/infrastructure/src/vault/file-system-staging-note-repository.ts` |
 | CA-003 | Design SQLite schema for notes, chunks, tags, lifecycle, and audit | Requirement-SQLite-Control-Store | high | done | WF-004, WF-005 | `packages/infrastructure/src/sqlite/sqlite-metadata-control-store.ts` |
 | CA-004 | Implement deterministic note schema and controlled tag validation | Requirement-Note-Schema-And-Tags | medium | done | CA-001, CA-003 | `packages/application/src/services/note-validation-service.ts` |
-| CA-005 | Enforce corpus separation for `context_brain` and `general_notes` | Requirement-Corpus-Separation | medium | done | CA-001, CA-003 | `packages/application/src/services/canonical-note-service.ts`, `packages/application/src/services/staging-draft-service.ts`, `packages/application/src/services/note-validation-service.ts` |
+| CA-005 | Enforce corpus separation for `mimisbrunnr` and `general_notes` | Requirement-Corpus-Separation | medium | done | CA-001, CA-003 | `packages/application/src/services/canonical-note-service.ts`, `packages/application/src/services/staging-draft-service.ts`, `packages/application/src/services/note-validation-service.ts` |
 
 ## Retrieval Core
 
@@ -106,11 +106,11 @@ The next implementation order now begins with the stricter read-path governance 
 | ID | Work Item | Source Requirement | Complexity | Status | Depends On | Repo Targets |
 | --- | --- | --- | --- | --- | --- | --- |
 | LR-001 | Implement local-first provider adapters with optional model use | Requirement-Model-Provider-Abstractions | medium | done | WF-004, WF-005 | `packages/infrastructure/src/providers/*` |
-| LR-002 | Add CLI commands as thin wrappers over services | Requirement-Transport-Isolation | high | done | GV-003, RT-008 | `apps/brain-cli/src/**` |
-| LR-003 | Add HTTP routes as thin wrappers over services | Requirement-Transport-Isolation | high | done | GV-003, RT-008 | `apps/brain-api/src/**` |
+| LR-002 | Add CLI commands as thin wrappers over services | Requirement-Transport-Isolation | high | done | GV-003, RT-008 | `apps/mimir-cli/src/**` |
+| LR-003 | Add HTTP routes as thin wrappers over services | Requirement-Transport-Isolation | high | done | GV-003, RT-008 | `apps/mimir-api/src/**` |
 | LR-004 | Add health checks and Docker runtime assets | Requirement-Docker-Readiness | medium | done | LR-002, LR-003 | `docker/*`, `packages/infrastructure/src/health/*` |
 | LR-005 | Add regression suites for schema, chunking, packet size, promotion, and corpus separation | Requirement-Validation-And-Regression | medium | done | GV-005, RT-008 | `tests/e2e/*` |
-| LR-006 | Add MCP transport as a thin adapter over stable services | Requirement-MCP-Adapter-Readiness | medium | done | LR-002, LR-003, LR-005 | `apps/brain-mcp/src/**` |
+| LR-006 | Add MCP transport as a thin adapter over stable services | Requirement-MCP-Adapter-Readiness | medium | done | LR-002, LR-003, LR-005 | `apps/mimir-mcp/src/**` |
 
 ## Coding Runtime Integration
 

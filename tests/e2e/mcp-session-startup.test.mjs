@@ -40,7 +40,7 @@ test("validateDockerMcpSessionStartup rejects missing required explicit session 
 
 test("validateDockerMcpSessionStartup rejects missing storage mounts before runtime startup", async () => {
   const { validateDockerMcpSessionStartup } = await importInfrastructure();
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-mcp-session-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-mcp-session-"));
 
   try {
     const canonicalRoot = path.join(root, "canonical");
@@ -60,7 +60,7 @@ test("validateDockerMcpSessionStartup rejects missing storage mounts before runt
       buildStrictSessionEnv({
         canonicalRoot,
         stagingRoot,
-        sqlitePath: path.join(stateRoot, "multi-agent-brain.sqlite"),
+        sqlitePath: path.join(stateRoot, "mimisbrunnr.sqlite"),
         registryPath
       }),
       {
@@ -89,7 +89,7 @@ test("validateDockerMcpSessionStartup rejects missing storage mounts before runt
 
 test("validateDockerMcpSessionStartup requires reachable model and vector dependencies", async () => {
   const { validateDockerMcpSessionStartup } = await importInfrastructure();
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-mcp-session-deps-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-mcp-session-deps-"));
 
   try {
     const canonicalRoot = path.join(root, "canonical");
@@ -109,7 +109,7 @@ test("validateDockerMcpSessionStartup requires reachable model and vector depend
       buildStrictSessionEnv({
         canonicalRoot,
         stagingRoot,
-        sqlitePath: path.join(stateRoot, "multi-agent-brain.sqlite"),
+        sqlitePath: path.join(stateRoot, "mimisbrunnr.sqlite"),
         registryPath
       }),
       {
@@ -143,12 +143,12 @@ test("validateDockerMcpSessionStartup requires reachable model and vector depend
   }
 });
 
-test("brain-mcp exits cleanly when the MCP client closes stdin", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-mcp-stdin-close-"));
+test("mimir-mcp exits cleanly when the MCP client closes stdin", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-mcp-stdin-close-"));
 
   const child = spawn(
     process.execPath,
-    [path.join(process.cwd(), "apps", "brain-mcp", "dist", "main.js")],
+    [path.join(process.cwd(), "apps", "mimir-mcp", "dist", "main.js")],
     {
       cwd: process.cwd(),
       env: {
@@ -156,9 +156,9 @@ test("brain-mcp exits cleanly when the MCP client closes stdin", async (t) => {
         MAB_NODE_ENV: "test",
         MAB_VAULT_ROOT: path.join(root, "vault", "canonical"),
         MAB_STAGING_ROOT: path.join(root, "vault", "staging"),
-        MAB_SQLITE_PATH: path.join(root, "state", "multi-agent-brain.sqlite"),
+        MAB_SQLITE_PATH: path.join(root, "state", "mimisbrunnr.sqlite"),
         MAB_QDRANT_URL: "http://127.0.0.1:6333",
-        MAB_QDRANT_COLLECTION: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+        MAB_QDRANT_COLLECTION: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
         MAB_EMBEDDING_PROVIDER: "hash",
         MAB_REASONING_PROVIDER: "heuristic",
         MAB_DRAFTING_PROVIDER: "disabled",
@@ -186,7 +186,7 @@ test("brain-mcp exits cleanly when the MCP client closes stdin", async (t) => {
   const exitCode = await Promise.race([
     new Promise((resolve) => child.once("close", resolve)),
     new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("brain-mcp did not exit after stdin closed")), 2_000)
+      setTimeout(() => reject(new Error("mimir-mcp did not exit after stdin closed")), 2_000)
     )
   ]);
 
@@ -216,12 +216,12 @@ function buildStrictSessionEnv({
     MAB_STAGING_ROOT: stagingRoot,
     MAB_SQLITE_PATH: sqlitePath,
     MAB_QDRANT_URL: "http://qdrant:6333",
-    MAB_QDRANT_COLLECTION: "context_brain_chunks",
+    MAB_QDRANT_COLLECTION: "mimisbrunnr_chunks",
     MAB_PROVIDER_DOCKER_OLLAMA_BASE_URL: "http://model-runner.docker.internal:12434",
     MAB_ROLE_CODING_PRIMARY_PROVIDER: "docker_ollama",
     MAB_ROLE_CODING_PRIMARY_MODEL: "qwen3-coder",
-    MAB_ROLE_BRAIN_PRIMARY_PROVIDER: "docker_ollama",
-    MAB_ROLE_BRAIN_PRIMARY_MODEL: "qwen3:4B-F16",
+    MAB_ROLE_MIMISBRUNNR_PRIMARY_PROVIDER: "docker_ollama",
+    MAB_ROLE_MIMISBRUNNR_PRIMARY_MODEL: "qwen3:4B-F16",
     MAB_ROLE_EMBEDDING_PRIMARY_PROVIDER: "docker_ollama",
     MAB_ROLE_EMBEDDING_PRIMARY_MODEL: "docker.io/ai/qwen3-embedding:0.6B-F16",
     MAB_ROLE_RERANKER_PRIMARY_PROVIDER: "docker_ollama",
@@ -235,7 +235,7 @@ function buildStrictSessionEnv({
     MAB_MCP_DEFAULT_ACTOR_ID: "docker-mcp-session",
     MAB_MCP_DEFAULT_ACTOR_ROLE: "operator",
     MAB_MCP_DEFAULT_ACTOR_AUTH_TOKEN: "replace-with-session-token",
-    MAB_MCP_DEFAULT_SOURCE: "brain-mcp-session"
+    MAB_MCP_DEFAULT_SOURCE: "mimir-mcp-session"
   };
 }
 
@@ -259,7 +259,7 @@ async function writeActorRegistry(registryPath) {
             actorId: "docker-mcp-session",
             actorRole: "operator",
             authToken: "replace-with-session-token",
-            source: "brain-mcp-session",
+            source: "mimir-mcp-session",
             allowedTransports: ["mcp"]
           }
         ]

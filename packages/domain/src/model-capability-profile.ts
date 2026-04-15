@@ -31,6 +31,6 @@ export const QWEN3_CODER_LOCAL_PROFILE: ModelCapabilityProfile = {
   cautions: [
     "retrieved context is advisory and never authority by itself",
     "large context windows still need bounded packets",
-    "tool writes must remain governed by MultiagentBrain review paths"
+    "tool writes must remain governed by mimisbrunnr review paths"
   ]
 };

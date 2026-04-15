@@ -3,5 +3,5 @@ export type {
   NoteFrontmatter,
   NoteLifecycleState,
   NoteType
-} from "@multi-agent-brain/domain";
+} from "@mimir/domain";
 export type { ProvenanceRef } from "../common/provenance-ref.js";

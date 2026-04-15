@@ -8,11 +8,11 @@ import type {
   CreateRefreshDraftRequest,
   CreateRefreshDraftResponse,
   ServiceResult
-} from "@multi-agent-brain/contracts";
+} from "@mimir/contracts";
 import type {
   ControlledTag,
   NoteFrontmatter
-} from "@multi-agent-brain/domain";
+} from "@mimir/domain";
 
 type TemporalRefreshErrorCode =
   | "forbidden"

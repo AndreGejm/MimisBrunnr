@@ -5,12 +5,12 @@ import type {
   SearchSessionArchivesRequest,
   SearchSessionArchivesResponse,
   ServiceResult
-} from "@multi-agent-brain/contracts";
+} from "@mimir/contracts";
 import {
   SESSION_ARCHIVE_MESSAGE_ROLES,
   type SessionArchive,
   type SessionArchiveMessage
-} from "@multi-agent-brain/domain";
+} from "@mimir/domain";
 import type {
   SessionArchiveStore,
   StoredSessionArchive
@@ -50,7 +50,7 @@ export class SessionArchiveService {
     const archive: SessionArchive = {
       archiveId,
       sessionId,
-      uri: `mab://sessions/session_archive/${archiveId}`,
+      uri: `mimir://sessions/session_archive/${archiveId}`,
       authorityState: "session",
       promotionStatus: "not_applicable",
       messageCount: messages.length,

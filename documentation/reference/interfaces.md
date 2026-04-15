@@ -4,7 +4,7 @@ This document lists the externally reachable interfaces that are implemented in 
 
 ## HTTP API
 
-Source of truth: `apps/brain-api/src/server.ts`
+Source of truth: `apps/mimir-api/src/server.ts`
 
 ### Health and system
 
@@ -55,7 +55,7 @@ Source of truth: `apps/brain-api/src/server.ts`
 
 ## CLI
 
-Source of truth: `apps/brain-cli/src/main.ts`
+Source of truth: `apps/mimir-cli/src/main.ts`
 
 ### Commands
 
@@ -110,8 +110,8 @@ From the workspace root, the verified invocation form is `corepack pnpm cli -- <
 
 Source of truth:
 
-- `apps/brain-mcp/src/tool-definitions.ts`
-- `apps/brain-mcp/src/main.ts`
+- `apps/mimir-mcp/src/tool-definitions.ts`
+- `apps/mimir-mcp/src/main.ts`
 
 ### Implemented methods
 

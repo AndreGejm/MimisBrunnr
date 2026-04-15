@@ -1,10 +1,10 @@
 services:
-  brain-mcp-session:
+  mimir-mcp-session:
     build:
       context: ..
-      dockerfile: docker/brain-mcp.Dockerfile
+      dockerfile: docker/mimir-mcp.Dockerfile
     env_file:
-      - ./brain-mcp-session.env
+      - ./mimir-mcp-session.env
     stdin_open: true
     tty: false
     extra_hosts:

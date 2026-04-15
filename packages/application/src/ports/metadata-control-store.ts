@@ -6,12 +6,12 @@ import type {
   NoteId,
   ControlledTag,
   NoteType
-} from "@multi-agent-brain/domain";
+} from "@mimir/domain";
 import type {
   ActorContext,
   QueryHistoryRequest,
   QueryHistoryResponse
-} from "@multi-agent-brain/contracts";
+} from "@mimir/contracts";
 import type { CanonicalNoteRecord } from "./canonical-note-repository.js";
 import type { StagingDraftRecord } from "./staging-note-repository.js";
 

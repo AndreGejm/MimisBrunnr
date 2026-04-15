@@ -1,10 +1,10 @@
-# brain-cli
+# mimir-cli
 
 CLI adapter over the shared runtime container.
 
 ## Entrypoint
 
-- `apps/brain-cli/src/main.ts`
+- `apps/mimir-cli/src/main.ts`
 
 ## Commands
 
@@ -42,7 +42,7 @@ CLI adapter over the shared runtime container.
 ```bash
 pnpm cli -- version
 pnpm cli -- auth-status
-pnpm cli -- list-context-tree --json "{\"ownerScope\":\"context_brain\",\"authorityStates\":[\"canonical\",\"staging\"]}"
+pnpm cli -- list-context-tree --json "{\"ownerScope\":\"mimisbrunnr\",\"authorityStates\":[\"canonical\",\"staging\"]}"
 ```
 
 ## Canonical docs
@@ -54,7 +54,7 @@ pnpm cli -- list-context-tree --json "{\"ownerScope\":\"context_brain\",\"author
 
 ### Verified facts
 
-- This README is based on `apps/brain-cli/src/main.ts`
+- This README is based on `apps/mimir-cli/src/main.ts`
 
 ### Assumptions
 

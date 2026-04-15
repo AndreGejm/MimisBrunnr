@@ -4,7 +4,7 @@ This plan translates the staged Obsidian requirement set into a dependency-order
 
 ## Inputs
 
-The plan is derived from the requirement packets in `obsidian-staging/Multi-Agent-Brain/12_Requirement-Specs`, especially:
+The plan is derived from the requirement packets in `obsidian-staging/mimir/12_Requirement-Specs`, especially:
 
 - `Requirement-Boundary-Hardening`
 - `Requirement-Service-Oriented-Architecture`
@@ -157,8 +157,8 @@ Requirements:
 
 Repository targets:
 
-- `apps/brain-cli/*`
-- `apps/brain-api/*`
+- `apps/mimir-cli/*`
+- `apps/mimir-api/*`
 - `tests/e2e/*`
 - `docker/*`
 - `scripts/*`
@@ -172,7 +172,7 @@ Exit criteria:
 ## Deferred Phase: MCP Adapter
 
 Goal:
-Add `apps/brain-mcp` as a thin tool adapter after the service layer is stable.
+Add `apps/mimir-mcp` as a thin tool adapter after the service layer is stable.
 
 Requirements:
 
@@ -180,8 +180,8 @@ Requirements:
 
 Repository targets:
 
-- `apps/brain-mcp/src/main.ts`
-- `apps/brain-mcp/src/tools/*`
+- `apps/mimir-mcp/src/main.ts`
+- `apps/mimir-mcp/src/tools/*`
 
 Exit criteria:
 

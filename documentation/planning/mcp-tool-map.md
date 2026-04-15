@@ -38,11 +38,11 @@ The goal is to keep MCP transport as a thin adapter that converts tool inputs in
 
 - The current codebase already has stable contracts for retrieval, drafting, validation, promotion, and history.
 - The `packages/contracts/src/mcp` folder now reserves the future MCP tool schema layer as thin aliases or narrow wrappers over those existing contracts.
-- When `apps/brain-mcp` is implemented later, each tool handler should do little more than:
+- When `apps/mimir-mcp` is implemented later, each tool handler should do little more than:
   - validate incoming tool arguments
   - map them onto these contracts
   - call the corresponding service
   - return the bounded response
 # Status note
 
-This file contains planning material. The tracked MCP implementation lives in `apps/brain-mcp`, and the current tool surface is documented in `documentation/reference/interfaces.md`.
+This file contains planning material. The tracked MCP implementation lives in `apps/mimir-mcp`, and the current tool surface is documented in `documentation/reference/interfaces.md`.

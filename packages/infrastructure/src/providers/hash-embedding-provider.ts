@@ -1,4 +1,4 @@
-import type { EmbeddingProvider } from "@multi-agent-brain/application";
+import type { EmbeddingProvider } from "@mimir/application";
 
 const DEFAULT_DIMENSIONS = 192;
 

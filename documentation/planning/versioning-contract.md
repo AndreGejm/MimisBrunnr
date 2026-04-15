@@ -1,6 +1,6 @@
 # Versioning Contract
 
-This document defines the Git-centric release contract for Multi Agent Brain.
+This document defines the Git-centric release contract for mimir.
 
 ## Purpose
 
@@ -68,7 +68,7 @@ For local development:
 
 Release metadata is exposed through these surfaces:
 
-- CLI: `brain-cli version` or `brain-cli --version`
+- CLI: `mimir-cli version`, `mimir version`, or the legacy `mimir-cli version`
 - HTTP: `GET /v1/system/version`
 - HTTP health: `GET /health/live` and `GET /health/ready` include `release`
 - MCP: `initialize` returns `serverInfo.version` from the shared release metadata
@@ -100,4 +100,4 @@ The runtime metadata must change with the rollback so operators can confirm:
 
 This keeps release identity outside ad-hoc notes and log messages.
 
-The shared brain needs deterministic memory governance, but operators also need deterministic deployment governance. Tagged releases and explicit commit metadata make runtime behavior traceable across MCP, CLI, HTTP, and audit review.
+mimisbrunnr needs deterministic memory governance, and operators also need deterministic deployment governance. Tagged releases and explicit commit metadata make runtime behavior traceable across MCP, CLI, HTTP, and audit review.

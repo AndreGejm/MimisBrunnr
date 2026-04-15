@@ -2,16 +2,16 @@ import { randomUUID } from "node:crypto";
 import type {
   AuditHistoryService,
   ToolOutputBudgetService
-} from "@multi-agent-brain/application";
+} from "@mimir/application";
 import type {
   CodingValidationResult,
   ExecuteCodingTaskRequest,
   ExecuteCodingTaskResponse
-} from "@multi-agent-brain/contracts";
+} from "@mimir/contracts";
 import type {
   LocalAgentTraceRecord,
   LocalAgentTraceStore
-} from "@multi-agent-brain/domain";
+} from "@mimir/domain";
 import type { CodingControllerBridge } from "./coding-controller-bridge.js";
 
 export interface CodingTraceModelDefaults {

@@ -22,7 +22,7 @@ FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1
-ENV PATH="/opt/mab-python/bin:${PATH}"
+ENV PATH="/opt/mimir-python/bin:${PATH}"
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 python3-pip python3-venv \
@@ -32,7 +32,7 @@ RUN corepack enable
 
 COPY --from=build /app /app
 
-RUN python3 -m venv /opt/mab-python \
-  && /opt/mab-python/bin/pip install --no-cache-dir -r docker/brain-mcp.requirements.txt
+RUN python3 -m venv /opt/mimir-python \
+  && /opt/mimir-python/bin/pip install --no-cache-dir -r docker/mimir-mcp.requirements.txt
 
-ENTRYPOINT ["node", "docker/brain-mcp-session-entrypoint.mjs"]
+ENTRYPOINT ["node", "docker/mimir-mcp-session-entrypoint.mjs"]

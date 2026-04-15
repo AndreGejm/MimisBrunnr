@@ -1,6 +1,8 @@
-# Architecture overview
+# Architecture Overview
 
-This repository is a layered monorepo. The code paths show a clear dependency direction and a shared runtime container, even though some older planning docs still describe parts of that runtime as future work.
+mimir is the application and orchestrator. mimisbrunnr is the AI context well inside mimir: the governed memory, retrieval, and context assembly layer. The code paths show a clear dependency direction and a shared runtime container, even though some older planning docs still describe parts of that runtime as future work.
+
+See `documentation/reference/terminology.md` before renaming product or memory surfaces.
 
 ## Layered package map
 
@@ -15,15 +17,15 @@ packages/application
   business services and port interfaces
 
 packages/orchestration
-  routing, domain controllers, auth policy, model-role resolution
+  mimir orchestration, mimisbrunnr domain controllers, auth policy, model-role resolution
 
 packages/infrastructure
   env loading, storage adapters, providers, runtime container, health, transport validation
 
-apps/brain-api
-apps/brain-cli
-apps/brain-mcp
-  thin transport entrypoints over the shared runtime
+apps/mimir-api
+apps/mimir-cli
+apps/mimir-mcp
+  thin transport entrypoints over the shared mimir runtime
 
 runtimes/local_experts
   vendored Python coding runtime invoked through a subprocess bridge
@@ -47,7 +49,7 @@ infrastructure
 apps/*
 ```
 
-`apps/*` depend on `@multi-agent-brain/contracts` and `@multi-agent-brain/infrastructure`, then enter the runtime through `buildServiceContainer()`.
+`apps/*` depend on `@mimir/contracts` and `@mimir/infrastructure`, then enter the runtime through `buildServiceContainer()`.
 
 ## Runtime composition
 
@@ -62,12 +64,12 @@ It constructs:
 - local/pseudo-local model providers
 - auth policy
 - application services
-- domain controllers
-- the root orchestrator
+- mimisbrunnr domain controllers
+- the root MimirOrchestrator
 
 ## Major subsystems
 
-### Memory and authority
+### mimisbrunnr Memory and Authority
 
 - canonical filesystem repository: `packages/infrastructure/src/vault/file-system-canonical-note-repository.ts`
 - staging filesystem repository: `packages/infrastructure/src/vault/file-system-staging-note-repository.ts`
@@ -76,7 +78,7 @@ It constructs:
 - promotion orchestrator: `packages/application/src/services/promotion-orchestrator-service.ts`
 - temporal refresh: `packages/application/src/services/temporal-refresh-service.ts`
 
-### Retrieval and context assembly
+### mimisbrunnr Retrieval and Context Assembly
 
 - retrieve context: `packages/application/src/services/retrieve-context-service.ts`
 - hierarchical retrieval: `packages/application/src/services/hierarchical-retrieval-service.ts`

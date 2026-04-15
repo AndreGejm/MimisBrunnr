@@ -1,6 +1,6 @@
-import type { DraftingProvider } from "@multi-agent-brain/application";
-import { NOTE_VALIDATION_POLICY } from "@multi-agent-brain/application";
-import type { DraftNoteRequest, DraftNoteResponse } from "@multi-agent-brain/contracts";
+import type { DraftingProvider } from "@mimir/application";
+import { NOTE_VALIDATION_POLICY } from "@mimir/application";
+import type { DraftNoteRequest, DraftNoteResponse } from "@mimir/contracts";
 import { OllamaClient } from "./ollama-client.js";
 
 interface OllamaDraftingProviderOptions {
@@ -74,12 +74,12 @@ export class OllamaDraftingProvider implements DraftingProvider {
       frontmatter: {
         noteId: request.frontmatterOverrides?.noteId ?? "",
         title: request.title,
-        project: request.frontmatterOverrides?.project ?? "multi-agent-brain",
+        project: request.frontmatterOverrides?.project ?? "mimir",
         type: request.noteType,
         status: request.frontmatterOverrides?.status ?? "draft",
         updated: request.frontmatterOverrides?.updated ?? new Date().toISOString().slice(0, 10),
         summary: request.frontmatterOverrides?.summary ?? request.sourcePrompt,
-        tags: request.frontmatterOverrides?.tags ?? ["project/multi-agent-brain", "status/draft"],
+        tags: request.frontmatterOverrides?.tags ?? ["project/mimir", "status/draft"],
         scope: request.frontmatterOverrides?.scope ?? "staging",
         corpusId: request.targetCorpus,
         currentState: request.frontmatterOverrides?.currentState ?? false,

@@ -1,8 +1,8 @@
 import type { EmbeddingProvider } from "../ports/embedding-provider.js";
 import type { MetadataControlStore } from "../ports/metadata-control-store.js";
 import type { VectorIndex } from "../ports/vector-index.js";
-import type { NoteType } from "@multi-agent-brain/domain";
-import type { RetrieveContextRequest } from "@multi-agent-brain/contracts";
+import type { NoteType } from "@mimir/domain";
+import type { RetrieveContextRequest } from "@mimir/contracts";
 import type { ScoredChunkCandidate } from "./retrieval-candidate.js";
 
 export class VectorRetrievalService {

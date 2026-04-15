@@ -1,12 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
-import type { ServiceResult } from "@multi-agent-brain/contracts";
-import type { ImportJob } from "@multi-agent-brain/domain";
+import type { ServiceResult } from "@mimir/contracts";
+import type { ImportJob } from "@mimir/domain";
 import type {
   ImportResourceRequest,
   ImportResourceResponse
-} from "@multi-agent-brain/contracts";
+} from "@mimir/contracts";
 import type { ImportJobStore } from "../ports/import-job-store.js";
 
 type ImportResourceErrorCode = "not_found" | "write_failed";

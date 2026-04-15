@@ -1,4 +1,4 @@
-import type { ControlledTag, NoteType, QueryIntent } from "@multi-agent-brain/domain";
+import type { ControlledTag, NoteType, QueryIntent } from "@mimir/domain";
 import type { ScoredChunkCandidate } from "./retrieval-candidate.js";
 
 const DEFAULT_FINAL_LIMIT = 8;

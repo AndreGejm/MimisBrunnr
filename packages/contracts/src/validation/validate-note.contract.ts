@@ -1,7 +1,7 @@
 import type {
   CorpusId,
   NoteFrontmatter
-} from "@multi-agent-brain/domain";
+} from "@mimir/domain";
 import type { ActorContext } from "../common/actor-context.js";
 
 export interface NoteValidationIssue {

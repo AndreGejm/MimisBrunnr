@@ -1,10 +1,10 @@
 import { DatabaseSync } from "node:sqlite";
-import type { ActorRole, TransportKind } from "@multi-agent-brain/contracts";
+import type { ActorRole, TransportKind } from "@mimir/contracts";
 import type {
   AdministrativeAction,
   IssuedActorTokenClaims,
   OrchestratorCommand
-} from "@multi-agent-brain/orchestration";
+} from "@mimir/orchestration";
 import {
   acquireSharedSqliteConnection,
   type SharedSqliteConnection

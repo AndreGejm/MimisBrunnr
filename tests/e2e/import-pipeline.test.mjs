@@ -7,7 +7,7 @@ import test from "node:test";
 import { buildServiceContainer } from "../../packages/infrastructure/dist/index.js";
 
 test("import-resource rejects self-asserted operators without auth-policy allowance", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-import-pipeline-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-import-pipeline-"));
   const sourcePath = path.join(root, "sample-import.md");
   await writeFile(
     sourcePath,
@@ -73,7 +73,7 @@ test("import-resource rejects self-asserted operators without auth-policy allowa
 });
 
 test("imports record imported jobs and never create canonical outputs directly", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-import-pipeline-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-import-pipeline-"));
   const sourcePath = path.join(root, "sample-import.md");
   await writeFile(
     sourcePath,

@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { CanonicalNoteRecord, CanonicalNoteRepository } from "@multi-agent-brain/application";
-import type { CorpusId, NoteId } from "@multi-agent-brain/domain";
+import type { CanonicalNoteRecord, CanonicalNoteRepository } from "@mimir/application";
+import type { CorpusId, NoteId } from "@mimir/domain";
 import { computeRevision, parseMarkdownNote, serializeMarkdownNote } from "./frontmatter-codec.js";
 import {
   ensureParentDirectory,
@@ -94,8 +94,8 @@ export class FileSystemCanonicalNoteRepository implements CanonicalNoteRepositor
 
 function inferCorpusFromPath(notePath: string): CorpusId {
   const normalized = notePath.replace(/\\/g, "/").replace(/^\/+/, "");
-  if (normalized.startsWith("context_brain/")) {
-    return "context_brain";
+  if (normalized.startsWith("mimisbrunnr/")) {
+    return "mimisbrunnr";
   }
   if (normalized.startsWith("general_notes/")) {
     return "general_notes";

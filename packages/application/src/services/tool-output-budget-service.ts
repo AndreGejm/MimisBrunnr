@@ -3,7 +3,7 @@ import type {
   StoredToolOutput,
   ToolOutputSpilloverRecord,
   ToolOutputStore
-} from "@multi-agent-brain/domain";
+} from "@mimir/domain";
 
 export const DEFAULT_TOOL_OUTPUT_INLINE_BUDGET_BYTES = 64 * 1024;
 export const MAX_TOOL_OUTPUT_INLINE_BUDGET_BYTES = 256 * 1024;

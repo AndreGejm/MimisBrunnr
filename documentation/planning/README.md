@@ -17,7 +17,7 @@ For current behavior, prefer:
 
 Several files in this directory describe future work or older rollout assumptions that no longer match the tracked code exactly. Examples found during the documentation discovery pass:
 
-- `documentation/planning/mcp-tool-map.md` still describes the MCP adapter as future work, but `apps/brain-mcp` is implemented
+- `documentation/planning/mcp-tool-map.md` still describes the MCP adapter as future work, but `apps/mimir-mcp` is implemented
 - `documentation/planning/current-implementation.md` omits currently implemented namespace, import, and session-archive surfaces
 - `documentation/planning/implementation-plan.md` describes rollout phases that are no longer the best guide to the current runtime
 

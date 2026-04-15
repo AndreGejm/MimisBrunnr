@@ -1,4 +1,4 @@
-import type { AuditEntry, NoteId } from "@multi-agent-brain/domain";
+import type { AuditEntry, NoteId } from "@mimir/domain";
 import type { ActorContext } from "../common/actor-context.js";
 
 export interface QueryHistoryRequest {

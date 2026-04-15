@@ -1,9 +1,9 @@
-import type { ServiceResult } from "@multi-agent-brain/contracts";
+import type { ServiceResult } from "@mimir/contracts";
 import type {
   ContextAuthorityState,
   ContextNode,
   ContextOwnerScope
-} from "@multi-agent-brain/domain";
+} from "@mimir/domain";
 import type { ContextNamespaceStore } from "../ports/context-namespace-store.js";
 
 export interface ListContextTreeRequest {

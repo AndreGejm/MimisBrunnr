@@ -47,7 +47,7 @@ Cause:
 
 What to do:
 
-- copy `docker/brain-mcp-session.env.example` to `docker/brain-mcp-session.env`
+- copy `docker/mimir-mcp-session.env.example` to `docker/mimir-mcp-session.env`
 - set the host canonical, staging, state, and auth config paths explicitly
 - set the fixed session actor id, source, and token contract explicitly
 - validate again before launching the MCP client
@@ -56,7 +56,7 @@ What to do:
 
 Symptom:
 
-- canonical notes appear under `%USERPROFILE%\.multiagentbrain` or `$HOME/.multiagentbrain`
+- canonical notes appear under `%USERPROFILE%\.mimir` or `$HOME/.mimir`
 
 Cause:
 
@@ -155,7 +155,7 @@ Known risk areas:
 
 What to do:
 
-- trust `apps/brain-api/src/server.ts`, `apps/brain-cli/src/main.ts`, and `apps/brain-mcp/src/tool-definitions.ts`
+- trust `apps/mimir-api/src/server.ts`, `apps/mimir-cli/src/main.ts`, and `apps/mimir-mcp/src/tool-definitions.ts`
 - update `documentation/reference/interfaces.md` when you change any transport surface
 
 ## The repo map seems to disagree with the workspace

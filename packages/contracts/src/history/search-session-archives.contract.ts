@@ -1,4 +1,4 @@
-import type { SessionArchiveMessageRole } from "@multi-agent-brain/domain";
+import type { SessionArchiveMessageRole } from "@mimir/domain";
 import type { ActorContext } from "../common/actor-context.js";
 
 export interface SearchSessionArchivesRequest {

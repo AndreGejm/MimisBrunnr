@@ -2,8 +2,8 @@ import { DatabaseSync } from "node:sqlite";
 import type {
   ContextRepresentationRecord,
   ContextRepresentationStore
-} from "@multi-agent-brain/application";
-import type { ContextRepresentationLayer } from "@multi-agent-brain/application";
+} from "@mimir/application";
+import type { ContextRepresentationLayer } from "@mimir/application";
 import { acquireSharedSqliteConnection, type SharedSqliteConnection } from "./shared-sqlite-connection.js";
 
 interface SqliteContextRepresentationRow {

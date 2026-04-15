@@ -3,7 +3,7 @@ import type {
   NoteFrontmatter,
   NoteId,
   NoteLifecycleState
-} from "@multi-agent-brain/domain";
+} from "@mimir/domain";
 
 export interface StagingDraftRecord {
   noteId: NoteId;

@@ -1,6 +1,6 @@
 export type ModelRole =
   | "coding_primary"
-  | "brain_primary"
+  | "mimisbrunnr_primary"
   | "embedding_primary"
   | "reranker_primary"
   | "paid_escalation";
@@ -18,7 +18,7 @@ export interface ModelRoleBinding {
 
 export const REQUIRED_MODEL_ROLES: ReadonlyArray<ModelRole> = [
   "coding_primary",
-  "brain_primary",
+  "mimisbrunnr_primary",
   "embedding_primary",
   "reranker_primary",
   "paid_escalation"

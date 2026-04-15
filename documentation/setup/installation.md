@@ -41,9 +41,9 @@ If you want the runtime state to stay inside the repository and you do not want 
 MAB_NODE_ENV=development
 MAB_VAULT_ROOT=./vault/canonical
 MAB_STAGING_ROOT=./vault/staging
-MAB_SQLITE_PATH=./state/multi-agent-brain.sqlite
+MAB_SQLITE_PATH=./state/mimisbrunnr.sqlite
 MAB_QDRANT_URL=http://127.0.0.1:6333
-MAB_QDRANT_COLLECTION=context_brain_chunks
+MAB_QDRANT_COLLECTION=mimisbrunnr_chunks
 MAB_EMBEDDING_PROVIDER=hash
 MAB_REASONING_PROVIDER=heuristic
 MAB_DRAFTING_PROVIDER=disabled
@@ -62,7 +62,7 @@ Why this works:
 Important:
 
 - `.env.example` is reference material only; the Node applications do not load `.env` files automatically
-- if `MAB_DATA_ROOT` is unset, host state defaults under `%USERPROFILE%\.multiagentbrain` on Windows or `$HOME/.multiagentbrain` elsewhere
+- if `MAB_DATA_ROOT` is unset, host state defaults under `%USERPROFILE%\.mimir` on Windows or `$HOME/.mimir` elsewhere
 - override `MAB_VAULT_ROOT`, `MAB_STAGING_ROOT`, and `MAB_SQLITE_PATH` for repo-local or test-only state
 
 ## Containerized model-backed profile
@@ -75,7 +75,7 @@ docker compose -f docker/compose.local.yml up --build
 
 That profile:
 
-- builds the monorepo using `docker/brain-api.Dockerfile`
+- builds the monorepo using `docker/mimir-api.Dockerfile`
 - runs the HTTP adapter
 - starts Qdrant
 - points the app at `http://model-runner.docker.internal:12434`
@@ -83,6 +83,11 @@ That profile:
 
 This compose profile is a deliberate runtime profile, not a restatement of the generic defaults in `packages/infrastructure/src/config/env.ts`.
 
+## Global launcher aliases
+
+The canonical launcher is `mimir`. The installer also creates compatibility launchers for old and shorthand names: `mimir-cli`, `mimis`, `mimis-cli`, `mimisbrunnr`, `mimisbrunnr-cli`, `mimirbrunnr`, `mimirbrunnr-cli`, `mimirsbrunnr`, `mimirsbrunnr-cli`, `brain`, `brain-cli`, `brain.CLI`, `multiagentbrain`, `multiagentbrain-cli`, `multiagent-brain`, `multi-agent-brain`, `multi-agent-brain-cli`, and `mab`.
+
+Use `mimir` in new documentation and scripts. Keep the aliases only for backwards compatibility with existing habits, shell snippets, and agent skills.
 ## Verify the installation
 
 After setting environment variables, run one or more of:
@@ -105,7 +110,7 @@ python3 -m pytest runtimes/local_experts/tests/test_safety_gate.py -v # macOS/Li
 ## What is not installed by default
 
 - no `.env` loader
-- no global CLI wrapper beyond the workspace-local `brain-cli` / `brain-mcp` package bins
+- no global CLI wrapper beyond the workspace-local `mimir-cli` / `mimir-mcp` package bins
 - no tracked migration runner
 - no tracked local dev bootstrap helpers in `scripts/`
 
@@ -113,7 +118,7 @@ python3 -m pytest runtimes/local_experts/tests/test_safety_gate.py -v # macOS/Li
 
 ### Verified facts
 
-- Prerequisites and scripts come from `package.json`, app `package.json` files, `docker/brain-api.Dockerfile`, and `runtimes/local_experts/README.md`
+- Prerequisites and scripts come from `package.json`, app `package.json` files, `docker/mimir-api.Dockerfile`, and `runtimes/local_experts/README.md`
 - Runtime defaults come from `packages/infrastructure/src/config/env.ts`
 - Provider fallback behavior comes from `packages/application/src/services/staging-draft-service.ts` and `packages/infrastructure/src/vector/qdrant-vector-index.ts`
 

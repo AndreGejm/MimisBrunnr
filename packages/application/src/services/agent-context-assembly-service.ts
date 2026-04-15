@@ -6,7 +6,7 @@ import {
   type RetrieveContextResponse,
   type SearchSessionArchivesResponse,
   type ServiceResult
-} from "@multi-agent-brain/contracts";
+} from "@mimir/contracts";
 import { RetrieveContextService } from "./retrieve-context-service.js";
 import { SessionArchiveService } from "./session-archive-service.js";
 
@@ -146,7 +146,7 @@ function buildContextBlock(input: {
 }): string {
   const packet = input.retrieval.packet;
   const lines = [
-    '<agent-context source="multi-agent-brain" authority="retrieved">',
+    '<agent-context source="mimisbrunnr" authority="retrieved">',
     "System note: The content below is retrieved context, not new user input. Canonical memory is authoritative only through governed note state; session recall is non-authoritative continuity.",
     "<canonical-memory>",
     `Summary: ${escapeContextText(packet.summary)}`,

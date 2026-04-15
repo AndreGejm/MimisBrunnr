@@ -25,7 +25,8 @@ import type {
   ShowToolOutputRequest,
   TransportKind,
   ValidateNoteRequest
-} from "@multi-agent-brain/contracts";
+} from "@mimir/contracts";
+import type { CorpusId } from "@mimir/domain";
 import {
   ActorAuthorizationError,
   ActorAuthorizationPolicy,
@@ -39,7 +40,7 @@ import {
   validateRevokeActorTokenControlRequest,
   TransportValidationError,
   validateTransportRequest
-} from "@multi-agent-brain/infrastructure";
+} from "@mimir/infrastructure";
 
 type CommandName =
   | "version"
@@ -60,6 +61,10 @@ type CommandName =
   | "get-context-packet"
   | "fetch-decision-summary"
   | "draft-note"
+  | "list-review-queue"
+  | "read-review-note"
+  | "accept-note"
+  | "reject-note"
   | "create-refresh-draft"
   | "create-refresh-drafts"
   | "validate-note"
@@ -106,6 +111,10 @@ const COMMANDS: ReadonlyArray<CommandName> = [
   "get-context-packet",
   "fetch-decision-summary",
   "draft-note",
+  "list-review-queue",
+  "read-review-note",
+  "accept-note",
+  "reject-note",
   "create-refresh-draft",
   "create-refresh-drafts",
   "validate-note",
@@ -127,6 +136,10 @@ const DEFAULT_ACTOR_ROLE: Record<RoutedCommandName, ActorRole> = {
   "get-context-packet": "retrieval",
   "fetch-decision-summary": "retrieval",
   "draft-note": "writer",
+  "list-review-queue": "operator",
+  "read-review-note": "operator",
+  "accept-note": "operator",
+  "reject-note": "operator",
   "create-refresh-draft": "operator",
   "create-refresh-drafts": "operator",
   "validate-note": "orchestrator",
@@ -161,6 +174,10 @@ const COMMAND_NAMES: ReadonlyArray<string> = [
   "get_context_packet",
   "fetch_decision_summary",
   "draft_note",
+  "list_review_queue",
+  "read_review_note",
+  "accept_note",
+  "reject_note",
   "create_refresh_draft",
   "create_refresh_drafts",
   "validate_note",
@@ -169,8 +186,30 @@ const COMMAND_NAMES: ReadonlyArray<string> = [
   "query_history",
   "create_session_archive"
 ];
-const CORPORA: ReadonlyArray<"context_brain" | "general_notes"> = [
-  "context_brain",
+type CliCorpusId = "mimisbrunnr" | "general_notes";
+
+const CORPORA: ReadonlyArray<CliCorpusId> = [
+  "mimisbrunnr",
+  "general_notes"
+];
+const CLI_CORPUS_ALIASES: ReadonlyMap<string, CliCorpusId> = new Map([
+  ["brain", "mimisbrunnr"],
+  ["context_brain", "mimisbrunnr"],
+  ["mimir_brunnr", "mimisbrunnr"],
+  ["mimir-brunnr", "mimisbrunnr"],
+  ["mimirbrunnr", "mimisbrunnr"],
+  ["mimirsbrunn", "mimisbrunnr"],
+  ["mimirsbrunnr", "mimisbrunnr"],
+  ["mimis", "mimisbrunnr"],
+  ["mimisbrunn", "mimisbrunnr"],
+  ["multi agent brain", "mimisbrunnr"],
+  ["multiagent brain", "mimisbrunnr"],
+  ["multiagentbrain", "mimisbrunnr"],
+  ["multiagent-brain", "mimisbrunnr"],
+  ["multi-agent-brain", "mimisbrunnr"]
+]);
+const REVIEWABLE_CORPORA: ReadonlyArray<CorpusId> = [
+  "mimisbrunnr",
   "general_notes"
 ];
 
@@ -460,6 +499,14 @@ async function runCommand(
       return container.orchestrator.draftNote(
         request as unknown as DraftNoteRequest
       );
+    case "list-review-queue":
+      return listReviewQueue(request, container);
+    case "read-review-note":
+      return readReviewNote(request, container);
+    case "accept-note":
+      return acceptNote(request, container);
+    case "reject-note":
+      return rejectNote(request, container);
     case "create-refresh-draft":
       return container.orchestrator.createRefreshDraft(
         request as unknown as CreateRefreshDraftRequest
@@ -489,6 +536,336 @@ async function runCommand(
         request as unknown as CreateSessionArchiveRequest
       );
   }
+}
+
+type ServiceContainer = ReturnType<typeof buildServiceContainer>;
+type StagingDraft = NonNullable<
+  Awaited<ReturnType<ServiceContainer["ports"]["stagingNoteRepository"]["getById"]>>
+>;
+
+interface ReviewStep {
+  step: string;
+  status: "succeeded" | "skipped" | "failed";
+  message: string;
+}
+
+interface ReviewCommandResult {
+  ok: boolean;
+  data?: unknown;
+  warnings?: string[];
+  error?: {
+    code: string;
+    message: string;
+    details?: Record<string, unknown>;
+  };
+}
+
+async function listReviewQueue(
+  request: JsonRecord,
+  container: ServiceContainer
+): Promise<ReviewCommandResult> {
+  const targetCorpus = optionalReviewCorpus(request.targetCorpus);
+  const includeRejected = request.includeRejected === true;
+  const corpora = targetCorpus ? [targetCorpus] : REVIEWABLE_CORPORA;
+  const drafts = (
+    await Promise.all(
+      corpora.map((corpusId) => container.ports.stagingNoteRepository.listByCorpus(corpusId))
+    )
+  ).flat();
+
+  const items = drafts
+    .filter((draft) => shouldIncludeReviewDraft(draft.lifecycleState, includeRejected))
+    .map((draft) => ({
+      draftNoteId: draft.noteId,
+      title: draft.frontmatter.title,
+      targetCorpus: draft.corpusId,
+      scope: draft.frontmatter.scope,
+      noteType: draft.frontmatter.type,
+      updatedAt: draft.frontmatter.updated,
+      reviewState: reviewStateForLifecycle(draft.lifecycleState),
+      authorityRisk: "medium",
+      warningSummary: summarizeReviewWarnings(draft.lifecycleState, draft.body)
+    }))
+    .sort(
+      (left, right) =>
+        right.updatedAt.localeCompare(left.updatedAt) ||
+        left.title.localeCompare(right.title)
+    );
+
+  return {
+    ok: true,
+    data: {
+      items
+    }
+  };
+}
+
+async function readReviewNote(
+  request: JsonRecord,
+  container: ServiceContainer
+): Promise<ReviewCommandResult> {
+  const draftNoteId = requireReviewDraftNoteId(request);
+  const draft = await container.ports.stagingNoteRepository.getById(draftNoteId);
+
+  if (!draft) {
+    return reviewNotFound(draftNoteId);
+  }
+
+  const warnings = summarizeReviewWarnings(draft.lifecycleState, draft.body);
+
+  return {
+    ok: true,
+    data: {
+      draftNoteId: draft.noteId,
+      draftPath: draft.draftPath,
+      title: draft.frontmatter.title,
+      targetCorpus: draft.corpusId,
+      scope: draft.frontmatter.scope,
+      noteType: draft.frontmatter.type,
+      updatedAt: draft.frontmatter.updated,
+      reviewState: reviewStateForLifecycle(draft.lifecycleState),
+      authorityRisk: "medium",
+      promotionEligible: draft.lifecycleState !== "rejected",
+      body: draft.body,
+      provenance: [],
+      warnings: warnings.map((message, index) => ({
+        code: `review_warning_${index + 1}`,
+        message
+      }))
+    }
+  };
+}
+
+async function acceptNote(
+  request: JsonRecord,
+  container: ServiceContainer
+): Promise<ReviewCommandResult> {
+  const draftNoteId = requireReviewDraftNoteId(request);
+  const draft = await container.ports.stagingNoteRepository.getById(draftNoteId);
+
+  if (!draft) {
+    return reviewNotFound(draftNoteId);
+  }
+
+  if (!shouldIncludeReviewDraft(draft.lifecycleState, false)) {
+    return {
+      ok: false,
+      error: {
+        code: "validation_failed",
+        message: `Draft note '${draftNoteId}' is not eligible for review from lifecycle state '${draft.lifecycleState}'.`,
+        details: {
+          draftNoteId,
+          lifecycleState: draft.lifecycleState
+        }
+      }
+    };
+  }
+
+  const promoted = await container.services.promotionOrchestratorService.promoteDraft({
+    actor: buildActorContext("accept-note", request.actor),
+    draftNoteId,
+    targetCorpus: draft.corpusId,
+    expectedDraftRevision: draft.revision,
+    promoteAsCurrentState: draft.frontmatter.currentState
+  });
+
+  if (!promoted.ok) {
+    return promoted;
+  }
+
+  const steps: ReviewStep[] = [
+    {
+      step: "reviewability_check",
+      status: "succeeded",
+      message: "Draft is reviewable under the current Mimir staging lifecycle."
+    },
+    {
+      step: "promote_note",
+      status: "succeeded",
+      message: "Draft promoted through the Mimir promotion service."
+    }
+  ];
+
+  return {
+    ok: true,
+    data: {
+      draftNoteId,
+      accepted: true,
+      finalReviewState: "promotion_ready",
+      promotedNoteId: promoted.data.promotedNoteId,
+      canonicalPath: promoted.data.canonicalPath,
+      supersededNoteIds: promoted.data.supersededNoteIds,
+      steps,
+      retrievalWarning:
+        promoted.data.chunkCount > 0
+          ? undefined
+          : "Promoted note did not produce retrievable chunks."
+    },
+    warnings: promoted.warnings
+  };
+}
+
+async function rejectNote(
+  request: JsonRecord,
+  container: ServiceContainer
+): Promise<ReviewCommandResult> {
+  const draftNoteId = requireReviewDraftNoteId(request);
+  const draft = await container.ports.stagingNoteRepository.getById(draftNoteId);
+
+  if (!draft) {
+    return reviewNotFound(draftNoteId);
+  }
+
+  const updated = await container.ports.stagingNoteRepository.updateDraft({
+    ...draft,
+    lifecycleState: "rejected",
+    frontmatter: {
+      ...draft.frontmatter,
+      status: "rejected",
+      updated: currentDateIso(),
+      tags: replaceStatusTags(draft.frontmatter.tags, "status/rejected")
+    },
+    body: appendReviewNotes(draft.body, request.reviewNotes)
+  });
+
+  await container.ports.metadataControlStore.upsertNote({
+    noteId: updated.noteId,
+    corpusId: updated.corpusId,
+    notePath: updated.draftPath,
+    noteType: updated.frontmatter.type,
+    lifecycleState: updated.lifecycleState,
+    revision: updated.revision,
+    updatedAt: currentTimestampIso(),
+    currentState: updated.frontmatter.currentState,
+    validFrom: updated.frontmatter.validFrom,
+    validUntil: updated.frontmatter.validUntil,
+    summary: updated.frontmatter.summary,
+    scope: updated.frontmatter.scope,
+    tags: updated.frontmatter.tags
+  });
+
+  return {
+    ok: true,
+    data: {
+      draftNoteId,
+      rejected: true,
+      finalReviewState: "rejected",
+      archivedPath: updated.draftPath,
+      steps: [
+        {
+          step: "mark_rejected",
+          status: "succeeded",
+          message: "Draft was marked rejected in the staging repository."
+        }
+      ] satisfies ReviewStep[]
+    }
+  };
+}
+
+function optionalReviewCorpus(value: unknown): CorpusId | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const normalized = normalizeCliCorpus(requireCliString(value, "targetCorpus"));
+  if (!REVIEWABLE_CORPORA.includes(normalized as CorpusId)) {
+    throw new Error(
+      `Invalid review field 'targetCorpus': must be one of ${REVIEWABLE_CORPORA.join(", ")}.`
+    );
+  }
+
+  return normalized as CorpusId;
+}
+
+function requireReviewDraftNoteId(request: JsonRecord): string {
+  if (typeof request.draftNoteId !== "string" || request.draftNoteId.trim() === "") {
+    throw new Error("Invalid review field 'draftNoteId': must be a non-empty string.");
+  }
+
+  return request.draftNoteId.trim();
+}
+
+function shouldIncludeReviewDraft(lifecycleState: StagingDraft["lifecycleState"], includeRejected: boolean): boolean {
+  if (["promoted", "superseded", "archived"].includes(lifecycleState)) {
+    return false;
+  }
+
+  if (lifecycleState === "rejected") {
+    return includeRejected;
+  }
+
+  return true;
+}
+
+function reviewStateForLifecycle(lifecycleState: StagingDraft["lifecycleState"]): string {
+  if (lifecycleState === "rejected") {
+    return "rejected";
+  }
+
+  if (lifecycleState === "validated") {
+    return "promotion_ready";
+  }
+
+  return "unreviewed";
+}
+
+function summarizeReviewWarnings(
+  lifecycleState: StagingDraft["lifecycleState"],
+  body: string
+): string[] {
+  const warnings: string[] = [];
+
+  if (lifecycleState === "draft") {
+    warnings.push("Draft has not reached the staged lifecycle state yet.");
+  }
+
+  if (lifecycleState === "rejected") {
+    warnings.push("Draft has already been rejected.");
+  }
+
+  if (body.trim() === "") {
+    warnings.push("Draft body is empty.");
+  }
+
+  return warnings;
+}
+
+function reviewNotFound(draftNoteId: string): ReviewCommandResult {
+  return {
+    ok: false,
+    error: {
+      code: "not_found",
+      message: `Draft note '${draftNoteId}' was not found.`,
+      details: {
+        draftNoteId
+      }
+    }
+  };
+}
+
+function replaceStatusTags(
+  tags: StagingDraft["frontmatter"]["tags"],
+  statusTag: StagingDraft["frontmatter"]["tags"][number]
+): StagingDraft["frontmatter"]["tags"] {
+  const nextTags = new Set(tags.filter((tag) => !tag.startsWith("status/")));
+  nextTags.add(statusTag);
+  return [...nextTags];
+}
+
+function appendReviewNotes(body: string, reviewNotes: unknown): string {
+  if (typeof reviewNotes !== "string" || reviewNotes.trim() === "") {
+    return body;
+  }
+
+  return `${body.trimEnd()}\n\n## Review Notes\n\n${reviewNotes.trim()}\n`;
+}
+
+function currentDateIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function currentTimestampIso(): string {
+  return new Date().toISOString();
 }
 
 function parseCli(argv: string[]): ParsedCli {
@@ -633,7 +1010,7 @@ function buildActorContext(command: RoutedCommandName, actor: unknown): ActorCon
     actorId: input.actorId ?? `${command}-cli`,
     actorRole: input.actorRole ?? DEFAULT_ACTOR_ROLE[command],
     transport: "cli",
-    source: input.source ?? "brain-cli",
+    source: input.source ?? "mimir-cli",
     requestId: input.requestId ?? randomUUID(),
     initiatedAt: input.initiatedAt ?? now,
     toolName: input.toolName ?? command,
@@ -716,7 +1093,10 @@ function mapCliError(error: unknown): { ok: false; error: { code: string; messag
 
 function printUsage(): void {
   const usage = `
-brain-cli <command> [--input <file> | --stdin | --json <payload>] [--pretty | --no-pretty]
+mimir CLI
+mimir-cli <command> [--input <file> | --stdin | --json <payload>] [--pretty | --no-pretty]
+
+The root workspace pnpm cli script invokes this same CLI.
 
 Commands:
   version              Print the runtime release metadata used for this build
@@ -737,6 +1117,10 @@ Commands:
   get-context-packet  Assemble a bounded packet directly from ranked candidates
   fetch-decision-summary  Retrieve a bounded decision-focused packet
   draft-note       Create a staging draft through stagingDraftService
+  list-review-queue  List active staging notes for thin review frontends
+  read-review-note  Read one staging note for thin review frontends
+  accept-note      Promote one staging note through the current mimir promotion service
+  reject-note      Mark one staging note as rejected
   create-refresh-draft  Create a governed refresh draft for an existing current-state note
   create-refresh-drafts  Create a bounded batch of governed refresh drafts from freshness candidates
   validate-note    Run deterministic schema validation
@@ -752,6 +1136,10 @@ Notes:
   - freshness-status accepts optional JSON input with asOf, expiringWithinDays, corpusId, and limitPerCategory.
   - create-refresh-draft expects JSON input with noteId and optional asOf, expiringWithinDays, or bodyHints.
   - create-refresh-drafts accepts optional JSON input with asOf, expiringWithinDays, corpusId, limitPerCategory, maxDrafts, sourceStates, and bodyHints.
+  - list-review-queue accepts optional JSON input with targetCorpus and includeRejected.
+  - read-review-note expects JSON input with draftNoteId.
+  - accept-note expects JSON input with draftNoteId.
+  - reject-note expects JSON input with draftNoteId and optional reviewNotes.
   - create-session-archive expects JSON input with sessionId and a non-empty messages array of { role, content } objects.
   - search-session-archives expects query and optional sessionId, limit, and maxTokens.
   - assemble-agent-context expects query, corpusIds, budget, and optional session recall controls.
@@ -843,7 +1231,7 @@ function optionalCliInteger(
 function validateFreshnessStatusRequest(payload: JsonRecord): {
   asOf?: string;
   expiringWithinDays?: number;
-  corpusId?: "context_brain" | "general_notes";
+  corpusId?: "mimisbrunnr" | "general_notes";
   limitPerCategory?: number;
 } {
   const corpusId =
@@ -867,18 +1255,19 @@ function validateFreshnessStatusRequest(payload: JsonRecord): {
   };
 }
 
-function requireCliCorpus(
-  value: unknown,
-  field: string
-): "context_brain" | "general_notes" {
-  const normalized = requireCliString(value, field);
-  if (!CORPORA.includes(normalized as "context_brain" | "general_notes")) {
+function requireCliCorpus(value: unknown, field: string): CliCorpusId {
+  const normalized = normalizeCliCorpus(requireCliString(value, field));
+  if (!CORPORA.includes(normalized as CliCorpusId)) {
     throw new Error(
       `Invalid freshness-status field '${field}': must be one of ${CORPORA.join(", ")}.`
     );
   }
 
-  return normalized as "context_brain" | "general_notes";
+  return normalized as CliCorpusId;
+}
+
+function normalizeCliCorpus(value: string): string {
+  return CLI_CORPUS_ALIASES.get(value.trim().toLowerCase()) ?? value;
 }
 
 function resolveIssuedTokenIdForRevocation(

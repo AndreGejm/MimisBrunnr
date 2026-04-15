@@ -36,9 +36,9 @@ python -m pytest runtimes/local_experts/tests/test_safety_gate.py -v
 
 - runtime configuration comes from `packages/infrastructure/src/config/env.ts`
 - transport surface definitions live in code, not in the planning docs:
-  - HTTP: `apps/brain-api/src/server.ts`
-  - CLI: `apps/brain-cli/src/main.ts`
-  - MCP: `apps/brain-mcp/src/tool-definitions.ts` and `apps/brain-mcp/src/main.ts`
+  - HTTP: `apps/mimir-api/src/server.ts`
+  - CLI: `apps/mimir-cli/src/main.ts`
+  - MCP: `apps/mimir-mcp/src/tool-definitions.ts` and `apps/mimir-mcp/src/main.ts`
 - request/response contracts live in `packages/contracts/src/**`
 - package dependency direction is:
   - `domain` -> no workspace dependencies
@@ -52,7 +52,7 @@ python -m pytest runtimes/local_experts/tests/test_safety_gate.py -v
 
 ### Keep transports thin
 
-`apps/brain-api`, `apps/brain-cli`, and `apps/brain-mcp` should stay responsible for:
+`apps/mimir-api`, `apps/mimir-cli`, and `apps/mimir-mcp` should stay responsible for:
 
 - payload parsing and ingress validation
 - actor-context injection

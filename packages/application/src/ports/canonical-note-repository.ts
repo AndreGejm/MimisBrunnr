@@ -1,4 +1,4 @@
-import type { CorpusId, NoteFrontmatter, NoteId } from "@multi-agent-brain/domain";
+import type { CorpusId, NoteFrontmatter, NoteId } from "@mimir/domain";
 
 export interface CanonicalNoteRecord {
   noteId: NoteId;

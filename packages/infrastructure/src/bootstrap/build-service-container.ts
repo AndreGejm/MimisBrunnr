@@ -21,8 +21,8 @@ import type {
   TemporalRefreshService,
   ToolOutputBudgetService,
   VectorIndex
-} from "@multi-agent-brain/application";
-import type { LocalAgentTraceStore, ToolOutputStore } from "@multi-agent-brain/domain";
+} from "@mimir/application";
+import type { LocalAgentTraceStore, ToolOutputStore } from "@mimir/domain";
 import {
   AuditHistoryService as ConcreteAuditHistoryService,
   AgentContextAssemblyService as ConcreteAgentContextAssemblyService,
@@ -41,19 +41,19 @@ import {
   StagingDraftService as ConcreteStagingDraftService,
   TemporalRefreshService as ConcreteTemporalRefreshService,
   ToolOutputBudgetService as ConcreteToolOutputBudgetService
-} from "@multi-agent-brain/application";
+} from "@mimir/application";
 import {
   ActorAuthorizationPolicy,
-  BrainDomainController,
-  BrainMemoryController,
-  BrainRetrievalController,
   CodingDomainController,
+  MimisbrunnrDomainController,
+  MimisbrunnrMemoryController,
+  MimisbrunnrRetrievalController,
+  MimirOrchestrator,
   ModelRoleRegistry,
-  MultiAgentOrchestrator,
   RoleProviderRegistry,
   TaskFamilyRouter,
   type ModelRoleBinding
-} from "@multi-agent-brain/orchestration";
+} from "@mimir/orchestration";
 import { PythonCodingControllerBridge } from "../coding/python-coding-controller-bridge.js";
 import { loadEnvironment, normalizeEnvironment, type AppEnvironment } from "../config/env.js";
 import { SqliteFtsIndex } from "../fts/sqlite-fts-index.js";
@@ -123,7 +123,7 @@ export interface ServiceContainer {
   authPolicy: ActorAuthorizationPolicy;
   ports: ServicePortRegistry;
   services: ServiceRegistry;
-  orchestrator: MultiAgentOrchestrator;
+  orchestrator: MimirOrchestrator;
   dispose(): void;
 }
 
@@ -162,8 +162,8 @@ export function buildServiceContainer(
       )
     },
     reasoningProviders: {
-      brain_primary: createReasoningProvider(
-        modelRoleRegistry.resolve("brain_primary"),
+      mimisbrunnr_primary: createReasoningProvider(
+        modelRoleRegistry.resolve("mimisbrunnr_primary"),
         env
       ),
       paid_escalation: createReasoningProvider(
@@ -172,8 +172,8 @@ export function buildServiceContainer(
       )
     },
     draftingProviders: {
-      brain_primary: createDraftingProvider(
-        modelRoleRegistry.resolve("brain_primary"),
+      mimisbrunnr_primary: createDraftingProvider(
+        modelRoleRegistry.resolve("mimisbrunnr_primary"),
         env
       )
     },
@@ -188,11 +188,11 @@ export function buildServiceContainer(
   const embeddingProvider =
     roleProviderRegistry.getEmbeddingProvider("embedding_primary");
   const localReasoningProvider =
-    roleProviderRegistry.getReasoningProvider("brain_primary");
+    roleProviderRegistry.getReasoningProvider("mimisbrunnr_primary");
   const paidEscalationProvider =
     roleProviderRegistry.getReasoningProvider("paid_escalation");
   const draftingProvider =
-    roleProviderRegistry.getDraftingProvider("brain_primary");
+    roleProviderRegistry.getDraftingProvider("mimisbrunnr_primary");
   const rerankerProvider =
     roleProviderRegistry.getRerankerProvider("reranker_primary");
 
@@ -283,14 +283,14 @@ export function buildServiceContainer(
     isTokenRevoked: (tokenId) => revocationStore.isTokenRevoked(tokenId)
   });
 
-  const brainDomainController = new BrainDomainController(
-    new BrainRetrievalController(
+  const mimisbrunnrController = new MimisbrunnrDomainController(
+    new MimisbrunnrRetrievalController(
       retrieveContextService,
       decisionSummaryService,
       contextPacketService,
       agentContextAssemblyService
     ),
-    new BrainMemoryController(
+    new MimisbrunnrMemoryController(
       stagingDraftService,
       noteValidationService,
       promotionOrchestratorService,
@@ -318,9 +318,9 @@ export function buildServiceContainer(
     },
     toolOutputBudgetService
   );
-  const orchestrator = new MultiAgentOrchestrator(
+  const orchestrator = new MimirOrchestrator(
     new TaskFamilyRouter(),
-    brainDomainController,
+    mimisbrunnrController,
     codingDomainController,
     authPolicy,
     modelRoleRegistry,

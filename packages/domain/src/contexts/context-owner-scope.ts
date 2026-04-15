@@ -1,5 +1,5 @@
 export const CONTEXT_OWNER_SCOPES = [
-  "context_brain",
+  "mimisbrunnr",
   "general_notes",
   "imports",
   "sessions",

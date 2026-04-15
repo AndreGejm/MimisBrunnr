@@ -1,12 +1,12 @@
-# MultiagentBrain 1.0.1 Release Candidate
+# mimir 1.0.1 Release Candidate
 
 Target tag: `v1.0.1`
 
 ## Summary
 
-This release candidate prepares MultiagentBrain for installer packaging with
+This release candidate prepares mimir for installer packaging with
 RTK, Superpowers, Aider, Docker Desktop, Docker Model Runner, and the local
-agent runtime. It keeps MultiagentBrain's governed memory model intact while
+agent runtime. It keeps mimisbrunnr's governed memory model intact while
 adding practical local-agent ergonomics inspired by Hermes.
 
 ## What Changed
@@ -46,8 +46,8 @@ Expected test state:
 
 Host state defaults under:
 
-- Windows: `%USERPROFILE%\.multiagentbrain`
-- non-Windows: `$HOME/.multiagentbrain`
+- Windows: `%USERPROFILE%\.mimir`
+- non-Windows: `$HOME/.mimir`
 
 Override with `MAB_DATA_ROOT`, or override each path directly with:
 

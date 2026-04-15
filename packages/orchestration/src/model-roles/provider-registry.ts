@@ -3,7 +3,7 @@ import type {
   EmbeddingProvider,
   LocalReasoningProvider,
   RerankerProvider
-} from "@multi-agent-brain/application";
+} from "@mimir/application";
 import type { ModelRole } from "./model-role-registry.js";
 
 interface RoleProviderRegistryOptions {

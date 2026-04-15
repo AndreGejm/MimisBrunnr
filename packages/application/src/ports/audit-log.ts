@@ -1,5 +1,5 @@
-import type { AuditEntry } from "@multi-agent-brain/domain";
-import type { QueryHistoryRequest, QueryHistoryResponse } from "@multi-agent-brain/contracts";
+import type { AuditEntry } from "@mimir/domain";
+import type { QueryHistoryRequest, QueryHistoryResponse } from "@mimir/contracts";
 
 export interface AuditLog {
   record(entry: AuditEntry): Promise<void>;

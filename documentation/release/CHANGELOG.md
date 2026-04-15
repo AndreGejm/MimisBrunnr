@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to MultiagentBrain are recorded here.
+All notable changes to mimir are recorded here.
 
 ## 1.0.1 - Release Candidate
 
@@ -26,7 +26,7 @@ without adopting Hermes' direct memory-write model.
 ### Changed
 
 - Default host state now derives from `MAB_DATA_ROOT`, falling back to
-  `%USERPROFILE%\.multiagentbrain` on Windows or `$HOME/.multiagentbrain`
+  `%USERPROFILE%\.mimir` on Windows or `$HOME/.mimir`
   elsewhere.
 - Auth-control command validation now accepts the current orchestrator command
   surface, including newer session, local-agent, trace, and tool-output commands.

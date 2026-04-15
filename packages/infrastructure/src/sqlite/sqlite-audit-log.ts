@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
-import type { AuditLog } from "@multi-agent-brain/application";
-import type { QueryHistoryRequest, QueryHistoryResponse } from "@multi-agent-brain/contracts";
-import type { AuditEntry } from "@multi-agent-brain/domain";
+import type { AuditLog } from "@mimir/application";
+import type { QueryHistoryRequest, QueryHistoryResponse } from "@mimir/contracts";
+import type { AuditEntry } from "@mimir/domain";
 import {
   acquireSharedSqliteConnection,
   type SharedSqliteConnection

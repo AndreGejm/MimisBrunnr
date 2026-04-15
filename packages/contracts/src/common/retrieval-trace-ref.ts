@@ -3,7 +3,7 @@ import type {
   RetrievalTraceEvent,
   RetrievalTracePacketDiff,
   RetrievalTraceStrategy
-} from "@multi-agent-brain/domain";
+} from "@mimir/domain";
 
 export interface RetrievalTraceRef {
   strategy: RetrievalTraceStrategy;

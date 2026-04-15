@@ -6,11 +6,17 @@ This reference covers environment variables that are explicitly read in tracked 
 
 The Node applications do **not** auto-load `.env`. These variables must exist in the process environment.
 
+`MAB_` remains the compatibility prefix for the current release. It is not a
+new product name. User-facing docs should call the app/orchestrator mimir and
+the stored context layer mimisbrunnr.
+
 ## Runtime and release metadata
 
 | Variable | Purpose | Default / notes |
 | --- | --- | --- |
 | `MAB_NODE_ENV` | runtime mode | defaults to `development` |
+| `MIMIR_APPLICATION_NAME` | display application name | defaults to `mimir`; overrides `MAB_APPLICATION_NAME` |
+| `MAB_APPLICATION_NAME` | legacy alias for display application name | optional |
 | `MAB_RELEASE_VERSION` | release metadata version | optional |
 | `MAB_GIT_TAG` | release metadata tag | optional |
 | `MAB_GIT_COMMIT` | release metadata commit | optional |
@@ -23,12 +29,12 @@ The Node applications do **not** auto-load `.env`. These variables must exist in
 
 | Variable | Purpose | Default / notes |
 | --- | --- | --- |
-| `MAB_DATA_ROOT` | root for default host state paths | `%USERPROFILE%\.multiagentbrain` on Windows, `$HOME/.multiagentbrain` elsewhere |
+| `MAB_DATA_ROOT` | root for default host state paths | `%USERPROFILE%\.mimir` on Windows, `$HOME/.mimir` elsewhere |
 | `MAB_VAULT_ROOT` | canonical note root | `$MAB_DATA_ROOT/vault/canonical` |
 | `MAB_STAGING_ROOT` | staging draft root | `$MAB_DATA_ROOT/vault/staging` |
-| `MAB_SQLITE_PATH` | SQLite path | `$MAB_DATA_ROOT/state/multi-agent-brain.sqlite` |
+| `MAB_SQLITE_PATH` | SQLite path | `$MAB_DATA_ROOT/state/mimisbrunnr.sqlite` |
 | `MAB_QDRANT_URL` | Qdrant base URL | `http://127.0.0.1:6333` |
-| `MAB_QDRANT_COLLECTION` | Qdrant collection | `context_brain_chunks` |
+| `MAB_QDRANT_COLLECTION` | Qdrant collection | `mimisbrunnr_chunks` |
 | `MAB_QDRANT_SOFT_FAIL` | allow degraded vector behavior instead of surfacing hard failure | defaults to `true` |
 
 ## Provider selectors
@@ -60,7 +66,7 @@ Allowed selector values are defined in `packages/infrastructure/src/config/env.t
 Supported role names:
 
 - `CODING_PRIMARY`
-- `BRAIN_PRIMARY`
+- `MIMISBRUNNR_PRIMARY`
 - `EMBEDDING_PRIMARY`
 - `RERANKER_PRIMARY`
 - `PAID_ESCALATION`
@@ -78,8 +84,13 @@ Supported suffixes:
 Examples:
 
 - `MAB_ROLE_CODING_PRIMARY_MODEL`
-- `MAB_ROLE_BRAIN_PRIMARY_PROVIDER`
+- `MAB_ROLE_MIMISBRUNNR_PRIMARY_PROVIDER`
 - `MAB_ROLE_PAID_ESCALATION_PROVIDER`
+
+Compatibility aliases:
+
+- MAB_ROLE_MIMIR_BRUNNR_PRIMARY_* remains accepted and maps to MAB_ROLE_MIMISBRUNNR_PRIMARY_*.
+- When both old and new role variables are set, the MAB_ROLE_MIMISBRUNNR_PRIMARY_* value wins.
 
 ## Coding runtime
 
@@ -98,14 +109,14 @@ Bridge-derived subprocess env values:
 
 ## MCP session defaults
 
-These variables are read by `apps/brain-mcp/src/main.ts`.
+These variables are read by `apps/mimir-mcp/src/main.ts`.
 
 | Variable | Purpose | Default / notes |
 | --- | --- | --- |
 | `MAB_MCP_DEFAULT_ACTOR_ID` | fixed actor ID for the whole MCP stdio session | optional; if unset, callers must provide actor identity themselves |
 | `MAB_MCP_DEFAULT_ACTOR_ROLE` | fixed actor role for the whole MCP stdio session | optional; paired with `MAB_MCP_DEFAULT_ACTOR_ID` |
 | `MAB_MCP_DEFAULT_ACTOR_AUTH_TOKEN` | fixed actor token for the whole MCP stdio session | optional; paired with `MAB_MCP_DEFAULT_ACTOR_ID` |
-| `MAB_MCP_DEFAULT_SOURCE` | fixed source label for the MCP stdio session | defaults to `brain-mcp-session` when fixed actor env is enabled |
+| `MAB_MCP_DEFAULT_SOURCE` | fixed source label for the MCP stdio session | defaults to `mimir-mcp-session` when fixed actor env is enabled |
 
 ## Auth
 
@@ -131,7 +142,7 @@ Accepted JSON shapes:
 
 - `.env.example` is a reference template and includes both defaults and suggested overrides
 - `docker/compose.local.yml` is an explicit model-backed container profile
-- `docker/brain-mcp-session.env.example` and `docker/compose.mcp-session.yml` describe an explicit, session-scoped MCP container profile
+- `docker/mimir-mcp-session.env.example` and `docker/compose.mcp-session.yml` describe an explicit, session-scoped MCP container profile
 
 Do not assume those files describe the same runtime behavior.
 

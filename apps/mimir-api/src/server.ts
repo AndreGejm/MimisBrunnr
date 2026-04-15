@@ -22,7 +22,7 @@ import type {
   ServiceError,
   ShowToolOutputRequest,
   ValidateNoteRequest
-} from "@multi-agent-brain/contracts";
+} from "@mimir/contracts";
 import {
   ActorAuthorizationError,
   buildServiceContainer,
@@ -37,7 +37,7 @@ import {
   validateIssueActorTokenControlRequest,
   validateTransportRequest,
   type AppEnvironment
-} from "@multi-agent-brain/infrastructure";
+} from "@mimir/infrastructure";
 
 type RouteName =
   | "execute-coding-task"
@@ -112,16 +112,16 @@ const ROUTES: Record<string, { method: "GET" | "POST"; name?: RouteName; healthM
   "/v1/history/session-archives/search": { method: "POST", name: "search-session-archives" }
 };
 
-export interface BrainApiServer {
+export interface MimirApiServer {
   env: AppEnvironment;
   server: Server;
   listen(): Promise<void>;
   close(): Promise<void>;
 }
 
-export function createBrainApiServer(
+export function createMimirApiServer(
   envInput: Partial<AppEnvironment> = loadEnvironment()
-): BrainApiServer {
+): MimirApiServer {
   const container = buildServiceContainer(envInput);
   const env = container.env;
 
@@ -560,14 +560,14 @@ function buildActorContext(
   const now = new Date().toISOString();
 
   return {
-    actorId: firstHeader(headers["x-brain-actor-id"]) ?? input.actorId ?? `${routeName}-http`,
-    actorRole: (firstHeader(headers["x-brain-actor-role"]) as ActorRole | undefined) ?? input.actorRole ?? DEFAULT_ACTOR_ROLE[routeName],
+    actorId: firstHeader(headers["x-mimir-actor-id"]) ?? input.actorId ?? `${routeName}-http`,
+    actorRole: (firstHeader(headers["x-mimir-actor-role"]) as ActorRole | undefined) ?? input.actorRole ?? DEFAULT_ACTOR_ROLE[routeName],
     transport: "http",
-    source: firstHeader(headers["x-brain-source"]) ?? input.source ?? "brain-api",
+    source: firstHeader(headers["x-mimir-source"]) ?? input.source ?? "mimir-api",
     requestId: firstHeader(headers["x-request-id"]) ?? input.requestId ?? randomUUID(),
     initiatedAt: input.initiatedAt ?? now,
-    toolName: firstHeader(headers["x-brain-tool-name"]) ?? input.toolName ?? routeName,
-    authToken: firstHeader(headers["x-brain-actor-token"]) ?? input.authToken
+    toolName: firstHeader(headers["x-mimir-tool-name"]) ?? input.toolName ?? routeName,
+    authToken: firstHeader(headers["x-mimir-actor-token"]) ?? input.authToken
   };
 }
 
@@ -584,16 +584,16 @@ function buildAdministrativeActorContext(
   const now = new Date().toISOString();
 
   return {
-    actorId: firstHeader(headers["x-brain-actor-id"]) ?? `${administrativeAction}-http`,
+    actorId: firstHeader(headers["x-mimir-actor-id"]) ?? `${administrativeAction}-http`,
     actorRole:
-      (firstHeader(headers["x-brain-actor-role"]) as ActorRole | undefined) ??
+      (firstHeader(headers["x-mimir-actor-role"]) as ActorRole | undefined) ??
       "operator",
     transport: "http",
-    source: firstHeader(headers["x-brain-source"]) ?? "brain-api",
+    source: firstHeader(headers["x-mimir-source"]) ?? "mimir-api",
     requestId: firstHeader(headers["x-request-id"]) ?? randomUUID(),
     initiatedAt: now,
-    toolName: firstHeader(headers["x-brain-tool-name"]) ?? administrativeAction,
-    authToken: firstHeader(headers["x-brain-actor-token"])
+    toolName: firstHeader(headers["x-mimir-tool-name"]) ?? administrativeAction,
+    authToken: firstHeader(headers["x-mimir-actor-token"])
   };
 }
 
@@ -607,7 +607,7 @@ function firstHeader(value: string | string[] | undefined): string | undefined {
 function parseFreshnessQuery(searchParams: URLSearchParams): {
   asOf?: string;
   expiringWithinDays?: number;
-  corpusId?: "context_brain" | "general_notes";
+  corpusId?: "mimisbrunnr" | "general_notes";
   limitPerCategory?: number;
 } {
   const asOf = searchParams.get("asOf") ?? undefined;
@@ -623,14 +623,14 @@ function parseFreshnessQuery(searchParams: URLSearchParams): {
 
   if (
     corpusId !== null &&
-    corpusId !== "context_brain" &&
+    corpusId !== "mimisbrunnr" &&
     corpusId !== "general_notes"
   ) {
     throw new TransportValidationError(
-      "Invalid request field 'corpusId': must be one of: context_brain, general_notes.",
+      "Invalid request field 'corpusId': must be one of: mimisbrunnr, general_notes.",
       {
         field: "corpusId",
-        problem: "must be one of: context_brain, general_notes"
+        problem: "must be one of: mimisbrunnr, general_notes"
       }
     );
   }

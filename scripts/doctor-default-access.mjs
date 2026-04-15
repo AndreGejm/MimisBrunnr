@@ -17,7 +17,7 @@ function parseArgs(argv) {
     json: false,
     manifestPath: getDefaultInstallationManifestPath(),
     repoRoot: getRepoRootFromScript(import.meta.url),
-    serverName: "multiagentbrain"
+    serverName: "mimir"
   };
 
   for (let index = 0; index < argv.length; index += 1) {

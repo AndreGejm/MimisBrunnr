@@ -20,12 +20,12 @@ const OUTPUT_PATH = path.join(
 );
 
 const fixtures = await loadFixtures(FIXTURE_PATH);
-const root = await mkdtemp(path.join(os.tmpdir(), "mab-retrieval-eval-"));
+const root = await mkdtemp(path.join(os.tmpdir(), "mimir-retrieval-eval-"));
 const container = buildServiceContainer({
   nodeEnv: "test",
   vaultRoot: path.join(root, "vault", "canonical"),
   stagingRoot: path.join(root, "vault", "staging"),
-  sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+  sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
   qdrantUrl: "http://127.0.0.1:6333",
   qdrantCollection: `retrieval_eval_${randomUUID().slice(0, 8)}`,
   qdrantSoftFail: true,
@@ -149,12 +149,12 @@ async function seedCanonicalNote(fixture) {
     frontmatter: {
       noteId,
       title: fixture.seed.title,
-      project: "multi-agent-brain",
+      project: "mimir",
       type: "reference",
       status: "promoted",
       updated: new Date().toISOString().slice(0, 10),
       summary: fixture.seed.summary,
-      tags: ["project/multi-agent-brain", "domain/retrieval", "status/promoted"],
+      tags: ["project/mimir", "domain/retrieval", "status/promoted"],
       scope: "retrieval-eval",
       corpusId: fixture.targetCorpora[0],
       currentState: false

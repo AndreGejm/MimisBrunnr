@@ -4,7 +4,7 @@ import type {
   CorpusId,
   NoteId,
   NoteType
-} from "@multi-agent-brain/domain";
+} from "@mimir/domain";
 
 export interface VectorSearchHit {
   chunkId: ChunkId;

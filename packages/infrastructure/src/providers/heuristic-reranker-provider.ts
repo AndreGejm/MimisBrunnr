@@ -1,6 +1,6 @@
-import type { RerankerProvider } from "@multi-agent-brain/application";
-import type { ContextCandidate } from "@multi-agent-brain/contracts";
-import type { QueryIntent } from "@multi-agent-brain/domain";
+import type { RerankerProvider } from "@mimir/application";
+import type { ContextCandidate } from "@mimir/contracts";
+import type { QueryIntent } from "@mimir/domain";
 
 export class HeuristicRerankerProvider implements RerankerProvider {
   readonly providerId = "heuristic-reranker";

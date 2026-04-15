@@ -24,26 +24,26 @@ test("session archives are immutable non-authoritative artifacts", async (t) => 
   assert.equal(result.data.archive.messageCount, 1);
 
   const canonicalNotes = await container.services.canonicalNoteService.listCanonicalNotes(
-    "context_brain"
+    "mimisbrunnr"
   );
   assert.equal(canonicalNotes.ok, true);
   assert.equal(canonicalNotes.data.length, 0);
 
   const stagingDrafts = await container.services.stagingDraftService.listDraftsByCorpus(
-    "context_brain"
+    "mimisbrunnr"
   );
   assert.equal(stagingDrafts.length, 0);
 });
 
 test("session archive route rejects self-asserted operators and accepts authorized actors", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-session-archives-api-"));
-  const { createBrainApiServer } = await import(
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-session-archives-api-"));
+  const { createMimirApiServer } = await import(
     pathToFileURL(
-      path.join(process.cwd(), "apps", "brain-api", "dist", "server.js")
+      path.join(process.cwd(), "apps", "mimir-api", "dist", "server.js")
     ).href
   );
 
-  const api = createBrainApiServer({
+  const api = createMimirApiServer({
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
     stagingRoot: path.join(root, "vault", "staging"),
@@ -64,7 +64,7 @@ test("session archive route rejects self-asserted operators and accepts authoriz
         {
           actorId: "session-archive-http",
           actorRole: "operator",
-          source: "brain-api",
+          source: "mimir-api",
           allowedTransports: ["http"],
           allowedCommands: ["create_session_archive"],
           authToken: "archive-secret"
@@ -92,7 +92,7 @@ test("session archive route rejects self-asserted operators and accepts authoriz
       actor: {
         actorId: "self-asserted-operator",
         actorRole: "operator",
-        source: "brain-api"
+        source: "mimir-api"
       },
       sessionId: "session-unauthorized",
       messages: [{ role: "user", content: "This request should be rejected." }]
@@ -107,13 +107,13 @@ test("session archive route rejects self-asserted operators and accepts authoriz
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-brain-actor-token": "archive-secret"
+      "x-mimir-actor-token": "archive-secret"
     },
     body: JSON.stringify({
       actor: {
         actorId: "session-archive-http",
         actorRole: "operator",
-        source: "brain-api",
+        source: "mimir-api",
         authToken: "archive-secret"
       },
       sessionId: "session-authorized",
@@ -129,7 +129,7 @@ test("session archive route rejects self-asserted operators and accepts authoriz
 });
 
 async function createHarness(t) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-session-archives-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-session-archives-"));
   const container = buildServiceContainer({
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),

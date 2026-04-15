@@ -1,8 +1,8 @@
-import type { ActorRole, TransportKind } from "@multi-agent-brain/contracts";
+import type { ActorRole, TransportKind } from "@mimir/contracts";
 import type {
   AdministrativeAction,
   OrchestratorCommand
-} from "@multi-agent-brain/orchestration";
+} from "@mimir/orchestration";
 import { TransportValidationError } from "./request-validation.js";
 
 type JsonRecord = Record<string, unknown>;

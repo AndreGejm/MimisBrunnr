@@ -9,7 +9,7 @@
           "label": "default-session-token"
         }
       ],
-      "source": "brain-mcp-session",
+      "source": "mimir-mcp-session",
       "enabled": true,
       "allowedTransports": [
         "mcp"

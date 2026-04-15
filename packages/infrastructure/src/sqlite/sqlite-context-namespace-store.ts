@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import type {
   ContextNamespaceStore
-} from "@multi-agent-brain/application";
+} from "@mimir/application";
 import type {
   ContextAuthorityState,
   ContextKind,
@@ -10,7 +10,7 @@ import type {
   ContextPromotionStatus,
   ContextSourceType,
   ContextSupersessionStatus
-} from "@multi-agent-brain/domain";
+} from "@mimir/domain";
 import {
   acquireSharedSqliteConnection,
   type SharedSqliteConnection
@@ -131,7 +131,7 @@ function mapSqliteNoteRowToContextNode(row: SqliteNoteRow): ContextNode | undefi
   const freshness = deriveFreshness(row);
 
   return {
-    uri: `mab://${row.corpus_id}/${NOTE_CONTEXT_KIND}/${row.note_id}`,
+    uri: `mimir://${row.corpus_id}/${NOTE_CONTEXT_KIND}/${row.note_id}`,
     ownerScope: row.corpus_id,
     contextKind: NOTE_CONTEXT_KIND,
     authorityState,
@@ -303,7 +303,7 @@ function mapAuthorityStatesToLifecycleStates(
 function parseNamespaceUri(
   uri: string
 ): { ownerScope: ContextOwnerScope; contextKind: ContextKind; noteId: string } | undefined {
-  const match = /^mab:\/\/([^/]+)\/([^/]+)\/([^/?#]+)$/.exec(uri);
+  const match = /^mimir:\/\/([^/]+)\/([^/]+)\/([^/?#]+)$/.exec(uri);
   if (!match) {
     return undefined;
   }

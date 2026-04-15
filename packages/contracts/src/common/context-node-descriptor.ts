@@ -13,7 +13,7 @@ import {
   type ContextPromotionStatus,
   type ContextSourceType,
   type ContextSupersessionStatus
-} from "@multi-agent-brain/domain";
+} from "@mimir/domain";
 import {
   parseContextRepresentationRef,
   type ContextRepresentationRef

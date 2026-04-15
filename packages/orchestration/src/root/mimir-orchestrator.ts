@@ -23,18 +23,18 @@ import {
   type ShowToolOutputResponse,
   type ValidateNoteRequest,
   type ValidateNoteResponse
-} from "@multi-agent-brain/contracts";
+} from "@mimir/contracts";
 import type { ActorAuthorizationPolicy } from "./actor-authorization-policy.js";
-import type { BrainDomainController } from "../brain/brain-domain-controller.js";
+import type { MimisbrunnrDomainController } from "../mimisbrunnr/mimisbrunnr-domain-controller.js";
 import type { CodingDomainController } from "../coding/coding-domain-controller.js";
 import type { ModelRoleRegistry } from "../model-roles/model-role-registry.js";
 import type { RoleProviderRegistry } from "../model-roles/provider-registry.js";
 import type { OrchestratorCommand, TaskFamilyRouter } from "../routing/task-family-router.js";
 
-export class MultiAgentOrchestrator {
+export class MimirOrchestrator {
   constructor(
     private readonly router: TaskFamilyRouter,
-    private readonly brainController: BrainDomainController,
+    private readonly mimisbrunnrController: MimisbrunnrDomainController,
     private readonly codingController: CodingDomainController,
     private readonly actorAuthorizationPolicy: ActorAuthorizationPolicy,
     readonly modelRoleRegistry: ModelRoleRegistry,
@@ -45,102 +45,102 @@ export class MultiAgentOrchestrator {
     request: RetrieveContextRequest
   ) {
     this.assertAuthorized("search_context", request.actor);
-    this.assertBrainRoute("search_context");
-    return this.brainController.searchContext(request);
+    this.assertMimisbrunnrRoute("search_context");
+    return this.mimisbrunnrController.searchContext(request);
   }
 
   async searchSessionArchives(
     request: SearchSessionArchivesRequest
   ) {
     this.assertAuthorized("search_session_archives", request.actor);
-    this.assertBrainRoute("search_session_archives");
-    return this.brainController.searchSessionArchives(request);
+    this.assertMimisbrunnrRoute("search_session_archives");
+    return this.mimisbrunnrController.searchSessionArchives(request);
   }
 
   async fetchDecisionSummary(
     request: GetDecisionSummaryRequest
   ) {
     this.assertAuthorized("fetch_decision_summary", request.actor);
-    this.assertBrainRoute("fetch_decision_summary");
-    return this.brainController.fetchDecisionSummary(request);
+    this.assertMimisbrunnrRoute("fetch_decision_summary");
+    return this.mimisbrunnrController.fetchDecisionSummary(request);
   }
 
   async getContextPacket(
     request: AssembleContextPacketRequest
   ): Promise<AssembleContextPacketResponse> {
     this.assertAuthorized("get_context_packet", request.actor);
-    this.assertBrainRoute("get_context_packet");
-    return this.brainController.getContextPacket(request);
+    this.assertMimisbrunnrRoute("get_context_packet");
+    return this.mimisbrunnrController.getContextPacket(request);
   }
 
   async assembleAgentContext(
     request: AssembleAgentContextRequest
   ): Promise<ServiceResult<AssembleAgentContextResponse>> {
     this.assertAuthorized("assemble_agent_context", request.actor);
-    this.assertBrainRoute("assemble_agent_context");
-    return this.brainController.assembleAgentContext(request);
+    this.assertMimisbrunnrRoute("assemble_agent_context");
+    return this.mimisbrunnrController.assembleAgentContext(request);
   }
 
   async draftNote(
     request: DraftNoteRequest
   ) {
     this.assertAuthorized("draft_note", request.actor);
-    this.assertBrainRoute("draft_note");
-    return this.brainController.draftNote(request);
+    this.assertMimisbrunnrRoute("draft_note");
+    return this.mimisbrunnrController.draftNote(request);
   }
 
   async createSessionArchive(
     request: CreateSessionArchiveRequest
   ) {
     this.assertAuthorized("create_session_archive", request.actor);
-    this.assertBrainRoute("create_session_archive");
-    return this.brainController.createSessionArchive(request);
+    this.assertMimisbrunnrRoute("create_session_archive");
+    return this.mimisbrunnrController.createSessionArchive(request);
   }
 
   async createRefreshDraft(
     request: CreateRefreshDraftRequest
   ) {
     this.assertAuthorized("create_refresh_draft", request.actor);
-    this.assertBrainRoute("create_refresh_draft");
-    return this.brainController.createRefreshDraft(request);
+    this.assertMimisbrunnrRoute("create_refresh_draft");
+    return this.mimisbrunnrController.createRefreshDraft(request);
   }
 
   async createRefreshDraftBatch(
     request: CreateRefreshDraftBatchRequest
   ) {
     this.assertAuthorized("create_refresh_drafts", request.actor);
-    this.assertBrainRoute("create_refresh_drafts");
-    return this.brainController.createRefreshDraftBatch(request);
+    this.assertMimisbrunnrRoute("create_refresh_drafts");
+    return this.mimisbrunnrController.createRefreshDraftBatch(request);
   }
 
   async importResource(
     request: ImportResourceRequest
   ) {
     this.assertAuthorized("import_resource", request.actor);
-    this.assertBrainRoute("import_resource");
-    return this.brainController.importResource(request);
+    this.assertMimisbrunnrRoute("import_resource");
+    return this.mimisbrunnrController.importResource(request);
   }
 
   validateNote(request: ValidateNoteRequest): ValidateNoteResponse {
     this.assertAuthorized("validate_note", request.actor);
-    this.assertBrainRoute("validate_note");
-    return this.brainController.validateNote(request);
+    this.assertMimisbrunnrRoute("validate_note");
+    return this.mimisbrunnrController.validateNote(request);
   }
 
   async promoteNote(
     request: PromoteNoteRequest
   ) {
     this.assertAuthorized("promote_note", request.actor);
-    this.assertBrainRoute("promote_note");
-    return this.brainController.promoteNote(request);
+    this.assertMimisbrunnrRoute("promote_note");
+    return this.mimisbrunnrController.promoteNote(request);
   }
 
   async queryHistory(
     request: QueryHistoryRequest
   ) {
     this.assertAuthorized("query_history", request.actor);
-    this.assertBrainRoute("query_history");
-    return this.brainController.queryHistory(request);
+    this.assertMimisbrunnrRoute("query_history");
+    return this.mimisbrunnrController.queryHistory(request);
   }
 
   async executeCodingTask(
@@ -183,7 +183,7 @@ export class MultiAgentOrchestrator {
     return output ? { found: true, output } : { found: false };
   }
 
-  private assertBrainRoute(
+  private assertMimisbrunnrRoute(
     command:
       | "search_context"
       | "search_session_archives"
@@ -200,8 +200,8 @@ export class MultiAgentOrchestrator {
       | "query_history"
   ): void {
     const route = this.router.route(command);
-    if (route.domain !== "brain") {
-      throw new Error(`Command '${command}' is not routed to the brain domain.`);
+    if (route.domain !== "mimisbrunnr") {
+      throw new Error(`Command '${command}' is not routed to the mimisbrunnr domain.`);
     }
   }
 
@@ -224,10 +224,10 @@ export class MultiAgentOrchestrator {
       [request.task, request.filePath, request.symbolName]
         .filter((value): value is string => Boolean(value?.trim()))
         .join(" ");
-    const assembledContext = await this.brainController.assembleAgentContext({
+    const assembledContext = await this.mimisbrunnrController.assembleAgentContext({
       actor: request.actor,
       query: contextQuery,
-      corpusIds: request.memoryContext.corpusIds ?? ["context_brain", "general_notes"],
+      corpusIds: request.memoryContext.corpusIds ?? ["mimisbrunnr", "general_notes"],
       budget: request.memoryContext.budget ?? DEFAULT_CONTEXT_BUDGET,
       includeSessionArchives:
         request.memoryContext.includeSessionArchives ?? Boolean(request.memoryContext.sessionId),
@@ -245,7 +245,7 @@ export class MultiAgentOrchestrator {
         },
         context: appendContextBlock(
           request.context,
-          `<agent-context source="multi-agent-brain" authority="unavailable">Failed to assemble memory context: ${assembledContext.error.message}</agent-context>`
+          `<agent-context source="mimisbrunnr" authority="unavailable">Failed to assemble memory context: ${assembledContext.error.message}</agent-context>`
         )
       };
     }
@@ -267,6 +267,7 @@ export class MultiAgentOrchestrator {
     };
   }
 }
+
 
 function appendContextBlock(existingContext: string | undefined, contextBlock: string): string {
   const existing = existingContext?.trim();

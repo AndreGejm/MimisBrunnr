@@ -5,7 +5,7 @@ single client session.
 
 Use this mode when:
 
-- you want an MCP client to launch Multi Agent Brain intentionally for a session
+- you want an MCP client to launch mimir intentionally for a session
 - you want canonical, staging, state, and auth config mounted from the host
 - you want explicit startup validation instead of silent fallback or hidden
   background behavior
@@ -13,7 +13,7 @@ Use this mode when:
 Do not use this mode when:
 
 - you want a long-running HTTP service; use `docker/compose.local.yml` instead
-- you want the brain auto-started for every workspace by default
+- you want mimir auto-started for every workspace by default
 - you cannot provide explicit host mounts for canonical, staging, state, and
   config
 
@@ -21,25 +21,25 @@ Do not use this mode when:
 
 Container entrypoint:
 
-- `node docker/brain-mcp-session-entrypoint.mjs`
+- `node docker/mimir-mcp-session-entrypoint.mjs`
 
 What the entrypoint does:
 
 - logs configuration and validation status to `stderr`
 - validates env, mounts, auth registry, Qdrant reachability, model availability,
   and Python runtime readiness
-- launches `apps/brain-mcp/dist/main.js` only if validation passes
+- launches `apps/mimir-mcp/dist/main.js` only if validation passes
 - exits cleanly when the MCP client closes stdin
 
 The MCP protocol itself still runs directly over stdio from
-`apps/brain-mcp/dist/main.js`. The wrapper exists only to keep startup and
+`apps/mimir-mcp/dist/main.js`. The wrapper exists only to keep startup and
 shutdown deterministic.
 
 ## Required prerequisites
 
 - Docker Desktop with Linux containers enabled
 - Node dependencies already built into the image through
-  `docker/brain-mcp.Dockerfile`
+  `docker/mimir-mcp.Dockerfile`
 - Docker Model Runner or another Docker/Ollama-compatible endpoint exposing the
   required Qwen-family models
 - Qdrant reachable from the container
@@ -83,7 +83,7 @@ authority state.
 
 Start from:
 
-- `docker/brain-mcp-session.env.example`
+- `docker/mimir-mcp-session.env.example`
 
 This profile is intentionally strict:
 
@@ -95,7 +95,7 @@ This profile is intentionally strict:
 
 Example actor registry source:
 
-- `docker/brain-mcp-session.actor-registry.example.json`
+- `docker/mimir-mcp-session.actor-registry.example.json`
 
 ## Host mounts
 
@@ -110,7 +110,7 @@ Expected files inside those mounts:
 
 - canonical notes under `/data/vault/canonical`
 - staging drafts under `/data/vault/staging`
-- SQLite database at `/data/state/multi-agent-brain.sqlite`
+- SQLite database at `/data/state/mimisbrunnr.sqlite`
 - actor registry at `/config/auth/actor-registry.json`
 
 Host example paths:
@@ -131,7 +131,7 @@ pnpm docker:mcp:build
 Equivalent direct command:
 
 ```bash
-docker build -f docker/brain-mcp.Dockerfile -t multi-agent-brain-mcp-session:local .
+docker build -f docker/mimir-mcp.Dockerfile -t mimir-mcp-session:local -t multi-agent-mimir-mcp-session:local .
 ```
 
 ## Validate before launching
@@ -140,14 +140,14 @@ Validation-only run:
 
 ```bash
 docker run --rm \
-  --env-file docker/brain-mcp-session.env \
+  --env-file docker/mimir-mcp-session.env \
   --mount type=bind,src=<HOST_CANONICAL_ROOT>,dst=/data/vault/canonical \
   --mount type=bind,src=<HOST_STAGING_ROOT>,dst=/data/vault/staging \
   --mount type=bind,src=<HOST_STATE_ROOT>,dst=/data/state \
   --mount type=bind,src=<HOST_AUTH_CONFIG_ROOT>,dst=/config/auth,readonly \
   --add-host host.docker.internal:host-gateway \
   --add-host model-runner.docker.internal:host-gateway \
-  multi-agent-brain-mcp-session:local \
+  mimir-mcp-session:local \
   --validate-only
 ```
 
@@ -166,14 +166,14 @@ Official direct-launch shape:
 
 ```bash
 docker run --rm -i \
-  --env-file docker/brain-mcp-session.env \
+  --env-file docker/mimir-mcp-session.env \
   --mount type=bind,src=<HOST_CANONICAL_ROOT>,dst=/data/vault/canonical \
   --mount type=bind,src=<HOST_STAGING_ROOT>,dst=/data/vault/staging \
   --mount type=bind,src=<HOST_STATE_ROOT>,dst=/data/state \
   --mount type=bind,src=<HOST_AUTH_CONFIG_ROOT>,dst=/config/auth,readonly \
   --add-host host.docker.internal:host-gateway \
   --add-host model-runner.docker.internal:host-gateway \
-  multi-agent-brain-mcp-session:local
+  mimir-mcp-session:local
 ```
 
 Why this is the preferred client path:
@@ -190,13 +190,13 @@ Tracked compose asset:
 
 This is mainly for operator convenience. It still expects:
 
-- `docker/brain-mcp-session.env`
+- `docker/mimir-mcp-session.env`
 - host path env vars for the four mounts
 
 Example:
 
 ```bash
-docker compose -f docker/compose.mcp-session.yml run --rm -T brain-mcp-session
+docker compose -f docker/compose.mcp-session.yml run --rm -T mimir-mcp-session
 ```
 
 Direct `docker run` remains the safer default for MCP clients because it keeps
@@ -209,14 +209,14 @@ Example generic client config:
 ```json
 {
   "mcpServers": {
-    "multi-agent-brain": {
+    "mimir": {
       "command": "docker",
       "args": [
         "run",
         "--rm",
         "-i",
         "--env-file",
-        "<REPO_ROOT>/docker/brain-mcp-session.env",
+        "<REPO_ROOT>/docker/mimir-mcp-session.env",
         "--mount",
         "type=bind,src=<HOST_CANONICAL_ROOT>,dst=/data/vault/canonical",
         "--mount",
@@ -229,12 +229,27 @@ Example generic client config:
         "host.docker.internal:host-gateway",
         "--add-host",
         "model-runner.docker.internal:host-gateway",
-        "multi-agent-brain-mcp-session:local"
+        "mimir-mcp-session:local"
       ]
     }
   }
 }
 ```
+
+## Docker Desktop MCP Toolkit note
+
+Docker Desktop's MCP Toolkit can inspect the user's enabled Docker MCP servers:
+
+```bash
+docker mcp server list
+docker mcp tools list
+```
+
+Those commands are diagnostics for Docker Desktop's MCP gateway and catalog. This
+repository does not currently ship a Docker MCP catalog entry for mimir. For now,
+wire mimir as an explicit session-scoped MCP server using the client snippet
+above, or add a catalog entry separately when packaging requires Docker Desktop
+gateway integration.
 
 ## Readiness and health semantics
 
@@ -283,7 +298,7 @@ Python runtime unavailable:
 Expected shutdown path:
 
 - MCP client closes stdin
-- `apps/brain-mcp` disposes the shared container
+- `apps/mimir-mcp` disposes the shared container
 - container process exits
 - Docker removes the container because `--rm` was used
 
@@ -302,9 +317,9 @@ signal to the MCP process and exits when the child exits.
 ## Deterministic verification flow
 
 1. Build the image.
-2. Copy `docker/brain-mcp-session.env.example` to `docker/brain-mcp-session.env`
+2. Copy `docker/mimir-mcp-session.env.example` to `docker/mimir-mcp-session.env`
    and fill in the token.
-3. Copy `docker/brain-mcp-session.actor-registry.example.json` into the host
+3. Copy `docker/mimir-mcp-session.actor-registry.example.json` into the host
    config mount as `actor-registry.json` and replace the token.
 4. Run the `--validate-only` command.
 5. Launch the session with `docker run --rm -i ...`.

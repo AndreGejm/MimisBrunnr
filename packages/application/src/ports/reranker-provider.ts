@@ -1,5 +1,5 @@
-import type { QueryIntent } from "@multi-agent-brain/domain";
-import type { ContextCandidate } from "@multi-agent-brain/contracts";
+import type { QueryIntent } from "@mimir/domain";
+import type { ContextCandidate } from "@mimir/contracts";
 
 export interface RerankerProvider {
   readonly providerId: string;

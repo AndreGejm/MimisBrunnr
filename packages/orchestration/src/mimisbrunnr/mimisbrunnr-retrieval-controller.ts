@@ -3,15 +3,15 @@ import type {
   DecisionSummaryService,
   ContextPacketService,
   RetrieveContextService
-} from "@multi-agent-brain/application";
+} from "@mimir/application";
 import type {
   AssembleAgentContextRequest,
   AssembleContextPacketRequest,
   AssembleContextPacketResponse,
   GetDecisionSummaryRequest,
   RetrieveContextRequest
-} from "@multi-agent-brain/contracts";
-export class BrainRetrievalController {
+} from "@mimir/contracts";
+export class MimisbrunnrRetrievalController {
   constructor(
     private readonly retrieveContextService: RetrieveContextService,
     private readonly decisionSummaryService: DecisionSummaryService,

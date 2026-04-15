@@ -1,7 +1,7 @@
 import type {
   ExecuteCodingTaskRequest,
   ExecuteCodingTaskResponse
-} from "@multi-agent-brain/contracts";
+} from "@mimir/contracts";
 
 export interface CodingControllerBridge {
   executeTask(request: ExecuteCodingTaskRequest): Promise<ExecuteCodingTaskResponse>;

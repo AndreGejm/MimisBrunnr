@@ -8,8 +8,8 @@ import test from "node:test";
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
-test("brain-mcp serves initialize, tools/list, list_context_tree, read_context_node, get_context_packet, and validate_note over stdio MCP framing", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-mcp-"));
+test("mimir-mcp serves initialize, tools/list, list_context_tree, read_context_node, get_context_packet, and validate_note over stdio MCP framing", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-mcp-"));
   const canonical = await seedCanonicalTemporalNote(root, {
     title: "MCP Namespace Canonical Node",
     scope: "mcp-namespace",
@@ -30,7 +30,7 @@ test("brain-mcp serves initialize, tools/list, list_context_tree, read_context_n
   );
   const child = spawn(
     process.execPath,
-    [path.join(process.cwd(), "apps", "brain-mcp", "dist", "main.js")],
+    [path.join(process.cwd(), "apps", "mimir-mcp", "dist", "main.js")],
     {
       cwd: process.cwd(),
       env: {
@@ -38,9 +38,9 @@ test("brain-mcp serves initialize, tools/list, list_context_tree, read_context_n
         MAB_NODE_ENV: "test",
         MAB_VAULT_ROOT: path.join(root, "vault", "canonical"),
         MAB_STAGING_ROOT: path.join(root, "vault", "staging"),
-        MAB_SQLITE_PATH: path.join(root, "state", "multi-agent-brain.sqlite"),
+        MAB_SQLITE_PATH: path.join(root, "state", "mimisbrunnr.sqlite"),
         MAB_QDRANT_URL: "http://127.0.0.1:6333",
-        MAB_QDRANT_COLLECTION: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+        MAB_QDRANT_COLLECTION: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
         MAB_EMBEDDING_PROVIDER: "hash",
         MAB_REASONING_PROVIDER: "heuristic",
         MAB_DRAFTING_PROVIDER: "disabled",
@@ -77,7 +77,7 @@ test("brain-mcp serves initialize, tools/list, list_context_tree, read_context_n
     }
   });
   const initializeResponse = await transport.next();
-  assert.equal(initializeResponse.result.serverInfo.name, "multi-agent-brain-mcp");
+  assert.equal(initializeResponse.result.serverInfo.name, "mimir-mcp");
   assert.equal(initializeResponse.result.serverInfo.version, "0.4.0");
 
   writeMcpMessage(child.stdin, {
@@ -109,7 +109,7 @@ test("brain-mcp serves initialize, tools/list, list_context_tree, read_context_n
     params: {
       name: "list_context_tree",
       arguments: {
-        ownerScope: "context_brain",
+        ownerScope: "mimisbrunnr",
         authorityStates: ["canonical", "staging"]
       }
     }
@@ -121,14 +121,14 @@ test("brain-mcp serves initialize, tools/list, list_context_tree, read_context_n
   assert.ok(
     treeResponse.result.structuredContent.data.nodes.some(
       (node) =>
-        node.uri === `mab://context_brain/note/${canonical.noteId}` &&
+        node.uri === `mimir://mimisbrunnr/note/${canonical.noteId}` &&
         node.authorityState === "canonical"
     )
   );
   assert.ok(
     treeResponse.result.structuredContent.data.nodes.some(
       (node) =>
-        node.uri === `mab://context_brain/note/${staging.draftNoteId}` &&
+        node.uri === `mimir://mimisbrunnr/note/${staging.draftNoteId}` &&
         node.authorityState === "staging"
     )
   );
@@ -140,7 +140,7 @@ test("brain-mcp serves initialize, tools/list, list_context_tree, read_context_n
     params: {
       name: "read_context_node",
       arguments: {
-        uri: `mab://context_brain/note/${canonical.noteId}`
+        uri: `mimir://mimisbrunnr/note/${canonical.noteId}`
       }
     }
   });
@@ -150,7 +150,7 @@ test("brain-mcp serves initialize, tools/list, list_context_tree, read_context_n
   assert.equal(nodeResponse.result.structuredContent.ok, true);
   assert.equal(
     nodeResponse.result.structuredContent.data.node.uri,
-    `mab://context_brain/note/${canonical.noteId}`
+    `mimir://mimisbrunnr/note/${canonical.noteId}`
   );
   assert.equal(nodeResponse.result.structuredContent.data.node.authorityState, "canonical");
 
@@ -177,11 +177,11 @@ test("brain-mcp serves initialize, tools/list, list_context_tree, read_context_n
             rawText: "MCP can now assemble bounded context packets directly from ranked candidates.",
             scope: "architecture",
             qualifiers: ["bounded retrieval"],
-            tags: ["project/multi-agent-brain"],
+            tags: ["project/mimir"],
             stalenessClass: "current",
             provenance: {
               noteId: "note-mcp-1",
-              notePath: "context_brain/architecture/mcp-packets.md",
+              notePath: "mimisbrunnr/architecture/mcp-packets.md",
               headingPath: ["Summary"]
             }
           }
@@ -203,20 +203,20 @@ test("brain-mcp serves initialize, tools/list, list_context_tree, read_context_n
     params: {
       name: "validate_note",
       arguments: {
-        targetCorpus: "context_brain",
-        notePath: "context_brain/decision/invalid-mcp-note.md",
+        targetCorpus: "mimisbrunnr",
+        notePath: "mimisbrunnr/decision/invalid-mcp-note.md",
         validationMode: "promotion",
         frontmatter: {
           noteId,
           title: "Invalid MCP Decision",
-          project: "multi-agent-brain",
+          project: "mimir",
           type: "decision",
           status: "promoted",
           updated: currentDateIso(),
           summary: "Missing required sections.",
-          tags: ["project/multi-agent-brain", "domain/orchestration", "status/promoted"],
+          tags: ["project/mimir", "domain/orchestration", "status/promoted"],
           scope: "validation",
-          corpusId: "context_brain",
+          corpusId: "mimisbrunnr",
           currentState: false
         },
         body: "## Context\n\nOnly one section exists."
@@ -258,8 +258,8 @@ test("brain-mcp serves initialize, tools/list, list_context_tree, read_context_n
   );
 });
 
-test("brain-mcp creates governed refresh drafts for expired current-state notes", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-mcp-refresh-"));
+test("mimir-mcp creates governed refresh drafts for expired current-state notes", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-mcp-refresh-"));
   const seeded = await seedCanonicalTemporalNote(root, {
     title: "MCP Refresh Workflow",
     scope: "mcp-refresh-workflow",
@@ -269,7 +269,7 @@ test("brain-mcp creates governed refresh drafts for expired current-state notes"
 
   const child = spawn(
     process.execPath,
-    [path.join(process.cwd(), "apps", "brain-mcp", "dist", "main.js")],
+    [path.join(process.cwd(), "apps", "mimir-mcp", "dist", "main.js")],
     {
       cwd: process.cwd(),
       env: {
@@ -277,9 +277,9 @@ test("brain-mcp creates governed refresh drafts for expired current-state notes"
         MAB_NODE_ENV: "test",
         MAB_VAULT_ROOT: path.join(root, "vault", "canonical"),
         MAB_STAGING_ROOT: path.join(root, "vault", "staging"),
-        MAB_SQLITE_PATH: path.join(root, "state", "multi-agent-brain.sqlite"),
+        MAB_SQLITE_PATH: path.join(root, "state", "mimisbrunnr.sqlite"),
         MAB_QDRANT_URL: "http://127.0.0.1:6333",
-        MAB_QDRANT_COLLECTION: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+        MAB_QDRANT_COLLECTION: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
         MAB_EMBEDDING_PROVIDER: "hash",
         MAB_REASONING_PROVIDER: "heuristic",
         MAB_DRAFTING_PROVIDER: "disabled",
@@ -337,11 +337,11 @@ test("brain-mcp creates governed refresh drafts for expired current-state notes"
   );
 });
 
-test("brain-mcp enforces registered actor tokens when auth mode is enforced", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-mcp-auth-"));
+test("mimir-mcp enforces registered actor tokens when auth mode is enforced", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-mcp-auth-"));
   const child = spawn(
     process.execPath,
-    [path.join(process.cwd(), "apps", "brain-mcp", "dist", "main.js")],
+    [path.join(process.cwd(), "apps", "mimir-mcp", "dist", "main.js")],
     {
       cwd: process.cwd(),
       env: {
@@ -349,9 +349,9 @@ test("brain-mcp enforces registered actor tokens when auth mode is enforced", as
         MAB_NODE_ENV: "test",
         MAB_VAULT_ROOT: path.join(root, "vault", "canonical"),
         MAB_STAGING_ROOT: path.join(root, "vault", "staging"),
-        MAB_SQLITE_PATH: path.join(root, "state", "multi-agent-brain.sqlite"),
+        MAB_SQLITE_PATH: path.join(root, "state", "mimisbrunnr.sqlite"),
         MAB_QDRANT_URL: "http://127.0.0.1:6333",
-        MAB_QDRANT_COLLECTION: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+        MAB_QDRANT_COLLECTION: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
         MAB_EMBEDDING_PROVIDER: "hash",
         MAB_REASONING_PROVIDER: "heuristic",
         MAB_DRAFTING_PROVIDER: "disabled",
@@ -365,7 +365,7 @@ test("brain-mcp enforces registered actor tokens when auth mode is enforced", as
             actorId: "get_context_packet-mcp",
             actorRole: "retrieval",
             authToken: "mcp-secret",
-            source: "brain-mcp",
+            source: "mimir-mcp",
             allowedTransports: ["mcp"],
             allowedCommands: ["get_context_packet"]
           }
@@ -418,11 +418,11 @@ test("brain-mcp enforces registered actor tokens when auth mode is enforced", as
             summary: "MCP auth should require a token in enforced mode.",
             scope: "architecture",
             qualifiers: ["auth required"],
-            tags: ["project/multi-agent-brain"],
+            tags: ["project/mimir"],
             stalenessClass: "current",
             provenance: {
               noteId: "note-mcp-auth-1",
-              notePath: "context_brain/architecture/mcp-auth.md",
+              notePath: "mimisbrunnr/architecture/mcp-auth.md",
               headingPath: ["Summary"]
             }
           }
@@ -460,11 +460,11 @@ test("brain-mcp enforces registered actor tokens when auth mode is enforced", as
             summary: "MCP auth should require a token in enforced mode.",
             scope: "architecture",
             qualifiers: ["auth required"],
-            tags: ["project/multi-agent-brain"],
+            tags: ["project/mimir"],
             stalenessClass: "current",
             provenance: {
               noteId: "note-mcp-auth-2",
-              notePath: "context_brain/architecture/mcp-auth.md",
+              notePath: "mimisbrunnr/architecture/mcp-auth.md",
               headingPath: ["Summary"]
             }
           }
@@ -478,8 +478,8 @@ test("brain-mcp enforces registered actor tokens when auth mode is enforced", as
   assert.equal(authorized.result.structuredContent.packet.evidence[0].noteId, "note-mcp-auth-2");
 });
 
-test("brain-mcp loads a file-backed actor registry and honors rotated credential windows", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-mcp-auth-file-"));
+test("mimir-mcp loads a file-backed actor registry and honors rotated credential windows", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-mcp-auth-file-"));
   const registryPath = path.join(root, "config", "actor-registry.json");
   await fsMkdir(path.dirname(registryPath), { recursive: true });
   const now = Date.now();
@@ -504,7 +504,7 @@ test("brain-mcp loads a file-backed actor registry and honors rotated credential
                 validUntil: new Date(now + 3_600_000).toISOString()
               }
             ],
-            source: "brain-mcp",
+            source: "mimir-mcp",
             allowedTransports: ["mcp"],
             allowedCommands: ["get_context_packet"]
           }
@@ -518,7 +518,7 @@ test("brain-mcp loads a file-backed actor registry and honors rotated credential
 
   const child = spawn(
     process.execPath,
-    [path.join(process.cwd(), "apps", "brain-mcp", "dist", "main.js")],
+    [path.join(process.cwd(), "apps", "mimir-mcp", "dist", "main.js")],
     {
       cwd: process.cwd(),
       env: {
@@ -526,9 +526,9 @@ test("brain-mcp loads a file-backed actor registry and honors rotated credential
         MAB_NODE_ENV: "test",
         MAB_VAULT_ROOT: path.join(root, "vault", "canonical"),
         MAB_STAGING_ROOT: path.join(root, "vault", "staging"),
-        MAB_SQLITE_PATH: path.join(root, "state", "multi-agent-brain.sqlite"),
+        MAB_SQLITE_PATH: path.join(root, "state", "mimisbrunnr.sqlite"),
         MAB_QDRANT_URL: "http://127.0.0.1:6333",
-        MAB_QDRANT_COLLECTION: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+        MAB_QDRANT_COLLECTION: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
         MAB_EMBEDDING_PROVIDER: "hash",
         MAB_REASONING_PROVIDER: "heuristic",
         MAB_DRAFTING_PROVIDER: "disabled",
@@ -589,11 +589,11 @@ test("brain-mcp loads a file-backed actor registry and honors rotated credential
             summary: "MCP file-backed auth should reject expired credentials.",
             scope: "architecture",
             qualifiers: ["auth required"],
-            tags: ["project/multi-agent-brain"],
+            tags: ["project/mimir"],
             stalenessClass: "current",
             provenance: {
               noteId: "note-mcp-auth-file-expired",
-              notePath: "context_brain/architecture/mcp-auth-file.md",
+              notePath: "mimisbrunnr/architecture/mcp-auth-file.md",
               headingPath: ["Summary"]
             }
           }
@@ -632,11 +632,11 @@ test("brain-mcp loads a file-backed actor registry and honors rotated credential
             summary: "MCP file-backed auth should accept active credentials.",
             scope: "architecture",
             qualifiers: ["auth required"],
-            tags: ["project/multi-agent-brain"],
+            tags: ["project/mimir"],
             stalenessClass: "current",
             provenance: {
               noteId: "note-mcp-auth-file-current",
-              notePath: "context_brain/architecture/mcp-auth-file.md",
+              notePath: "mimisbrunnr/architecture/mcp-auth-file.md",
               headingPath: ["Summary"]
             }
           }
@@ -653,11 +653,11 @@ test("brain-mcp loads a file-backed actor registry and honors rotated credential
   );
 });
 
-test("brain-mcp rejects malformed tool arguments at ingress", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-mcp-invalid-"));
+test("mimir-mcp rejects malformed tool arguments at ingress", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-mcp-invalid-"));
   const child = spawn(
     process.execPath,
-    [path.join(process.cwd(), "apps", "brain-mcp", "dist", "main.js")],
+    [path.join(process.cwd(), "apps", "mimir-mcp", "dist", "main.js")],
     {
       cwd: process.cwd(),
       env: {
@@ -665,9 +665,9 @@ test("brain-mcp rejects malformed tool arguments at ingress", async (t) => {
         MAB_NODE_ENV: "test",
         MAB_VAULT_ROOT: path.join(root, "vault", "canonical"),
         MAB_STAGING_ROOT: path.join(root, "vault", "staging"),
-        MAB_SQLITE_PATH: path.join(root, "state", "multi-agent-brain.sqlite"),
+        MAB_SQLITE_PATH: path.join(root, "state", "mimisbrunnr.sqlite"),
         MAB_QDRANT_URL: "http://127.0.0.1:6333",
-        MAB_QDRANT_COLLECTION: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+        MAB_QDRANT_COLLECTION: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
         MAB_EMBEDDING_PROVIDER: "hash",
         MAB_REASONING_PROVIDER: "heuristic",
         MAB_DRAFTING_PROVIDER: "disabled",
@@ -806,9 +806,9 @@ async function seedCanonicalTemporalNote(root, input) {
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
     stagingRoot: path.join(root, "vault", "staging"),
-    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
     qdrantUrl: "http://127.0.0.1:6333",
-    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    qdrantCollection: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
     embeddingProvider: "hash",
     reasoningProvider: "heuristic",
     draftingProvider: "disabled",
@@ -819,7 +819,7 @@ async function seedCanonicalTemporalNote(root, input) {
   try {
     const draft = await container.services.stagingDraftService.createDraft({
       actor: testActor("writer"),
-      targetCorpus: "context_brain",
+      targetCorpus: "mimisbrunnr",
       noteType: "reference",
       title: input.title,
       sourcePrompt: `Refresh seed for ${input.title}`,
@@ -840,7 +840,7 @@ async function seedCanonicalTemporalNote(root, input) {
     const promoted = await container.services.promotionOrchestratorService.promoteDraft({
       actor: testActor("orchestrator"),
       draftNoteId: draft.data.draftNoteId,
-      targetCorpus: "context_brain",
+      targetCorpus: "mimisbrunnr",
       promoteAsCurrentState: true
     });
 
@@ -862,9 +862,9 @@ async function seedStagingDraft(root, input) {
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
     stagingRoot: path.join(root, "vault", "staging"),
-    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
     qdrantUrl: "http://127.0.0.1:6333",
-    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    qdrantCollection: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
     embeddingProvider: "hash",
     reasoningProvider: "heuristic",
     draftingProvider: "disabled",
@@ -875,7 +875,7 @@ async function seedStagingDraft(root, input) {
   try {
     const draft = await container.services.stagingDraftService.createDraft({
       actor: testActor("writer"),
-      targetCorpus: "context_brain",
+      targetCorpus: "mimisbrunnr",
       noteType: "reference",
       title: input.title,
       sourcePrompt: `Seed staging draft for ${input.title}`,

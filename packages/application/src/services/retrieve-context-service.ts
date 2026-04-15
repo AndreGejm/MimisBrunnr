@@ -13,8 +13,8 @@ import {
   type RetrieveContextRequest,
   type RetrieveContextResponse,
   type ServiceResult
-} from "@multi-agent-brain/contracts";
-import type { QueryIntent } from "@multi-agent-brain/domain";
+} from "@mimir/contracts";
+import type { QueryIntent } from "@mimir/domain";
 import { ContextPacketService } from "./context-packet-service.js";
 import { HierarchicalRetrievalService } from "./hierarchical-retrieval-service.js";
 import { RetrievalTraceService } from "./retrieval-trace-service.js";

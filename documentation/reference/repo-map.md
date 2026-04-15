@@ -24,9 +24,9 @@ This map is based on tracked repository content. It intentionally separates trac
 
 ### Transport adapters
 
-- `apps/brain-api`
-- `apps/brain-cli`
-- `apps/brain-mcp`
+- `apps/mimir-api`
+- `apps/mimir-cli`
+- `apps/mimir-mcp`
 
 ### Shared runtime layers
 
@@ -44,9 +44,9 @@ This map is based on tracked repository content. It intentionally separates trac
 
 ### Application entrypoints
 
-- HTTP: `apps/brain-api/src/main.ts`
-- CLI: `apps/brain-cli/src/main.ts`
-- MCP: `apps/brain-mcp/src/main.ts`
+- HTTP: `apps/mimir-api/src/main.ts`
+- CLI: `apps/mimir-cli/src/main.ts`
+- MCP: `apps/mimir-mcp/src/main.ts`
 
 ### Shared bootstrap
 
@@ -63,7 +63,7 @@ This map is based on tracked repository content. It intentionally separates trac
 
 ### Docker entrypoint
 
-- `docker/brain-api.Dockerfile`
+- `docker/mimir-api.Dockerfile`
 - `docker/compose.local.yml`
 
 ## Storage surfaces

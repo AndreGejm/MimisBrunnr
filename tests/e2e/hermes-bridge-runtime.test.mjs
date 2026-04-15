@@ -20,7 +20,7 @@ test("search-context validation preserves includeTrace and retrieval returns hea
 
   const validated = infrastructure.validateTransportRequest("search-context", {
     query: "Hermes Retrieval Health",
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     budget: {
       maxTokens: 1200,
       maxSources: 4,
@@ -57,7 +57,7 @@ test("session archive search returns bounded non-authoritative recall", async (t
       },
       {
         role: "assistant",
-        content: "Do not copy autonomous background memory writes into MultiagentBrain."
+        content: "Do not copy autonomous background memory writes into mimir."
       }
     ]
   });
@@ -101,7 +101,7 @@ test("assemble-agent-context fences canonical memory and session recall", async 
   const result = await container.orchestrator.assembleAgentContext({
     actor: actor("retrieval"),
     query: "Hermes context assembly session recall",
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     includeSessionArchives: true,
     sessionId: "hermes-context-session",
     budget: {
@@ -114,7 +114,7 @@ test("assemble-agent-context fences canonical memory and session recall", async 
   });
 
   assert.equal(result.ok, true);
-  assert.match(result.data.contextBlock, /<agent-context source="multi-agent-brain"/);
+  assert.match(result.data.contextBlock, /<agent-context source="mimisbrunnr"/);
   assert.match(result.data.contextBlock, /<canonical-memory>/);
   assert.match(result.data.contextBlock, /<session-recall authority="non_authoritative">/);
   assert.match(result.data.contextBlock, /not new user input/i);
@@ -142,7 +142,7 @@ test("assemble-agent-context escapes recalled text inside context fences", async
   const result = await container.orchestrator.assembleAgentContext({
     actor: actor("retrieval"),
     query: "Hermes Context Escaping Breakout Marker Session Breakout",
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     includeSessionArchives: true,
     sessionId: "hermes-escaping-session",
     budget: {
@@ -185,7 +185,7 @@ test("assemble-agent-context bounds session recall under the requested packet bu
   const result = await container.orchestrator.assembleAgentContext({
     actor: actor("retrieval"),
     query: "Hermes Budget Assembly session recall budget marker",
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     includeSessionArchives: true,
     sessionId: "hermes-budget-session",
     budget: {
@@ -214,7 +214,7 @@ test("assemble-agent-context omits retrieval traces unless requested", async (t)
   const result = await container.orchestrator.assembleAgentContext({
     actor: actor("retrieval"),
     query: "Hermes Trace Opt In",
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     budget: {
       maxTokens: 1000,
       maxSources: 3,
@@ -229,13 +229,13 @@ test("assemble-agent-context omits retrieval traces unless requested", async (t)
 
 test("execute-coding-task can inject fenced memory context before the local bridge", async () => {
   let capturedRequest;
-  const fakeBrainController = {
+  const fakeMimisbrunnrController = {
     async assembleAgentContext(request) {
       assert.equal(request.query, "promotion flow");
       return {
         ok: true,
         data: {
-          contextBlock: "<agent-context source=\"multi-agent-brain\" authority=\"retrieved\">memory</agent-context>",
+          contextBlock: "<agent-context source=\"mimisbrunnr\" authority=\"retrieved\">memory</agent-context>",
           tokenEstimate: 42,
           truncated: false,
           retrievalHealth: { status: "healthy" },
@@ -254,9 +254,9 @@ test("execute-coding-task can inject fenced memory context before the local brid
       };
     }
   };
-  const orchestrator = new orchestration.MultiAgentOrchestrator(
+  const orchestrator = new orchestration.MimirOrchestrator(
     new orchestration.TaskFamilyRouter(),
-    fakeBrainController,
+    fakeMimisbrunnrController,
     fakeCodingController,
     new orchestration.ActorAuthorizationPolicy(),
     modelRoleRegistry(),
@@ -270,7 +270,7 @@ test("execute-coding-task can inject fenced memory context before the local brid
     context: "base context",
     memoryContext: {
       query: "promotion flow",
-      corpusIds: ["context_brain"],
+      corpusIds: ["mimisbrunnr"],
       budget: {
         maxTokens: 800,
         maxSources: 2,
@@ -282,7 +282,7 @@ test("execute-coding-task can inject fenced memory context before the local brid
 
   assert.equal(result.status, "success");
   assert.match(capturedRequest.context, /base context/);
-  assert.match(capturedRequest.context, /<agent-context source="multi-agent-brain"/);
+  assert.match(capturedRequest.context, /<agent-context source="mimisbrunnr"/);
   assert.deepEqual(capturedRequest.memoryContext, undefined);
   assert.equal(capturedRequest.memoryContextStatus.requested, true);
   assert.equal(capturedRequest.memoryContextStatus.included, true);
@@ -393,9 +393,9 @@ test("coding-domain records compact local agent traces without hidden reasoning 
 });
 
 test("sqlite local agent trace store persists ordered records by request id", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-agent-trace-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-agent-trace-"));
   const store = new infrastructure.SqliteLocalAgentTraceStore(
-    path.join(root, "state", "multi-agent-brain.sqlite")
+    path.join(root, "state", "mimisbrunnr.sqlite")
   );
   t.after(async () => {
     store.close?.();
@@ -454,9 +454,9 @@ test("coding-domain failed traces include classified provider error metadata", a
 });
 
 test("tool output budget service inlines small output and spills oversized output", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-tool-output-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-tool-output-"));
   const store = new infrastructure.SqliteToolOutputStore(
-    path.join(root, "state", "multi-agent-brain.sqlite"),
+    path.join(root, "state", "mimisbrunnr.sqlite"),
     path.join(root, "state", "tool-output")
   );
   const service = new application.ToolOutputBudgetService(store, {
@@ -495,9 +495,9 @@ test("tool output budget service inlines small output and spills oversized outpu
 });
 
 test("sqlite tool output store rejects spillover paths outside the tool-output root", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-tool-output-path-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-tool-output-path-"));
   const store = new infrastructure.SqliteToolOutputStore(
-    path.join(root, "state", "multi-agent-brain.sqlite"),
+    path.join(root, "state", "mimisbrunnr.sqlite"),
     path.join(root, "state", "tool-output")
   );
   t.after(async () => {
@@ -524,9 +524,9 @@ test("sqlite tool output store rejects spillover paths outside the tool-output r
 });
 
 test("coding-domain spills oversized local result and validation output", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-coding-spillover-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-coding-spillover-"));
   const store = new infrastructure.SqliteToolOutputStore(
-    path.join(root, "state", "multi-agent-brain.sqlite"),
+    path.join(root, "state", "mimisbrunnr.sqlite"),
     path.join(root, "state", "tool-output")
   );
   const service = new application.ToolOutputBudgetService(store, {
@@ -761,12 +761,12 @@ test("local experts config applies qwen3-coder budgets without erasing prior-out
 });
 
 async function createHarness(t) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-hermes-bridge-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-hermes-bridge-"));
   const container = infrastructure.buildServiceContainer({
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
     stagingRoot: path.join(root, "vault", "staging"),
-    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
     qdrantUrl: "http://127.0.0.1:6333",
     qdrantCollection: `hermes_bridge_${randomUUID().slice(0, 8)}`,
     embeddingProvider: "hash",
@@ -790,20 +790,20 @@ async function createCanonicalNote(container, input) {
   const noteId = randomUUID();
   const result = await container.services.canonicalNoteService.writeCanonicalNote({
     noteId,
-    corpusId: "context_brain",
-    notePath: `context_brain/reference/${noteId}.md`,
+    corpusId: "mimisbrunnr",
+    notePath: `mimisbrunnr/reference/${noteId}.md`,
     revision: "",
     frontmatter: {
       noteId,
       title: input.title,
-      project: "multi-agent-brain",
+      project: "mimir",
       type: "reference",
       status: "promoted",
       updated: new Date().toISOString().slice(0, 10),
       summary: input.body,
-      tags: ["project/multi-agent-brain", "domain/retrieval", "status/promoted"],
+      tags: ["project/mimir", "domain/retrieval", "status/promoted"],
       scope: "hermes-bridge",
-      corpusId: "context_brain",
+      corpusId: "mimisbrunnr",
       currentState: false
     },
     body: [
@@ -843,7 +843,7 @@ function actor(role) {
 function modelRoleRegistry() {
   return new orchestration.ModelRoleRegistry([
     binding("coding_primary", "docker_ollama", "qwen3-coder"),
-    binding("brain_primary", "internal_heuristic", "heuristic"),
+    binding("mimisbrunnr_primary", "internal_heuristic", "heuristic"),
     binding("embedding_primary", "internal_hash", "hash"),
     binding("reranker_primary", "internal_heuristic", "heuristic"),
     binding("paid_escalation", "disabled")

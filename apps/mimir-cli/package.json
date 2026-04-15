@@ -1,0 +1,38 @@
+{
+    "name":  "@mimir/cli",
+    "version":  "0.1.0",
+    "private":  true,
+    "type":  "module",
+    "main":  "dist/main.js",
+    "types":  "dist/main.d.ts",
+    "bin":  {
+                "mimir":  "dist/main.js",
+                "mimir-cli":  "dist/main.js",
+                "mimis":  "dist/main.js",
+                "mimis-cli":  "dist/main.js",
+                "mimisbrunnr":  "dist/main.js",
+                "mimisbrunnr-cli":  "dist/main.js",
+                "mimirbrunnr":  "dist/main.js",
+                "mimirbrunnr-cli":  "dist/main.js",
+                "mimirsbrunnr":  "dist/main.js",
+                "mimirsbrunnr-cli":  "dist/main.js",
+                "brain":  "dist/main.js",
+                "brain-cli":  "dist/main.js",
+                "brain.CLI":  "dist/main.js",
+                "multiagentbrain":  "dist/main.js",
+                "multiagentbrain-cli":  "dist/main.js",
+                "multiagent-brain":  "dist/main.js",
+                "multi-agent-brain":  "dist/main.js",
+                "multi-agent-brain-cli":  "dist/main.js",
+                "mab":  "dist/main.js"
+            },
+    "scripts":  {
+                    "build":  "tsc -p tsconfig.json",
+                    "typecheck":  "tsc -p tsconfig.json --noEmit",
+                    "cli":  "node dist/main.js"
+                },
+    "dependencies":  {
+                         "@mimir/contracts":  "workspace:*",
+                         "@mimir/infrastructure":  "workspace:*"
+                     }
+}

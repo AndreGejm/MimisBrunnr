@@ -6,7 +6,7 @@ const DEFAULT_WORKSPACE_ROOT = fileURLToPath(
   new URL("../../../../", import.meta.url)
 );
 const WORKSPACE_PACKAGE_JSON_PATH = path.join(DEFAULT_WORKSPACE_ROOT, "package.json");
-const DEFAULT_APPLICATION_NAME = "multi-agent-brain";
+const DEFAULT_APPLICATION_NAME = "mimir";
 const DEFAULT_VERSION = "0.0.0-dev";
 
 export interface ReleaseMetadata {
@@ -27,7 +27,10 @@ export function loadReleaseMetadata(
   const gitCommit = trimToUndefined(env.MAB_GIT_COMMIT);
 
   return {
-    applicationName: workspacePackage.name ?? DEFAULT_APPLICATION_NAME,
+    applicationName:
+      trimToUndefined(env.MIMIR_APPLICATION_NAME) ??
+      trimToUndefined(env.MAB_APPLICATION_NAME) ??
+      DEFAULT_APPLICATION_NAME,
     version: versionOverride ?? workspacePackage.version ?? DEFAULT_VERSION,
     gitTag,
     gitCommit,
@@ -37,16 +40,12 @@ export function loadReleaseMetadata(
   };
 }
 
-function readWorkspacePackage(): { name?: string; version?: string } {
+function readWorkspacePackage(): { version?: string } {
   try {
     const raw = readFileSync(WORKSPACE_PACKAGE_JSON_PATH, "utf8");
     const parsed = JSON.parse(raw) as { name?: unknown; version?: unknown };
 
     return {
-      name:
-        typeof parsed.name === "string" && parsed.name.trim()
-          ? parsed.name.trim()
-          : DEFAULT_APPLICATION_NAME,
       version:
         typeof parsed.version === "string" && parsed.version.trim()
           ? parsed.version.trim()
@@ -54,7 +53,6 @@ function readWorkspacePackage(): { name?: string; version?: string } {
     };
   } catch {
     return {
-      name: DEFAULT_APPLICATION_NAME,
       version: DEFAULT_VERSION
     };
   }

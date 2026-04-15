@@ -7,7 +7,21 @@ const ACTOR_ROLES = new Set([
   "system",
   "operator"
 ]);
-const CORPORA = new Set(["context_brain", "general_notes"]);
+const CORPORA = new Set(["mimisbrunnr", "general_notes"]);
+const CORPUS_ALIASES = new Map<string, string>([
+  ["brain", "mimisbrunnr"],
+  ["context_brain", "mimisbrunnr"],
+  ["mimir_brunnr", "mimisbrunnr"],
+  ["mimir-brunnr", "mimisbrunnr"],
+  ["mimirbrunnr", "mimisbrunnr"],
+  ["mimirsbrunn", "mimisbrunnr"],
+  ["mimirsbrunnr", "mimisbrunnr"],
+  ["mimis", "mimisbrunnr"],
+  ["mimisbrunn", "mimisbrunnr"],
+  ["multi agent brain", "mimisbrunnr"],
+  ["multi-agent-brain", "mimisbrunnr"],
+  ["multiagentbrain", "mimisbrunnr"]
+]);
 const NOTE_TYPES = new Set([
   "decision",
   "constraint",
@@ -30,7 +44,7 @@ const NOTE_LIFECYCLE_STATES = new Set([
   "archived"
 ]);
 const CONTEXT_OWNER_SCOPES = new Set([
-  "context_brain",
+  "mimisbrunnr",
   "general_notes",
   "imports",
   "sessions",
@@ -527,12 +541,23 @@ function requireEnum<T extends string>(
   field: string,
   allowedValues: ReadonlySet<T>
 ): T {
-  const stringValue = requireString(value, field);
+  const stringValue = normalizeEnumValue(requireString(value, field), allowedValues);
   if (!allowedValues.has(stringValue as T)) {
     throw validationError(field, `must be one of: ${[...allowedValues].join(", ")}`);
   }
 
   return stringValue as T;
+}
+
+function normalizeEnumValue(
+  value: string,
+  allowedValues: ReadonlySet<string>
+): string {
+  if (allowedValues === CORPORA || allowedValues === CONTEXT_OWNER_SCOPES) {
+    return CORPUS_ALIASES.get(value.trim().toLowerCase()) ?? value;
+  }
+
+  return value;
 }
 
 function optionalEnum<T extends string>(

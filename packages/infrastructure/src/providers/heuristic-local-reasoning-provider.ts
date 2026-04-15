@@ -1,9 +1,9 @@
-import type { LocalReasoningProvider } from "@multi-agent-brain/application";
+import type { LocalReasoningProvider } from "@mimir/application";
 import type {
   AnswerabilityDisposition,
   QueryIntent
-} from "@multi-agent-brain/domain";
-import type { ContextCandidate } from "@multi-agent-brain/contracts";
+} from "@mimir/domain";
+import type { ContextCandidate } from "@mimir/contracts";
 
 export class HeuristicLocalReasoningProvider implements LocalReasoningProvider {
   readonly providerId = "heuristic-local-v1";

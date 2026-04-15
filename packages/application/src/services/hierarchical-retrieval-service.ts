@@ -6,8 +6,8 @@ import {
   type RetrieveContextRequest,
   type RetrieveContextResponse,
   type ServiceResult
-} from "@multi-agent-brain/contracts";
-import type { QueryIntent } from "@multi-agent-brain/domain";
+} from "@mimir/contracts";
+import type { QueryIntent } from "@mimir/domain";
 import type { EmbeddingProvider } from "../ports/embedding-provider.js";
 import type { LexicalIndex } from "../ports/lexical-index.js";
 import type { LocalReasoningProvider } from "../ports/local-reasoning-provider.js";

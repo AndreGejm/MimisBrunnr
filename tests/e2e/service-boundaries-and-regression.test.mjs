@@ -13,13 +13,60 @@ import {
   runRuntimeHealthChecks,
   validateTransportRequest
 } from "../../packages/infrastructure/dist/index.js";
+import { COMPATIBILITY_LAUNCHER_NAMES } from "../../scripts/lib/default-access.mjs";
 
+
+test("default launcher compatibility includes old and shorthand aliases", () => {
+  assert.ok(COMPATIBILITY_LAUNCHER_NAMES.includes("mimir"));
+  assert.ok(COMPATIBILITY_LAUNCHER_NAMES.includes("mimir-cli"));
+  assert.ok(COMPATIBILITY_LAUNCHER_NAMES.includes("mimis"));
+  assert.ok(COMPATIBILITY_LAUNCHER_NAMES.includes("mimis-cli"));
+  assert.ok(COMPATIBILITY_LAUNCHER_NAMES.includes("mimisbrunnr"));
+  assert.ok(COMPATIBILITY_LAUNCHER_NAMES.includes("mimisbrunnr-cli"));
+  assert.ok(COMPATIBILITY_LAUNCHER_NAMES.includes("mimirbrunnr"));
+  assert.ok(COMPATIBILITY_LAUNCHER_NAMES.includes("mimirsbrunnr"));
+  assert.ok(COMPATIBILITY_LAUNCHER_NAMES.includes("brain"));
+  assert.ok(COMPATIBILITY_LAUNCHER_NAMES.includes("brain-cli"));
+  assert.ok(COMPATIBILITY_LAUNCHER_NAMES.includes("brain.CLI"));
+  assert.ok(COMPATIBILITY_LAUNCHER_NAMES.includes("multiagentbrain"));
+  assert.ok(COMPATIBILITY_LAUNCHER_NAMES.includes("multi-agent-brain"));
+  assert.ok(COMPATIBILITY_LAUNCHER_NAMES.includes("mab"));
+});
+test("transport validation normalizes legacy context-brain corpus aliases to mimisbrunnr", () => {
+  const search = validateTransportRequest("search-context", {
+    query: "legacy corpus aliases",
+    budget: {
+      maxTokens: 200,
+      maxSources: 2,
+      maxRawExcerpts: 0,
+      maxSummarySentences: 2
+    },
+    corpusIds: ["mimir_brunnr", "mimirsbrunnr", "brain", "mimis"]
+  });
+
+  assert.deepEqual(search.corpusIds, [
+    "mimisbrunnr",
+    "mimisbrunnr",
+    "mimisbrunnr",
+    "mimisbrunnr"
+  ]);
+
+  const draft = validateTransportRequest("draft-note", {
+    targetCorpus: "multiagentbrain",
+    noteType: "decision",
+    title: "Alias compatibility",
+    sourcePrompt: "Verify old corpus names route to mimisbrunnr.",
+    supportingSources: []
+  });
+
+  assert.equal(draft.targetCorpus, "mimisbrunnr");
+});
 test("retrieval actors cannot create staging drafts", async (t) => {
   const { container } = await createHarness(t);
 
   const result = await container.services.stagingDraftService.createDraft({
     actor: actor("retrieval"),
-    targetCorpus: "context_brain",
+    targetCorpus: "mimisbrunnr",
     noteType: "decision",
     title: "Retrieval Boundary",
     sourcePrompt: "Create a retrieval note.",
@@ -35,7 +82,7 @@ test("writer actors cannot promote drafts", async (t) => {
 
   const draft = await createDraft(container, {
     actorRole: "writer",
-    targetCorpus: "context_brain",
+    targetCorpus: "mimisbrunnr",
     noteType: "decision",
     title: "Writer Promotion Boundary",
     sourcePrompt: "Draft a policy note."
@@ -44,7 +91,7 @@ test("writer actors cannot promote drafts", async (t) => {
   const result = await container.services.promotionOrchestratorService.promoteDraft({
     actor: actor("writer"),
     draftNoteId: draft.draftNoteId,
-    targetCorpus: "context_brain",
+    targetCorpus: "mimisbrunnr",
     expectedDraftRevision: draft.frontmatter.noteId ? undefined : undefined,
     promoteAsCurrentState: false
   });
@@ -53,12 +100,12 @@ test("writer actors cannot promote drafts", async (t) => {
   assert.equal(result.error.code, "forbidden");
 });
 
-test("context-brain drafts reject general-notes source leakage", async (t) => {
+test("mimisbrunnr drafts reject general-notes source leakage", async (t) => {
   const { container } = await createHarness(t);
 
   const result = await container.services.stagingDraftService.createDraft({
     actor: actor("writer"),
-    targetCorpus: "context_brain",
+    targetCorpus: "mimisbrunnr",
     noteType: "decision",
     title: "Leaky Draft",
     sourcePrompt: "Turn freeform notes into canonical context.",
@@ -89,12 +136,12 @@ test("general notes cannot be written as current-state canonical context", async
     frontmatter: {
       noteId,
       title: "General Current",
-      project: "multi-agent-brain",
+      project: "mimir",
       type: "reference",
       status: "promoted",
       updated: currentDateIso(),
       summary: "Should not be allowed as current-state canonical context.",
-      tags: ["project/multi-agent-brain", "status/current", "artifact/application"],
+      tags: ["project/mimir", "status/current", "artifact/application"],
       scope: "general_notes",
       corpusId: "general_notes",
       currentState: true
@@ -111,7 +158,7 @@ test("promotion of a current-state context note creates a deterministic snapshot
 
   const draft = await createDraft(container, {
     actorRole: "writer",
-    targetCorpus: "context_brain",
+    targetCorpus: "mimisbrunnr",
     noteType: "decision",
     title: "Writer Agent Policy",
     sourcePrompt: "Draft the current writer-agent policy.",
@@ -127,16 +174,16 @@ test("promotion of a current-state context note creates a deterministic snapshot
   const result = await container.services.promotionOrchestratorService.promoteDraft({
     actor: actor("orchestrator"),
     draftNoteId: draft.draftNoteId,
-    targetCorpus: "context_brain",
+    targetCorpus: "mimisbrunnr",
     promoteAsCurrentState: true
   });
 
   assert.equal(result.ok, true);
-  const notes = await container.services.canonicalNoteService.listCanonicalNotes("context_brain");
+  const notes = await container.services.canonicalNoteService.listCanonicalNotes("mimisbrunnr");
   assert.equal(notes.ok, true);
 
   const snapshot = notes.data.find((note) =>
-    note.notePath.startsWith("context_brain/current-state/")
+    note.notePath.startsWith("mimisbrunnr/current-state/")
   );
 
   assert.ok(snapshot, "expected a current-state snapshot note to be created");
@@ -150,7 +197,7 @@ test("promotion succeeds when derived representations fail to regenerate", async
 
   const draft = await createDraft(container, {
     actorRole: "writer",
-    targetCorpus: "context_brain",
+    targetCorpus: "mimisbrunnr",
     noteType: "decision",
     title: "Derived Representation Failure Tolerance",
     sourcePrompt: "Draft a policy note for the regression test.",
@@ -182,7 +229,7 @@ test("promotion succeeds when derived representations fail to regenerate", async
   const promoted = await promotionService.promoteDraft({
     actor: actor("orchestrator"),
     draftNoteId: draft.draftNoteId,
-    targetCorpus: "context_brain",
+    targetCorpus: "mimisbrunnr",
     promoteAsCurrentState: false
   });
 
@@ -206,7 +253,7 @@ test("promotion outbox replays failed cross-store sync work after a transient in
 
   const draft = await createDraft(container, {
     actorRole: "writer",
-    targetCorpus: "context_brain",
+    targetCorpus: "mimisbrunnr",
     noteType: "decision",
     title: "Replayable Promotion",
     sourcePrompt: "Draft a promotion that should survive a transient indexing fault.",
@@ -248,7 +295,7 @@ test("promotion outbox replays failed cross-store sync work after a transient in
   const initialPromotion = await promotionService.promoteDraft({
     actor: actor("orchestrator"),
     draftNoteId: draft.draftNoteId,
-    targetCorpus: "context_brain",
+    targetCorpus: "mimisbrunnr",
     promoteAsCurrentState: false
   });
 
@@ -269,7 +316,7 @@ test("promotion outbox replays failed cross-store sync work after a transient in
   assert.ok(completedOutbox);
   assert.equal(completedOutbox.state, "completed");
 
-  const notes = await container.services.canonicalNoteService.listCanonicalNotes("context_brain");
+  const notes = await container.services.canonicalNoteService.listCanonicalNotes("mimisbrunnr");
   assert.equal(notes.ok, true);
   assert.ok(
     notes.data.some((note) => note.frontmatter.title === "Replayable Promotion")
@@ -285,20 +332,20 @@ test("chunking preserves code fences, heading hierarchy, and adjacency", async (
   const noteId = randomUUID();
   const chunks = container.services.chunkingService.chunkCanonicalNote({
     noteId,
-    corpusId: "context_brain",
-    notePath: "context_brain/architecture/chunking-example.md",
+    corpusId: "mimisbrunnr",
+    notePath: "mimisbrunnr/architecture/chunking-example.md",
     revision: "",
     frontmatter: {
       noteId,
       title: "Chunking Example",
-      project: "multi-agent-brain",
+      project: "mimir",
       type: "architecture",
       status: "promoted",
       updated: currentDateIso(),
       summary: "Chunking behavior example.",
-      tags: ["project/multi-agent-brain", "domain/chunking", "status/promoted"],
+      tags: ["project/mimir", "domain/chunking", "status/promoted"],
       scope: "chunking",
-      corpusId: "context_brain",
+      corpusId: "mimisbrunnr",
       currentState: true
     },
     body: [
@@ -333,20 +380,20 @@ test("chunking marks expired current-state notes as stale when a validity window
   const noteId = randomUUID();
   const chunks = container.services.chunkingService.chunkCanonicalNote({
     noteId,
-    corpusId: "context_brain",
-    notePath: "context_brain/reference/expired-validity-window.md",
+    corpusId: "mimisbrunnr",
+    notePath: "mimisbrunnr/reference/expired-validity-window.md",
     revision: "",
     frontmatter: {
       noteId,
       title: "Expired Validity Window",
-      project: "multi-agent-brain",
+      project: "mimir",
       type: "reference",
       status: "promoted",
       updated: "2026-04-01",
       summary: "Expired guidance should not remain current forever.",
-      tags: ["project/multi-agent-brain", "status/promoted", "risk/stale-context"],
+      tags: ["project/mimir", "status/promoted", "risk/stale-context"],
       scope: "temporal-validity",
-      corpusId: "context_brain",
+      corpusId: "mimisbrunnr",
       currentState: true,
       validFrom: "2026-03-01",
       validUntil: "2026-03-31"
@@ -395,7 +442,7 @@ test("metadata control store summarizes expired and expiring current-state notes
   const summary = await container.ports.metadataControlStore.getTemporalValiditySummary({
     asOf: today,
     expiringWithinDays: 7,
-    corpusId: "context_brain"
+    corpusId: "mimisbrunnr"
   });
 
   assert.equal(summary.asOf, today);
@@ -439,7 +486,7 @@ test("metadata control store reports actionable temporal refresh candidates", as
   const report = await container.ports.metadataControlStore.getTemporalValidityReport({
     asOf: today,
     expiringWithinDays: 7,
-    corpusId: "context_brain",
+    corpusId: "mimisbrunnr",
     limitPerCategory: 5
   });
 
@@ -549,7 +596,7 @@ test("temporal refresh service reuses an existing open refresh draft for the sam
   assert.equal(second.data.draftNoteId, first.data.draftNoteId);
   assert.match(second.data.warnings[0], /existing draft was reused/i);
 
-  const drafts = await container.services.stagingDraftService.listDraftsByCorpus("context_brain");
+  const drafts = await container.services.stagingDraftService.listDraftsByCorpus("mimisbrunnr");
   const refreshDrafts = drafts.filter((draft) =>
     draft.frontmatter.supersedes?.includes(promoted.promotedNoteId)
   );
@@ -648,10 +695,10 @@ test("retrieval packets stay within explicit source and raw-excerpt budgets", as
   });
 
   await createAndPromote(container, {
-    title: "Context Brain Storage",
+    title: "mimisbrunnr Storage",
     noteType: "architecture",
     bodyHints: [
-      "Context brain retrieval uses staged canonical promotion.",
+      "mimisbrunnr retrieval uses staged canonical promotion.",
       "Writer staging policy protects canonical memory."
     ],
     scope: "writer-staging-c",
@@ -667,7 +714,7 @@ test("retrieval packets stay within explicit source and raw-excerpt budgets", as
       maxRawExcerpts: 1,
       maxSummarySentences: 2
     },
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     requireEvidence: false
   });
 
@@ -705,7 +752,7 @@ test("flat retrieval remains the default baseline while hierarchical stays expli
 
   const defaultValidated = validateTransportRequest("search-context", {
     query: "writer promotion rollout",
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     budget: {
       maxTokens: 320,
       maxSources: 2,
@@ -717,7 +764,7 @@ test("flat retrieval remains the default baseline while hierarchical stays expli
 
   const hierarchicalValidated = validateTransportRequest("search-context", {
     query: "writer promotion rollout",
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     budget: {
       maxTokens: 320,
       maxSources: 2,
@@ -737,7 +784,7 @@ test("flat retrieval remains the default baseline while hierarchical stays expli
       maxRawExcerpts: 1,
       maxSummarySentences: 2
     },
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     includeTrace: true
   });
 
@@ -750,7 +797,7 @@ test("flat retrieval remains the default baseline while hierarchical stays expli
       maxRawExcerpts: 1,
       maxSummarySentences: 2
     },
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     strategy: "hierarchical",
     includeTrace: true
   });
@@ -793,11 +840,11 @@ test("context packet assembly hard-enforces token and summary-sentence budgets",
           rawText: "Primary architecture guidance explains the packet contract in a very long paragraph. ".repeat(12),
           scope: "packet-budget",
           qualifiers: ["bounded context", "packet budget", "retry loop"],
-          tags: ["project/multi-agent-brain", "domain/retrieval"],
+          tags: ["project/mimir", "domain/retrieval"],
           stalenessClass: "current",
           provenance: {
             noteId: "packet-budget-1",
-            notePath: "context_brain/architecture/packet-budget-1.md",
+            notePath: "mimisbrunnr/architecture/packet-budget-1.md",
             headingPath: ["Summary"]
           }
         },
@@ -808,11 +855,11 @@ test("context packet assembly hard-enforces token and summary-sentence budgets",
           rawText: "Secondary decision context keeps packets compact while preserving provenance. ".repeat(10),
           scope: "packet-budget",
           qualifiers: ["compact packets", "provenance"],
-          tags: ["project/multi-agent-brain", "domain/retrieval"],
+          tags: ["project/mimir", "domain/retrieval"],
           stalenessClass: "current",
           provenance: {
             noteId: "packet-budget-2",
-            notePath: "context_brain/decision/packet-budget-2.md",
+            notePath: "mimisbrunnr/decision/packet-budget-2.md",
             headingPath: ["Decision"]
           }
         },
@@ -823,11 +870,11 @@ test("context packet assembly hard-enforces token and summary-sentence budgets",
           rawText: "Reference material should only survive if room remains in the explicit budget. ".repeat(8),
           scope: "packet-budget",
           qualifiers: ["budget", "reference"],
-          tags: ["project/multi-agent-brain", "domain/retrieval"],
+          tags: ["project/mimir", "domain/retrieval"],
           stalenessClass: "current",
           provenance: {
             noteId: "packet-budget-3",
-            notePath: "context_brain/reference/packet-budget-3.md",
+            notePath: "mimisbrunnr/reference/packet-budget-3.md",
             headingPath: ["Reference"]
           }
         }
@@ -879,7 +926,7 @@ test("retrieve context honors tagFilters across the retrieval pipeline", async (
       maxRawExcerpts: 1,
       maxSummarySentences: 2
     },
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     tagFilters: ["topic/mcp"],
     requireEvidence: false
   });
@@ -920,7 +967,7 @@ test("retrieve context warns when bounded evidence includes expired notes", asyn
       maxRawExcerpts: 1,
       maxSummarySentences: 2
     },
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     requireEvidence: false
   });
 
@@ -959,7 +1006,7 @@ test("retrieve context warns when bounded evidence is approaching expiry", async
       maxRawExcerpts: 1,
       maxSummarySentences: 2
     },
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     requireEvidence: false
   });
 
@@ -1005,7 +1052,7 @@ test("retrieve context uses the paid escalation provider to enrich uncertainty w
       maxRawExcerpts: 1,
       maxSummarySentences: 2
     },
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     requireEvidence: false
   });
 
@@ -1055,7 +1102,7 @@ test("retrieve context surfaces degraded vector mode explicitly while continuing
           degradedSince: new Date().toISOString(),
           details: {
             baseUrl: "http://127.0.0.1:6333/",
-            collectionName: "context_brain_chunks_test"
+            collectionName: "mimisbrunnr_chunks_test"
           }
         };
       }
@@ -1074,7 +1121,7 @@ test("retrieve context surfaces degraded vector mode explicitly while continuing
       maxRawExcerpts: 1,
       maxSummarySentences: 2
     },
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     requireEvidence: false
   });
 
@@ -1133,8 +1180,8 @@ test("runtime health reports expired temporal validity state explicitly", async 
 });
 
 test("sqlite-backed adapters share a reference-counted connection lifecycle", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-sqlite-shared-"));
-  const sqlitePath = path.join(root, "state", "multi-agent-brain.sqlite");
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-sqlite-shared-"));
+  const sqlitePath = path.join(root, "state", "mimisbrunnr.sqlite");
   const metadataStore = new SqliteMetadataControlStore(sqlitePath);
   const auditLog = new SqliteAuditLog(sqlitePath);
   const lexicalIndex = new SqliteFtsIndex(sqlitePath);
@@ -1149,8 +1196,8 @@ test("sqlite-backed adapters share a reference-counted connection lifecycle", as
   const noteId = randomUUID();
   await metadataStore.upsertNote({
     noteId,
-    corpusId: "context_brain",
-    notePath: "context_brain/architecture/sqlite-shared-lifecycle.md",
+    corpusId: "mimisbrunnr",
+    notePath: "mimisbrunnr/architecture/sqlite-shared-lifecycle.md",
     noteType: "architecture",
     lifecycleState: "promoted",
     revision: currentDateIso(),
@@ -1158,7 +1205,7 @@ test("sqlite-backed adapters share a reference-counted connection lifecycle", as
     currentState: false,
     summary: "Shared SQLite lifecycle test.",
     scope: "sqlite-shared-lifecycle",
-    tags: ["project/multi-agent-brain"],
+    tags: ["project/mimir"],
     contentHash: "sha256:test",
     semanticSignature: "sqlite-shared-lifecycle"
   });
@@ -1166,7 +1213,7 @@ test("sqlite-backed adapters share a reference-counted connection lifecycle", as
   auditLog.close();
 
   const duplicates = await metadataStore.findPotentialDuplicates({
-    corpusId: "context_brain",
+    corpusId: "mimisbrunnr",
     contentHash: "sha256:test"
   });
   assert.equal(duplicates.length, 1);
@@ -1175,16 +1222,16 @@ test("sqlite-backed adapters share a reference-counted connection lifecycle", as
     {
       chunkId: "sqlite-shared-lifecycle-chunk",
       noteId,
-      corpusId: "context_brain",
+      corpusId: "mimisbrunnr",
       noteType: "architecture",
-      notePath: "context_brain/architecture/sqlite-shared-lifecycle.md",
+      notePath: "mimisbrunnr/architecture/sqlite-shared-lifecycle.md",
       headingPath: ["Summary"],
       rawText: "Shared SQLite lifecycle should keep the remaining adapters alive.",
       summary: "Shared SQLite lifecycle remains available.",
       entities: [],
       qualifiers: [],
       scope: "sqlite-shared-lifecycle",
-      tags: ["project/multi-agent-brain"],
+      tags: ["project/mimir"],
       stalenessClass: "current",
       tokenEstimate: 12,
       updatedAt: currentDateIso()
@@ -1193,7 +1240,7 @@ test("sqlite-backed adapters share a reference-counted connection lifecycle", as
 
   const lexicalHits = await lexicalIndex.search({
     query: "remaining adapters alive",
-    corpusIds: ["context_brain"],
+    corpusIds: ["mimisbrunnr"],
     limit: 5,
     includeSuperseded: true
   });
@@ -1221,11 +1268,11 @@ test("root orchestrator exposes direct context-packet assembly for ranked candid
         rawText: "Canonical architecture notes define bounded retrieval packets and keep provenance attached.",
         scope: "architecture",
         qualifiers: ["bounded retrieval", "provenance required"],
-        tags: ["project/multi-agent-brain", "domain/retrieval"],
+        tags: ["project/mimir", "domain/retrieval"],
         stalenessClass: "current",
         provenance: {
           noteId: "note-architecture-1",
-          notePath: "context_brain/architecture/retrieval-packets.md",
+          notePath: "mimisbrunnr/architecture/retrieval-packets.md",
           headingPath: ["Summary"]
         }
       },
@@ -1235,11 +1282,11 @@ test("root orchestrator exposes direct context-packet assembly for ranked candid
         summary: "Decision packets should stay smaller than raw retrieval search outputs.",
         scope: "architecture",
         qualifiers: ["bounded packets"],
-        tags: ["project/multi-agent-brain", "domain/retrieval"],
+        tags: ["project/mimir", "domain/retrieval"],
         stalenessClass: "current",
         provenance: {
           noteId: "note-decision-1",
-          notePath: "context_brain/decision/packet-size.md",
+          notePath: "mimisbrunnr/decision/packet-size.md",
           headingPath: ["Decision"]
         }
       }
@@ -1297,20 +1344,20 @@ test("schema validation blocks missing required sections", async (t) => {
 
   const validation = container.services.noteValidationService.validate({
     actor: actor("orchestrator"),
-    targetCorpus: "context_brain",
-    notePath: "context_brain/decision/invalid-note.md",
+    targetCorpus: "mimisbrunnr",
+    notePath: "mimisbrunnr/decision/invalid-note.md",
     validationMode: "promotion",
     frontmatter: {
       noteId,
       title: "Invalid Decision",
-      project: "multi-agent-brain",
+      project: "mimir",
       type: "decision",
       status: "promoted",
       updated: currentDateIso(),
       summary: "Missing required sections.",
-      tags: ["project/multi-agent-brain", "domain/orchestration", "status/promoted"],
+      tags: ["project/mimir", "domain/orchestration", "status/promoted"],
       scope: "validation",
-      corpusId: "context_brain",
+      corpusId: "mimisbrunnr",
       currentState: false
     },
     body: "## Context\n\nOnly one section exists."
@@ -1326,20 +1373,20 @@ test("schema validation blocks inverted temporal validity windows", async (t) =>
 
   const validation = container.services.noteValidationService.validate({
     actor: actor("orchestrator"),
-    targetCorpus: "context_brain",
-    notePath: "context_brain/reference/invalid-validity-window.md",
+    targetCorpus: "mimisbrunnr",
+    notePath: "mimisbrunnr/reference/invalid-validity-window.md",
     validationMode: "promotion",
     frontmatter: {
       noteId,
       title: "Invalid Validity Window",
-      project: "multi-agent-brain",
+      project: "mimir",
       type: "reference",
       status: "promoted",
       updated: currentDateIso(),
       summary: "Temporal windows must be ordered.",
-      tags: ["project/multi-agent-brain", "domain/metadata", "status/promoted"],
+      tags: ["project/mimir", "domain/metadata", "status/promoted"],
       scope: "validation",
-      corpusId: "context_brain",
+      corpusId: "mimisbrunnr",
       currentState: false,
       validFrom: "2026-04-10",
       validUntil: "2026-04-01"
@@ -1399,7 +1446,7 @@ test("root orchestrator passes repoRoot into the vendored runtime for bounded co
 });
 
 async function createHarness(t, overrides = {}) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-e2e-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-e2e-"));
   const env = testEnvironment(root, overrides);
   const container = buildServiceContainer(env);
 
@@ -1414,7 +1461,7 @@ async function createHarness(t, overrides = {}) {
 async function createDraft(container, input) {
   const result = await container.services.stagingDraftService.createDraft({
     actor: actor(input.actorRole ?? "writer"),
-    targetCorpus: input.targetCorpus ?? "context_brain",
+    targetCorpus: input.targetCorpus ?? "mimisbrunnr",
     noteType: input.noteType,
     title: input.title,
     sourcePrompt: input.sourcePrompt,
@@ -1430,7 +1477,7 @@ async function createDraft(container, input) {
 async function createAndPromote(container, input) {
   const draft = await createDraft(container, {
     actorRole: "writer",
-    targetCorpus: "context_brain",
+    targetCorpus: "mimisbrunnr",
     noteType: input.noteType,
     title: input.title,
     sourcePrompt: `Draft ${input.title}`,
@@ -1444,7 +1491,7 @@ async function createAndPromote(container, input) {
   const promoted = await container.services.promotionOrchestratorService.promoteDraft({
     actor: actor("orchestrator"),
     draftNoteId: draft.draftNoteId,
-    targetCorpus: "context_brain",
+    targetCorpus: "mimisbrunnr",
     promoteAsCurrentState: input.promoteAsCurrentState ?? false
   });
 
@@ -1464,14 +1511,14 @@ function actor(role) {
   };
 }
 
-function testEnvironment(root = path.join(os.tmpdir(), `mab-standalone-${randomUUID()}`), overrides = {}) {
+function testEnvironment(root = path.join(os.tmpdir(), `mimir-standalone-${randomUUID()}`), overrides = {}) {
   return {
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
     stagingRoot: path.join(root, "vault", "staging"),
-    sqlitePath: path.join(root, "state", "multi-agent-brain.sqlite"),
+    sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
     qdrantUrl: "http://127.0.0.1:6333",
-    qdrantCollection: `context_brain_chunks_${randomUUID().slice(0, 8)}`,
+    qdrantCollection: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
     embeddingProvider: "hash",
     reasoningProvider: "heuristic",
     draftingProvider: "disabled",

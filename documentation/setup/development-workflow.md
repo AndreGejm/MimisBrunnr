@@ -68,7 +68,7 @@ If a capability becomes externally reachable:
 - note validation policy in `packages/application/src/services/note-validation-service.ts`
 - auth rules in `packages/orchestration/src/root/actor-authorization-policy.ts`
 - env loading defaults in `packages/infrastructure/src/config/env.ts`
-- MCP tool exposure in both `apps/brain-mcp/src/tool-definitions.ts` and `apps/brain-mcp/src/main.ts`
+- MCP tool exposure in both `apps/mimir-mcp/src/tool-definitions.ts` and `apps/mimir-mcp/src/main.ts`
 - the vendored Python runtime under `runtimes/local_experts`
 
 ## Documentation discipline
@@ -77,7 +77,7 @@ When changing the repo:
 
 - prefer `documentation/architecture/*`, `documentation/setup/*`, `documentation/operations/*`, and `documentation/reference/*` over planning docs
 - treat `documentation/planning/*` as historical unless you also rewrite them for current-state accuracy
-- keep leaf adapter documentation (`documentation/apps/brain-api.md`, `documentation/apps/brain-cli.md`, `documentation/apps/brain-mcp.md`) consistent with the current code surface
+- keep leaf adapter documentation (`documentation/apps/mimir-api.md`, `documentation/apps/mimir-cli.md`, `documentation/apps/mimir-mcp.md`) consistent with the current code surface
 
 ## Current repository constraints
 

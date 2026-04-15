@@ -15,7 +15,7 @@ test("namespace service keeps canonical and staging notes distinct", async (t) =
   const staging = await createStagingDraft(services);
 
   const result = await services.contextNamespaceService.listTree({
-    ownerScope: "context_brain",
+    ownerScope: "mimisbrunnr",
     authorityStates: ["canonical", "staging"]
   });
 
@@ -29,17 +29,17 @@ test("namespace service keeps canonical and staging notes distinct", async (t) =
   assert.ok(stagingNode, "expected staging namespace node");
   assert.equal(canonicalNode.contextKind, "note");
   assert.equal(canonicalNode.sourceType, "canonical_note");
-  assert.equal(canonicalNode.ownerScope, "context_brain");
-  assert.equal(canonicalNode.uri, `mab://context_brain/note/${canonical.noteId}`);
+  assert.equal(canonicalNode.ownerScope, "mimisbrunnr");
+  assert.equal(canonicalNode.uri, `mimir://mimisbrunnr/note/${canonical.noteId}`);
   assert.equal(stagingNode.contextKind, "note");
   assert.equal(stagingNode.sourceType, "staging_draft");
-  assert.equal(stagingNode.ownerScope, "context_brain");
-  assert.equal(stagingNode.uri, `mab://context_brain/note/${staging.draftNoteId}`);
+  assert.equal(stagingNode.ownerScope, "mimisbrunnr");
+  assert.equal(stagingNode.uri, `mimir://mimisbrunnr/note/${staging.draftNoteId}`);
   assert.notEqual(canonicalNode.authorityState, stagingNode.authorityState);
 });
 
 async function createHarness(t) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "mab-context-namespace-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-context-namespace-"));
   const container = buildServiceContainer({
     nodeEnv: "test",
     vaultRoot: path.join(root, "vault", "canonical"),
@@ -72,24 +72,24 @@ async function createCanonicalNote(services) {
   const noteId = randomUUID();
   const note = {
     noteId,
-    corpusId: "context_brain",
-    notePath: "context_brain/namespace/canonical-node.md",
+    corpusId: "mimisbrunnr",
+    notePath: "mimisbrunnr/namespace/canonical-node.md",
     revision: "",
     frontmatter: {
       noteId,
       title: "Namespace Canonical Node",
-      project: "multi-agent-brain",
+      project: "mimir",
       type: "reference",
       status: "promoted",
       updated: "2026-04-06",
       summary: "Canonical namespace node for projection coverage.",
       tags: [
-        "project/multi-agent-brain",
+        "project/mimir",
         "domain/metadata",
         "status/promoted"
       ],
       scope: "namespace",
-      corpusId: "context_brain",
+      corpusId: "mimisbrunnr",
       currentState: true
     },
     body: [
@@ -115,7 +115,7 @@ async function createCanonicalNote(services) {
 async function createStagingDraft(services) {
   const result = await services.stagingDraftService.createDraft({
     actor: actor("writer"),
-    targetCorpus: "context_brain",
+    targetCorpus: "mimisbrunnr",
     noteType: "reference",
     title: "Namespace Staging Node",
     sourcePrompt: "Draft a staging namespace node for the projection test.",
