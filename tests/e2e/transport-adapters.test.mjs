@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdir as fsMkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir as fsMkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -46,6 +46,82 @@ test("mimir-cli accepts a leading argument separator for root workspace passthro
   assert.equal(payload.ok, true);
   assert.equal(payload.release.applicationName, "mimir");
   assert.equal(payload.release.version, "0.2.1");
+});
+
+
+test("mimir-cli lists Docker AI tools through the read-only registry", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-cli-ai-tools-"));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const result = await runNodeCommand(
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    ["list-ai-tools", "--json", JSON.stringify({ includeRuntime: true })],
+    cliEnvironment(root, {
+      MAB_TOOL_REGISTRY_DIR: path.resolve("docker", "tool-registry")
+    })
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.deepEqual(payload.tools.map((tool) => tool.id), ["aider", "codesight", "rtk"]);
+  const aider = payload.tools.find((tool) => tool.id === "aider");
+  assert.equal("environment" in aider, false);
+  assert.equal(aider.runtime.compose.service, "aider");
+  assert.equal(aider.runtime.container.mimisbrunnrMountAllowed, false);
+  assert.equal(payload.warnings.length, 0);
+});
+
+test("mimir-cli checks Docker AI tool manifests through the read-only registry", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-cli-check-ai-tools-"));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const result = await runNodeCommand(
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    ["check-ai-tools", "--json", JSON.stringify({ ids: ["rtk"] })],
+    cliEnvironment(root, {
+      MAB_TOOL_REGISTRY_DIR: path.resolve("docker", "tool-registry")
+    })
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, true);
+  assert.deepEqual(payload.checks.map((check) => check.toolId), ["rtk"]);
+  assert.equal(payload.checks[0].status, "valid");
+  assert.deepEqual(payload.warnings, []);
+});
+test("mimir-cli builds Docker AI tool package plans through the read-only registry", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-cli-tools-package-plan-"));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const result = await runNodeCommand(
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    ["tools-package-plan", "--json", JSON.stringify({ ids: ["aider"] })],
+    cliEnvironment(root, {
+      MAB_TOOL_REGISTRY_DIR: path.resolve("docker", "tool-registry")
+    })
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.packageReady, true);
+  assert.deepEqual(payload.tools.map((tool) => tool.id), ["aider"]);
+  assert.equal(payload.tools[0].composeRun.command, "docker");
+  assert.deepEqual(payload.tools[0].composeRun.args.slice(0, 6), [
+    "compose",
+    "-f",
+    "docker/compose.local.yml",
+    "-f",
+    "docker/compose.tools.yml",
+    "--profile"
+  ]);
+  assert.equal(payload.tools[0].mimisbrunnrMountAllowed, false);
 });
 
 test("mimir-cli exposes auth registry status for operators", async () => {
@@ -516,6 +592,267 @@ test("mimir-cli drafts notes through the staging service with JSON input", async
   assert.match(payload.data.draftPath, /^mimisbrunnr\//);
 });
 
+test("mimir-cli review queue commands list read and reject staged drafts", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-cli-review-queue-"));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const draftRequestPath = path.join(root, "review-draft.json");
+  await writeFile(
+    draftRequestPath,
+    JSON.stringify({
+      targetCorpus: "general_notes",
+      noteType: "decision",
+      title: "CLI Review Queue Draft",
+      sourcePrompt: "Create a draft for thin review frontend coverage.",
+      supportingSources: [],
+      bodyHints: ["Review queue commands should stay wired through the shared transport stack."]
+    }),
+    "utf8"
+  );
+
+  const draftResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    ["draft-note", "--input", draftRequestPath],
+    cliEnvironment(root)
+  );
+
+  assert.equal(draftResult.exitCode, 0, draftResult.stderr);
+  const draftPayload = JSON.parse(draftResult.stdout);
+  assert.equal(draftPayload.ok, true);
+  const draftNoteId = draftPayload.data.draftNoteId;
+
+  const listResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    ["list-review-queue"],
+    cliEnvironment(root)
+  );
+
+  assert.equal(listResult.exitCode, 0, listResult.stderr);
+  const listPayload = JSON.parse(listResult.stdout);
+  const queueItem = listPayload.data.items.find((item) => item.draftNoteId === draftNoteId);
+  assert.equal(queueItem?.title, "CLI Review Queue Draft");
+  assert.equal(queueItem?.reviewState, "unreviewed");
+
+  const readRequestPath = path.join(root, "read-review-note.json");
+  await writeFile(readRequestPath, JSON.stringify({ draftNoteId }), "utf8");
+
+  const readResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    ["read-review-note", "--input", readRequestPath],
+    cliEnvironment(root)
+  );
+
+  assert.equal(readResult.exitCode, 0, readResult.stderr);
+  const readPayload = JSON.parse(readResult.stdout);
+  assert.equal(readPayload.ok, true);
+  assert.equal(readPayload.data.draftNoteId, draftNoteId);
+  assert.match(readPayload.data.body, /## Context/);
+
+  const rejectRequestPath = path.join(root, "reject-review-note.json");
+  await writeFile(
+    rejectRequestPath,
+    JSON.stringify({
+      draftNoteId,
+      reviewNotes: "Rejected in CLI review regression coverage."
+    }),
+    "utf8"
+  );
+
+  const rejectResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    ["reject-note", "--input", rejectRequestPath],
+    cliEnvironment(root)
+  );
+
+  assert.equal(rejectResult.exitCode, 0, rejectResult.stderr);
+  const rejectPayload = JSON.parse(rejectResult.stdout);
+  assert.equal(rejectPayload.ok, true);
+  assert.equal(rejectPayload.data.rejected, true);
+  assert.equal(rejectPayload.data.finalReviewState, "rejected");
+  assert.match(rejectPayload.data.draftPath, /^general_notes\//);
+
+  const readRejectedResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    ["read-review-note", "--input", readRequestPath],
+    cliEnvironment(root)
+  );
+
+  assert.equal(readRejectedResult.exitCode, 0, readRejectedResult.stderr);
+  const readRejectedPayload = JSON.parse(readRejectedResult.stdout);
+  assert.equal(readRejectedPayload.ok, true);
+  assert.equal(readRejectedPayload.data.reviewState, "rejected");
+  assert.equal(readRejectedPayload.data.promotionEligible, false);
+
+  const hiddenRejectedResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    ["list-review-queue"],
+    cliEnvironment(root)
+  );
+
+  assert.equal(hiddenRejectedResult.exitCode, 0, hiddenRejectedResult.stderr);
+  const hiddenRejectedPayload = JSON.parse(hiddenRejectedResult.stdout);
+  assert.equal(
+    hiddenRejectedPayload.data.items.some((item) => item.draftNoteId === draftNoteId),
+    false
+  );
+
+  const includeRejectedResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    ["list-review-queue", "--json", JSON.stringify({ includeRejected: true })],
+    cliEnvironment(root)
+  );
+
+  assert.equal(includeRejectedResult.exitCode, 0, includeRejectedResult.stderr);
+  const includeRejectedPayload = JSON.parse(includeRejectedResult.stdout);
+  const rejectedItem = includeRejectedPayload.data.items.find((item) => item.draftNoteId === draftNoteId);
+  assert.equal(rejectedItem?.reviewState, "rejected");
+});
+
+test("mimir-cli accept-note promotes a staged draft through the review surface", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-cli-accept-note-"));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const draftRequestPath = path.join(root, "accept-draft.json");
+  await writeFile(
+    draftRequestPath,
+    JSON.stringify({
+      targetCorpus: "general_notes",
+      noteType: "decision",
+      title: "CLI Accept Draft",
+      sourcePrompt: "Create a draft that will be promoted through accept-note.",
+      supportingSources: [],
+      bodyHints: ["Accept note should promote staged drafts through the shared review flow."]
+    }),
+    "utf8"
+  );
+
+  const draftResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    ["draft-note", "--input", draftRequestPath],
+    cliEnvironment(root)
+  );
+
+  assert.equal(draftResult.exitCode, 0, draftResult.stderr);
+  const draftPayload = JSON.parse(draftResult.stdout);
+  assert.equal(draftPayload.ok, true);
+  const draftNoteId = draftPayload.data.draftNoteId;
+
+  const acceptRequestPath = path.join(root, "accept-note.json");
+  await writeFile(acceptRequestPath, JSON.stringify({ draftNoteId }), "utf8");
+
+  const acceptResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    ["accept-note", "--input", acceptRequestPath],
+    cliEnvironment(root)
+  );
+
+  assert.equal(acceptResult.exitCode, 0, acceptResult.stderr);
+  const acceptPayload = JSON.parse(acceptResult.stdout);
+  assert.equal(acceptPayload.ok, true);
+  assert.equal(acceptPayload.data.accepted, true);
+  assert.equal(acceptPayload.data.finalReviewState, "promotion_ready");
+  assert.match(acceptPayload.data.canonicalPath, /^general_notes\//);
+  assert.equal(typeof acceptPayload.data.promotedNoteId, "string");
+
+  const readAcceptedRequestPath = path.join(root, "accept-read-note.json");
+  await writeFile(readAcceptedRequestPath, JSON.stringify({ draftNoteId }), "utf8");
+
+  const readAcceptedResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    ["read-review-note", "--input", readAcceptedRequestPath],
+    cliEnvironment(root)
+  );
+
+  assert.equal(readAcceptedResult.exitCode, 0, readAcceptedResult.stderr);
+  const readAcceptedPayload = JSON.parse(readAcceptedResult.stdout);
+  assert.equal(readAcceptedPayload.ok, true);
+  assert.equal(readAcceptedPayload.data.reviewState, "promoted");
+  assert.equal(readAcceptedPayload.data.promotionEligible, false);
+
+  const promotedDraftMarkdown = await readFile(
+    path.join(root, "vault", "staging", draftPayload.data.draftPath),
+    "utf8"
+  );
+  assert.match(promotedDraftMarkdown, /status:\s*"promoted"/);
+  assert.match(promotedDraftMarkdown, /status\/promoted/);
+  assert.doesNotMatch(promotedDraftMarkdown, /status\/draft/);
+});
+
+test("mimir-api exposes thin review routes for queue, read, and accept", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-api-review-"));
+  const seeded = await seedStagingDraft(root, {
+    title: "API Review Draft",
+    scope: "api-review"
+  });
+  const { createMimirApiServer } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "apps", "mimir-api", "dist", "server.js")
+    ).href
+  );
+  const api = createMimirApiServer({
+    nodeEnv: "test",
+    vaultRoot: path.join(root, "vault", "canonical"),
+    stagingRoot: path.join(root, "vault", "staging"),
+    sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
+    qdrantUrl: "http://127.0.0.1:6333",
+    qdrantCollection: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
+    embeddingProvider: "hash",
+    reasoningProvider: "heuristic",
+    draftingProvider: "disabled",
+    rerankerProvider: "local",
+    apiHost: "127.0.0.1",
+    apiPort: 0,
+    logLevel: "error"
+  });
+
+  t.after(async () => {
+    await api.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await api.listen();
+
+  const listResponse = await fetch(`${apiBaseUrl(api)}/v1/review/queue`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({})
+  });
+
+  assert.equal(listResponse.status, 200);
+  const listPayload = await listResponse.json();
+  const queueItem = listPayload.data.items.find((item) => item.draftNoteId === seeded.draftNoteId);
+  assert.equal(queueItem?.title, "API Review Draft");
+  assert.equal(queueItem?.reviewState, "unreviewed");
+
+  const readResponse = await fetch(`${apiBaseUrl(api)}/v1/review/note`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ draftNoteId: seeded.draftNoteId })
+  });
+
+  assert.equal(readResponse.status, 200);
+  const readPayload = await readResponse.json();
+  assert.equal(readPayload.data.draftNoteId, seeded.draftNoteId);
+  assert.match(readPayload.data.body, /## (Context|Summary)/);
+
+  const acceptResponse = await fetch(`${apiBaseUrl(api)}/v1/review/accept`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ draftNoteId: seeded.draftNoteId })
+  });
+
+  assert.equal(acceptResponse.status, 200);
+  const acceptPayload = await acceptResponse.json();
+  assert.equal(acceptPayload.ok, true);
+  assert.equal(acceptPayload.data.accepted, true);
+  assert.equal(acceptPayload.data.finalReviewState, "promotion_ready");
+  assert.match(acceptPayload.data.canonicalPath, /^mimisbrunnr\//);
+  assert.equal(typeof acceptPayload.data.promotedNoteId, "string");
+});
 test("mimir-cli exposes direct context-packet assembly as a thin transport command", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "mimir-cli-packet-"));
   t.after(async () => {
@@ -817,6 +1154,137 @@ test("loadEnvironment derives storage paths from MAB_DATA_ROOT", async () => {
     environment.sqlitePath,
     path.join(dataRoot, "state", "mimisbrunnr.sqlite")
   );
+});
+
+
+test("mimir-api lists Docker AI tools through the read-only route", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-api-ai-tools-"));
+  const { createMimirApiServer } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "apps", "mimir-api", "dist", "server.js")
+    ).href
+  );
+  const api = createMimirApiServer({
+    nodeEnv: "test",
+    vaultRoot: path.join(root, "vault", "canonical"),
+    stagingRoot: path.join(root, "vault", "staging"),
+    sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
+    qdrantUrl: "http://127.0.0.1:6333",
+    qdrantCollection: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
+    embeddingProvider: "hash",
+    reasoningProvider: "heuristic",
+    draftingProvider: "disabled",
+    rerankerProvider: "local",
+    apiHost: "127.0.0.1",
+    apiPort: 0,
+    logLevel: "error",
+    toolRegistryDir: path.resolve("docker", "tool-registry")
+  });
+
+  t.after(async () => {
+    await api.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await api.listen();
+  const response = await fetch(`${apiBaseUrl(api)}/v1/tools/ai`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ids: ["aider"], includeEnvironment: true, includeRuntime: true })
+  });
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.deepEqual(payload.tools.map((tool) => tool.id), ["aider"]);
+  assert.equal(payload.tools[0].environment.MIMIR_API_URL, "http://mimir-api:8080");
+  assert.equal(payload.tools[0].runtime.compose.service, "aider");
+  assert.equal(payload.tools[0].runtime.container.workspaceMount.access, "read_write");
+});
+
+test("mimir-api checks Docker AI tool manifests through the read-only route", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-api-check-ai-tools-"));
+  const { createMimirApiServer } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "apps", "mimir-api", "dist", "server.js")
+    ).href
+  );
+  const api = createMimirApiServer({
+    nodeEnv: "test",
+    vaultRoot: path.join(root, "vault", "canonical"),
+    stagingRoot: path.join(root, "vault", "staging"),
+    sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
+    qdrantUrl: "http://127.0.0.1:6333",
+    qdrantCollection: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
+    embeddingProvider: "hash",
+    reasoningProvider: "heuristic",
+    draftingProvider: "disabled",
+    rerankerProvider: "local",
+    apiHost: "127.0.0.1",
+    apiPort: 0,
+    logLevel: "error",
+    toolRegistryDir: path.resolve("docker", "tool-registry")
+  });
+
+  t.after(async () => {
+    await api.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await api.listen();
+  const response = await fetch(`${apiBaseUrl(api)}/v1/tools/ai/check`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ids: ["rtk"] })
+  });
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.ok, true);
+  assert.deepEqual(payload.checks.map((check) => check.toolId), ["rtk"]);
+  assert.equal(payload.checks[0].status, "valid");
+});
+test("mimir-api builds Docker AI tool package plans through the read-only route", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-api-tools-package-plan-"));
+  const { createMimirApiServer } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "apps", "mimir-api", "dist", "server.js")
+    ).href
+  );
+  const api = createMimirApiServer({
+    nodeEnv: "test",
+    vaultRoot: path.join(root, "vault", "canonical"),
+    stagingRoot: path.join(root, "vault", "staging"),
+    sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
+    qdrantUrl: "http://127.0.0.1:6333",
+    qdrantCollection: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
+    embeddingProvider: "hash",
+    reasoningProvider: "heuristic",
+    draftingProvider: "disabled",
+    rerankerProvider: "local",
+    apiHost: "127.0.0.1",
+    apiPort: 0,
+    logLevel: "error",
+    toolRegistryDir: path.resolve("docker", "tool-registry")
+  });
+
+  t.after(async () => {
+    await api.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await api.listen();
+  const response = await fetch(`${apiBaseUrl(api)}/v1/tools/ai/package-plan`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ids: ["rtk"] })
+  });
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.packageReady, true);
+  assert.deepEqual(payload.tools.map((tool) => tool.id), ["rtk"]);
+  assert.equal(payload.tools[0].composeRun.command, "docker");
+  assert.equal(payload.tools[0].mimisbrunnrMountAllowed, false);
 });
 
 test("mimir-api exposes auth registry status through the system auth route", async (t) => {

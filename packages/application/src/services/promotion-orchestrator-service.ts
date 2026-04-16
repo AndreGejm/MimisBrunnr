@@ -240,7 +240,8 @@ export class PromotionOrchestratorService {
         ...draft.frontmatter,
         status: "promoted",
         updated: nowDate,
-        currentState: false
+        currentState: false,
+        tags: normalizePromotedTags(draft.frontmatter.tags, false)
       }
     };
     const outboxId = randomUUID();

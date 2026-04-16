@@ -36,6 +36,10 @@ Source of truth: `apps/mimir-api/src/server.ts`
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `POST` | `/v1/notes/drafts` | create staging drafts |
+| `POST` | `/v1/review/queue` | list reviewable staging drafts |
+| `POST` | `/v1/review/note` | read one staging draft for review |
+| `POST` | `/v1/review/accept` | accept and promote one staging draft |
+| `POST` | `/v1/review/reject` | reject one staging draft |
 | `POST` | `/v1/system/freshness/refresh-draft` | create one governed refresh draft |
 | `POST` | `/v1/system/freshness/refresh-drafts` | create a bounded refresh-draft batch |
 | `POST` | `/v1/notes/validate` | deterministic validation |
@@ -52,6 +56,9 @@ Source of truth: `apps/mimir-api/src/server.ts`
 | `POST` | `/v1/coding/execute` | execute a coding-domain task through the Python bridge |
 | `POST` | `/v1/coding/traces` | list compact operational traces for one local-agent request |
 | `POST` | `/v1/coding/tool-output` | read a full spilled local-agent tool output by output id |
+| `POST` | `/v1/tools/ai` | list read-only Docker AI tool manifests without executing tools |
+| `POST` | `/v1/tools/ai/check` | validate Docker AI tool manifests without executing tools |
+| `POST` | `/v1/tools/ai/package-plan` | build reusable Docker package plans without executing tools |
 
 ## CLI
 
@@ -69,6 +76,9 @@ Source of truth: `apps/mimir-cli/src/main.ts`
 - `execute-coding-task`
 - `list-agent-traces`
 - `show-tool-output`
+- `list-ai-tools`
+- `check-ai-tools`
+- `tools-package-plan`
 - `search-context`
 - `search-session-archives`
 - `assemble-agent-context`
@@ -81,6 +91,10 @@ Source of truth: `apps/mimir-cli/src/main.ts`
 - `create-refresh-drafts`
 - `validate-note`
 - `promote-note`
+- `list-review-queue`
+- `read-review-note`
+- `accept-note`
+- `reject-note`
 - `import-resource`
 - `query-history`
 - `create-session-archive`
@@ -102,6 +116,10 @@ Commands with optional payload:
 
 - `auth-issued-tokens`
 - `freshness-status`
+- `list-ai-tools`
+- `check-ai-tools`
+- `tools-package-plan`
+- `list-review-queue`
 - `create-refresh-drafts`
 
 From the workspace root, the verified invocation form is `corepack pnpm cli -- <command>`.
@@ -124,6 +142,9 @@ Source of truth:
 - `execute_coding_task`
 - `list_agent_traces`
 - `show_tool_output`
+- `list_ai_tools`
+- `check_ai_tools`
+- `tools_package_plan`
 - `search_context`
 - `search_session_archives`
 - `assemble_agent_context`
@@ -134,6 +155,10 @@ Source of truth:
 - `create_refresh_drafts`
 - `import_resource`
 - `draft_note`
+- `list_review_queue`
+- `read_review_note`
+- `accept_note`
+- `reject_note`
 - `fetch_decision_summary`
 - `validate_note`
 - `promote_note`
@@ -167,8 +192,17 @@ Source of truth:
 - Docker/Ollama-compatible model endpoint(s) over HTTP
 - optional paid OpenAI-compatible endpoint over HTTP
 
-### Local subprocess boundary
+### Docker AI tool registry
 
+- read-only manifest discovery and validation from `docker/tool-registry/*.json` through `FileSystemToolRegistry`
+- `list-ai-tools`, `/v1/tools/ai`, and MCP `list_ai_tools` accept optional `ids`, `includeEnvironment`, and `includeRuntime` request fields
+- `includeRuntime: true` adds reusable Docker runtime descriptors for compose files, profile/service names, container image/entrypoint/working directory, workspace/cache mount contracts, Mimisbrunnr mount policy, and expected environment keys
+- `check-ai-tools`, `/v1/tools/ai/check`, and MCP `check_ai_tools` validate manifests without starting containers
+- `tools-package-plan`, `/v1/tools/ai/package-plan`, and MCP `tools_package_plan` return installer-facing compose run plans, build recipe status, mount contracts, and packaging caveats without starting containers
+- `mimir doctor --json` reports installer-facing `dockerTools` status, invalid manifest count, per-file manifest errors, and compact valid-tool package summaries
+- no generic tool execution gateway is exposed by the current interfaces
+
+### Local subprocess boundary
 - Python subprocess launched by `PythonCodingControllerBridge`
 
 ## Known interface consistency risks

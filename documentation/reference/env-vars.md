@@ -92,6 +92,15 @@ Compatibility aliases:
 - MAB_ROLE_MIMIR_BRUNNR_PRIMARY_* remains accepted and maps to MAB_ROLE_MIMISBRUNNR_PRIMARY_*.
 - When both old and new role variables are set, the MAB_ROLE_MIMISBRUNNR_PRIMARY_* value wins.
 
+## Docker AI tool registry
+
+| Variable | Purpose | Default / notes |
+| --- | --- | --- |
+| `MAB_TOOL_REGISTRY_DIR` | directory containing read-only Docker AI tool manifest JSON files | `<workspace>/docker/tool-registry` |
+| `MIMIR_TOOL_WORKSPACE` | host workspace mounted into reusable Docker AI tool containers | compose-level setting in `docker/compose.tools.yml`; defaults to `..` when omitted |
+
+This registry is exposed by `list-ai-tools`, `/v1/tools/ai`, and MCP `list_ai_tools` for discovery. It is validated by `check-ai-tools`, `/v1/tools/ai/check`, and MCP `check_ai_tools`. It is packaged by `tools-package-plan`, `/v1/tools/ai/package-plan`, and MCP `tools_package_plan`. These surfaces do not execute tools. Pass `includeRuntime: true` to discovery when an installer, MCP client, or Docker Desktop profile needs the reusable compose/profile/container wiring; use package plans when an installer needs compose run arguments, build recipe status, and packaging caveats.
+
 ## Coding runtime
 
 | Variable | Purpose | Default / notes |

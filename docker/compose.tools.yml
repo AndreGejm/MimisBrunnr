@@ -1,0 +1,34 @@
+services:
+  rtk:
+    image: mimir-tool-rtk:local
+    profiles: ["tools", "rtk"]
+    working_dir: /workspace
+    entrypoint: ["rtk"]
+    volumes:
+      - ${MIMIR_TOOL_WORKSPACE:-..}:/workspace:ro
+
+  codesight:
+    image: mimir-tool-codesight:local
+    profiles: ["tools", "codesight"]
+    working_dir: /workspace
+    entrypoint: ["codesight"]
+    environment:
+      MIMIR_API_URL: http://mimir-api:8080
+    volumes:
+      - ${MIMIR_TOOL_WORKSPACE:-..}:/workspace:ro
+      - mimir_codesight_cache:/cache
+
+  aider:
+    image: mimir-tool-aider:local
+    profiles: ["tools", "aider"]
+    working_dir: /workspace
+    entrypoint: ["aider"]
+    environment:
+      MIMIR_API_URL: http://mimir-api:8080
+    volumes:
+      - ${MIMIR_TOOL_WORKSPACE:-..}:/workspace:rw
+      - mimir_aider_cache:/cache
+
+volumes:
+  mimir_codesight_cache:
+  mimir_aider_cache:

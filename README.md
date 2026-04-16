@@ -18,6 +18,7 @@ Release metadata:
 - `documentation/release/CHANGELOG.md`
 - `documentation/release/RELEASE_NOTES.md`
 - `documentation/release/v1.0.1-release-checklist.md`
+- `documentation/release/contributor-beta-readiness.md`
 
 ## Current state
 
@@ -29,8 +30,11 @@ The tracked repository currently implements:
 - SQLite-backed metadata, audit, issued-token, revocation, session-archive, import-job, namespace, representation, local-agent trace, and tool-output spillover stores
 - SQLite FTS lexical retrieval plus a Qdrant-backed vector adapter
 - governed drafting, validation, promotion, refresh-draft creation, import-job recording, history queries, and session-archive creation
+- a thin staging-review workflow exposing queue listing, note reading, acceptance, and rejection through CLI, HTTP, and MCP
 - bounded retrieval, fenced agent-context assembly, non-authoritative session recall, direct context-packet assembly, decision-summary generation, namespace tree listing, and namespace node reads
 - actor-registry authorization with static credentials, centrally issued tokens, revocation support, and operator auth-control surfaces
+- a read-only Docker AI tool registry with manifest discovery, validation, and package-plan surfaces
+- an external-source adapter registry with a read-only Obsidian vault adapter gated by allowed and denied globs
 - a vendored Python runtime in `runtimes/local_experts` that handles coding tasks through a Node-to-Python bridge
 
 The tracked repository does not currently include:
@@ -343,6 +347,7 @@ validation step, and MCP client snippet.
 - context: search, tree, node, packet, decision summary
 - governance: drafts, refresh drafts, validate, promote, import resource, history query, session archives
 - coding: `POST /v1/coding/execute`, `POST /v1/coding/traces`, `POST /v1/coding/tool-output`
+- tools: `POST /v1/tools/ai`, `POST /v1/tools/ai/check`, `POST /v1/tools/ai/package-plan`
 
 ### CLI
 
@@ -356,6 +361,9 @@ validation step, and MCP client snippet.
 - `execute-coding-task`
 - `list-agent-traces`
 - `show-tool-output`
+- `list-ai-tools`
+- `check-ai-tools`
+- `tools-package-plan`
 - `search-context`
 - `search-session-archives`
 - `assemble-agent-context`
@@ -368,9 +376,17 @@ validation step, and MCP client snippet.
 - `create-refresh-drafts`
 - `validate-note`
 - `promote-note`
+- `list-review-queue`
+- `read-review-note`
+- `accept-note`
+- `reject-note`
 - `import-resource`
 - `query-history`
 - `create-session-archive`
+
+The same thin review workflow is also reachable over HTTP on `/v1/review/*`
+and over MCP through `list_review_queue`, `read_review_note`, `accept_note`,
+and `reject_note`.
 
 See `documentation/reference/interfaces.md` for the canonical interface list.
 
@@ -429,6 +445,7 @@ Full map: `documentation/reference/repo-map.md`
 - `documentation/reference/env-vars.md`
 - `documentation/reference/repo-map.md`
 - `documentation/agents/ai-navigation-guide.md`
+- `documentation/release/contributor-beta-readiness.md`
 
 `documentation/planning/` is useful for history and rollout context, but it is not the primary source of truth for the current runtime.
 

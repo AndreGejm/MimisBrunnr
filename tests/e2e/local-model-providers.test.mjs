@@ -8,6 +8,144 @@ import test from "node:test";
 const infrastructure = await import("../../packages/infrastructure/dist/index.js");
 const application = await import("../../packages/application/dist/index.js");
 
+function providerBinding(overrides) {
+  return {
+    role: "mimisbrunnr_primary",
+    providerId: "internal_heuristic",
+    temperature: 0,
+    timeoutMs: 30_000,
+    ...overrides
+  };
+}
+
+function providerTestEnvironment(overrides = {}) {
+  const { providerEndpoints, ...rest } = overrides;
+  return infrastructure.normalizeEnvironment({
+    nodeEnv: "test",
+    disableProviderFallbacks: false,
+    ...rest,
+    providerEndpoints: {
+      dockerOllamaBaseUrl: "http://127.0.0.1:12434",
+      paidEscalationBaseUrl: "https://paid.example.test/v1",
+      paidEscalationApiKey: "top-secret",
+      ...providerEndpoints
+    }
+  });
+}
+
+test("default provider factory registry creates the supported provider adapters", () => {
+  const registry = infrastructure.buildDefaultProviderFactoryRegistry();
+  const env = providerTestEnvironment();
+
+  const embedding = registry.createEmbedding({
+    env,
+    binding: providerBinding({ role: "embedding_primary", providerId: "internal_hash" })
+  });
+  const reasoning = registry.createReasoning({
+    env,
+    binding: providerBinding({ providerId: "internal_heuristic" })
+  });
+  const ollamaReasoning = registry.createReasoning({
+    env,
+    binding: providerBinding({ providerId: "docker_ollama", modelId: "qwen3:4B-F16" })
+  });
+  const paidReasoning = registry.createReasoning({
+    env,
+    binding: providerBinding({ providerId: "paid_openai_compat", modelId: "gpt-paid-test" })
+  });
+  const drafting = registry.createDrafting({
+    env,
+    binding: providerBinding({ providerId: "docker_ollama", modelId: "qwen3:4B-F16" })
+  });
+  const reranker = registry.createReranker({
+    env,
+    binding: providerBinding({ role: "reranker_primary", providerId: "internal_heuristic" })
+  });
+
+  assert.ok(embedding instanceof infrastructure.HashEmbeddingProvider);
+  assert.ok(reasoning instanceof infrastructure.HeuristicLocalReasoningProvider);
+  assert.ok(ollamaReasoning instanceof infrastructure.OllamaLocalReasoningProvider);
+  assert.ok(paidReasoning instanceof infrastructure.OpenAiCompatibleLocalReasoningProvider);
+  assert.ok(drafting instanceof infrastructure.OllamaDraftingProvider);
+  assert.ok(reranker instanceof infrastructure.HeuristicRerankerProvider);
+});
+
+test("default provider factory registry returns undefined for disabled or unavailable providers", () => {
+  const registry = infrastructure.buildDefaultProviderFactoryRegistry();
+  const env = providerTestEnvironment({
+    providerEndpoints: {
+      paidEscalationBaseUrl: undefined,
+      paidEscalationApiKey: undefined
+    }
+  });
+
+  assert.equal(
+    registry.createEmbedding({
+      env,
+      binding: providerBinding({ role: "embedding_primary", providerId: "disabled" })
+    }),
+    undefined
+  );
+  assert.equal(
+    registry.createReasoning({
+      env,
+      binding: providerBinding({ providerId: "paid_openai_compat", modelId: "gpt-paid-test" })
+    }),
+    undefined
+  );
+  assert.equal(
+    registry.createDrafting({
+      env,
+      binding: providerBinding({ providerId: "disabled" })
+    }),
+    undefined
+  );
+  assert.equal(
+    registry.createDrafting({
+      env,
+      binding: providerBinding({ providerId: "internal_heuristic" })
+    }),
+    undefined
+  );
+  assert.equal(
+    registry.createReranker({
+      env,
+      binding: providerBinding({ role: "reranker_primary", providerId: "disabled" })
+    }),
+    undefined
+  );
+});
+
+test("default provider factory registry rejects unknown providers", () => {
+  const registry = infrastructure.buildDefaultProviderFactoryRegistry();
+  const env = providerTestEnvironment();
+
+  assert.throws(
+    () =>
+      registry.createEmbedding({
+        env,
+        binding: providerBinding({ role: "embedding_primary", providerId: "mystery" })
+      }),
+    /Unsupported embedding provider 'mystery'\./
+  );
+  assert.throws(
+    () =>
+      registry.createReasoning({
+        env,
+        binding: providerBinding({ providerId: "mystery" })
+      }),
+    /Unsupported reasoning provider 'mystery'\./
+  );
+  assert.throws(
+    () =>
+      registry.createReranker({
+        env,
+        binding: providerBinding({ role: "reranker_primary", providerId: "mystery" })
+      }),
+    /Unsupported reranker provider 'mystery'\./
+  );
+});
+
 test("ollama embedding provider returns embeddings from the OpenAI-compatible local model API", async () => {
   const provider = new infrastructure.OllamaEmbeddingProvider({
     baseUrl: "http://127.0.0.1:12434",

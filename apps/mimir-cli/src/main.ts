@@ -3,34 +3,21 @@
 import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import process from "node:process";
+import {
+  CLI_RUNTIME_COMMAND_NAMES,
+  RUNTIME_COMMAND_DEFINITIONS,
+  type RuntimeCliCommandName
+} from "@mimir/contracts";
 import type {
   ActorContext,
   ActorRole,
-  AssembleAgentContextRequest,
-  AssembleContextPacketRequest,
-  CreateSessionArchiveRequest,
-  CreateRefreshDraftBatchRequest,
-  CreateRefreshDraftRequest,
-  DraftNoteRequest,
-  ExecuteCodingTaskRequest,
-  GetDecisionSummaryRequest,
-  ImportResourceRequest,
-  ListAgentTracesRequest,
-  ListContextTreeRequest,
-  PromoteNoteRequest,
-  QueryHistoryRequest,
-  ReadContextNodeRequest,
-  RetrieveContextRequest,
-  SearchSessionArchivesRequest,
-  ShowToolOutputRequest,
-  TransportKind,
-  ValidateNoteRequest
+  TransportKind
 } from "@mimir/contracts";
-import type { CorpusId } from "@mimir/domain";
 import {
   ActorAuthorizationError,
   ActorAuthorizationPolicy,
   buildServiceContainer,
+  dispatchRuntimeCommand,
   FileIssuedTokenRevocationStore,
   issueActorAccessToken,
   loadEnvironment,
@@ -42,42 +29,16 @@ import {
   validateTransportRequest
 } from "@mimir/infrastructure";
 
-type CommandName =
+type SystemCommandName =
   | "version"
   | "auth-status"
   | "auth-issued-tokens"
   | "auth-introspect-token"
   | "freshness-status"
   | "issue-auth-token"
-  | "revoke-auth-token"
-  | "execute-coding-task"
-  | "list-agent-traces"
-  | "show-tool-output"
-  | "search-context"
-  | "search-session-archives"
-  | "assemble-agent-context"
-  | "list-context-tree"
-  | "read-context-node"
-  | "get-context-packet"
-  | "fetch-decision-summary"
-  | "draft-note"
-  | "list-review-queue"
-  | "read-review-note"
-  | "accept-note"
-  | "reject-note"
-  | "create-refresh-draft"
-  | "create-refresh-drafts"
-  | "validate-note"
-  | "promote-note"
-  | "import-resource"
-  | "query-history"
-  | "create-session-archive";
-type RoutedCommandName = Exclude<
-  CommandName,
-  "version" | "auth-status" | "auth-issued-tokens" | "auth-introspect-token" | "freshness-status" | "issue-auth-token"
-  | "revoke-auth-token"
->;
+  | "revoke-auth-token";
 
+type CommandName = SystemCommandName | RuntimeCliCommandName;
 type JsonRecord = Record<string, unknown>;
 
 interface ParsedCli {
@@ -92,61 +53,27 @@ interface ParsedCli {
   };
 }
 
-const COMMANDS: ReadonlyArray<CommandName> = [
+const SYSTEM_COMMANDS: ReadonlyArray<SystemCommandName> = [
   "version",
   "auth-status",
   "auth-issued-tokens",
   "auth-introspect-token",
   "freshness-status",
   "issue-auth-token",
-  "revoke-auth-token",
-  "execute-coding-task",
-  "list-agent-traces",
-  "show-tool-output",
-  "search-context",
-  "search-session-archives",
-  "assemble-agent-context",
-  "list-context-tree",
-  "read-context-node",
-  "get-context-packet",
-  "fetch-decision-summary",
-  "draft-note",
-  "list-review-queue",
-  "read-review-note",
-  "accept-note",
-  "reject-note",
-  "create-refresh-draft",
-  "create-refresh-drafts",
-  "validate-note",
-  "promote-note",
-  "import-resource",
-  "query-history",
-  "create-session-archive"
+  "revoke-auth-token"
+];
+const COMMANDS: ReadonlyArray<CommandName> = [
+  ...SYSTEM_COMMANDS,
+  ...CLI_RUNTIME_COMMAND_NAMES
 ];
 
-const DEFAULT_ACTOR_ROLE: Record<RoutedCommandName, ActorRole> = {
-  "execute-coding-task": "operator",
-  "list-agent-traces": "operator",
-  "show-tool-output": "operator",
-  "search-context": "retrieval",
-  "search-session-archives": "retrieval",
-  "assemble-agent-context": "retrieval",
-  "list-context-tree": "retrieval",
-  "read-context-node": "retrieval",
-  "get-context-packet": "retrieval",
-  "fetch-decision-summary": "retrieval",
-  "draft-note": "writer",
-  "list-review-queue": "operator",
-  "read-review-note": "operator",
-  "accept-note": "operator",
-  "reject-note": "operator",
-  "create-refresh-draft": "operator",
-  "create-refresh-drafts": "operator",
-  "validate-note": "orchestrator",
-  "promote-note": "orchestrator",
-  "import-resource": "operator",
-  "query-history": "operator",
-  "create-session-archive": "operator"
+const DEFAULT_ACTOR_ROLE: Record<RuntimeCliCommandName, ActorRole> = {
+  ...(Object.fromEntries(
+    RUNTIME_COMMAND_DEFINITIONS.map((command) => [
+      command.cliName,
+      command.defaultActorRole
+    ])
+  ) as Record<RuntimeCliCommandName, ActorRole>),
 };
 const ACTOR_ROLES: ReadonlyArray<ActorRole> = [
   "retrieval",
@@ -161,30 +88,6 @@ const TRANSPORTS: ReadonlyArray<TransportKind> = [
   "http",
   "mcp",
   "automation"
-];
-const COMMAND_NAMES: ReadonlyArray<string> = [
-  "execute_coding_task",
-  "list_agent_traces",
-  "show_tool_output",
-  "search_context",
-  "search_session_archives",
-  "assemble_agent_context",
-  "list_context_tree",
-  "read_context_node",
-  "get_context_packet",
-  "fetch_decision_summary",
-  "draft_note",
-  "list_review_queue",
-  "read_review_note",
-  "accept_note",
-  "reject_note",
-  "create_refresh_draft",
-  "create_refresh_drafts",
-  "validate_note",
-  "promote_note",
-  "import_resource",
-  "query_history",
-  "create_session_archive"
 ];
 type CliCorpusId = "mimisbrunnr" | "general_notes";
 
@@ -208,11 +111,6 @@ const CLI_CORPUS_ALIASES: ReadonlyMap<string, CliCorpusId> = new Map([
   ["multiagent-brain", "mimisbrunnr"],
   ["multi-agent-brain", "mimisbrunnr"]
 ]);
-const REVIEWABLE_CORPORA: ReadonlyArray<CorpusId> = [
-  "mimisbrunnr",
-  "general_notes"
-];
-
 async function main(): Promise<void> {
   const parsed = parseCli(process.argv.slice(2));
 
@@ -426,18 +324,21 @@ async function main(): Promise<void> {
 
   const container = buildServiceContainer(loadEnvironment());
   try {
-    const request = await loadCommandPayload(parsed.options);
-    const validatedRequest = validateTransportRequest(parsed.command, request);
-    const actor = buildActorContext(parsed.command, validatedRequest.actor);
-    const normalizedRequest = normalizeCommandRequest(parsed.command, {
+    const runtimeCommand = parsed.command as RuntimeCliCommandName;
+    const request = runtimeCommand === "list-review-queue"
+      ? await loadOptionalCommandPayload(parsed.options)
+      : await loadCommandPayload(parsed.options);
+    const validatedRequest = validateTransportRequest(runtimeCommand, request);
+    const actor = buildActorContext(runtimeCommand, validatedRequest.actor);
+    const normalizedRequest = normalizeCommandRequest(runtimeCommand, {
       ...validatedRequest,
       actor
     });
 
-    const result = await runCommand(parsed.command, normalizedRequest, container);
+    const result = await dispatchRuntimeCommand(runtimeCommand, normalizedRequest, container);
     writeJson(result, parsed.options.pretty);
 
-    process.exitCode = shouldFailProcess(result, parsed.command) ? 1 : 0;
+    process.exitCode = shouldFailProcess(result, runtimeCommand) ? 1 : 0;
   } catch (error) {
     writeJson(
       mapCliError(error),
@@ -447,425 +348,6 @@ async function main(): Promise<void> {
   } finally {
     container.dispose();
   }
-}
-
-async function runCommand(
-  command: RoutedCommandName,
-  request: JsonRecord,
-  container: ReturnType<typeof buildServiceContainer>
-): Promise<unknown> {
-  switch (command) {
-    case "search-context":
-      return container.orchestrator.searchContext(
-        request as unknown as RetrieveContextRequest
-      );
-    case "search-session-archives":
-      return container.orchestrator.searchSessionArchives(
-        request as unknown as SearchSessionArchivesRequest
-      );
-    case "assemble-agent-context":
-      return container.orchestrator.assembleAgentContext(
-        request as unknown as AssembleAgentContextRequest
-      );
-    case "list-context-tree":
-      return container.services.contextNamespaceService.listTree(
-        request as unknown as ListContextTreeRequest
-      );
-    case "read-context-node":
-      return container.services.contextNamespaceService.readNode(
-        request as unknown as ReadContextNodeRequest
-      );
-    case "get-context-packet":
-      return container.orchestrator.getContextPacket(
-        request as unknown as AssembleContextPacketRequest
-      );
-    case "execute-coding-task":
-      return container.orchestrator.executeCodingTask(
-        request as unknown as ExecuteCodingTaskRequest
-      );
-    case "list-agent-traces":
-      return container.orchestrator.listAgentTraces(
-        request as unknown as ListAgentTracesRequest
-      );
-    case "show-tool-output":
-      return container.orchestrator.showToolOutput(
-        request as unknown as ShowToolOutputRequest
-      );
-    case "fetch-decision-summary":
-      return container.orchestrator.fetchDecisionSummary(
-        request as unknown as GetDecisionSummaryRequest
-      );
-    case "draft-note":
-      return container.orchestrator.draftNote(
-        request as unknown as DraftNoteRequest
-      );
-    case "list-review-queue":
-      return listReviewQueue(request, container);
-    case "read-review-note":
-      return readReviewNote(request, container);
-    case "accept-note":
-      return acceptNote(request, container);
-    case "reject-note":
-      return rejectNote(request, container);
-    case "create-refresh-draft":
-      return container.orchestrator.createRefreshDraft(
-        request as unknown as CreateRefreshDraftRequest
-      );
-    case "create-refresh-drafts":
-      return container.orchestrator.createRefreshDraftBatch(
-        request as unknown as CreateRefreshDraftBatchRequest
-      );
-    case "import-resource":
-      return container.orchestrator.importResource(
-        request as unknown as ImportResourceRequest
-      );
-    case "validate-note":
-      return container.orchestrator.validateNote(
-        request as unknown as ValidateNoteRequest
-      );
-    case "promote-note":
-      return container.orchestrator.promoteNote(
-        request as unknown as PromoteNoteRequest
-      );
-    case "query-history":
-      return container.orchestrator.queryHistory(
-        request as unknown as QueryHistoryRequest
-      );
-    case "create-session-archive":
-      return container.orchestrator.createSessionArchive(
-        request as unknown as CreateSessionArchiveRequest
-      );
-  }
-}
-
-type ServiceContainer = ReturnType<typeof buildServiceContainer>;
-type StagingDraft = NonNullable<
-  Awaited<ReturnType<ServiceContainer["ports"]["stagingNoteRepository"]["getById"]>>
->;
-
-interface ReviewStep {
-  step: string;
-  status: "succeeded" | "skipped" | "failed";
-  message: string;
-}
-
-interface ReviewCommandResult {
-  ok: boolean;
-  data?: unknown;
-  warnings?: string[];
-  error?: {
-    code: string;
-    message: string;
-    details?: Record<string, unknown>;
-  };
-}
-
-async function listReviewQueue(
-  request: JsonRecord,
-  container: ServiceContainer
-): Promise<ReviewCommandResult> {
-  const targetCorpus = optionalReviewCorpus(request.targetCorpus);
-  const includeRejected = request.includeRejected === true;
-  const corpora = targetCorpus ? [targetCorpus] : REVIEWABLE_CORPORA;
-  const drafts = (
-    await Promise.all(
-      corpora.map((corpusId) => container.ports.stagingNoteRepository.listByCorpus(corpusId))
-    )
-  ).flat();
-
-  const items = drafts
-    .filter((draft) => shouldIncludeReviewDraft(draft.lifecycleState, includeRejected))
-    .map((draft) => ({
-      draftNoteId: draft.noteId,
-      title: draft.frontmatter.title,
-      targetCorpus: draft.corpusId,
-      scope: draft.frontmatter.scope,
-      noteType: draft.frontmatter.type,
-      updatedAt: draft.frontmatter.updated,
-      reviewState: reviewStateForLifecycle(draft.lifecycleState),
-      authorityRisk: "medium",
-      warningSummary: summarizeReviewWarnings(draft.lifecycleState, draft.body)
-    }))
-    .sort(
-      (left, right) =>
-        right.updatedAt.localeCompare(left.updatedAt) ||
-        left.title.localeCompare(right.title)
-    );
-
-  return {
-    ok: true,
-    data: {
-      items
-    }
-  };
-}
-
-async function readReviewNote(
-  request: JsonRecord,
-  container: ServiceContainer
-): Promise<ReviewCommandResult> {
-  const draftNoteId = requireReviewDraftNoteId(request);
-  const draft = await container.ports.stagingNoteRepository.getById(draftNoteId);
-
-  if (!draft) {
-    return reviewNotFound(draftNoteId);
-  }
-
-  const warnings = summarizeReviewWarnings(draft.lifecycleState, draft.body);
-
-  return {
-    ok: true,
-    data: {
-      draftNoteId: draft.noteId,
-      draftPath: draft.draftPath,
-      title: draft.frontmatter.title,
-      targetCorpus: draft.corpusId,
-      scope: draft.frontmatter.scope,
-      noteType: draft.frontmatter.type,
-      updatedAt: draft.frontmatter.updated,
-      reviewState: reviewStateForLifecycle(draft.lifecycleState),
-      authorityRisk: "medium",
-      promotionEligible: draft.lifecycleState !== "rejected",
-      body: draft.body,
-      provenance: [],
-      warnings: warnings.map((message, index) => ({
-        code: `review_warning_${index + 1}`,
-        message
-      }))
-    }
-  };
-}
-
-async function acceptNote(
-  request: JsonRecord,
-  container: ServiceContainer
-): Promise<ReviewCommandResult> {
-  const draftNoteId = requireReviewDraftNoteId(request);
-  const draft = await container.ports.stagingNoteRepository.getById(draftNoteId);
-
-  if (!draft) {
-    return reviewNotFound(draftNoteId);
-  }
-
-  if (!shouldIncludeReviewDraft(draft.lifecycleState, false)) {
-    return {
-      ok: false,
-      error: {
-        code: "validation_failed",
-        message: `Draft note '${draftNoteId}' is not eligible for review from lifecycle state '${draft.lifecycleState}'.`,
-        details: {
-          draftNoteId,
-          lifecycleState: draft.lifecycleState
-        }
-      }
-    };
-  }
-
-  const promoted = await container.services.promotionOrchestratorService.promoteDraft({
-    actor: buildActorContext("accept-note", request.actor),
-    draftNoteId,
-    targetCorpus: draft.corpusId,
-    expectedDraftRevision: draft.revision,
-    promoteAsCurrentState: draft.frontmatter.currentState
-  });
-
-  if (!promoted.ok) {
-    return promoted;
-  }
-
-  const steps: ReviewStep[] = [
-    {
-      step: "reviewability_check",
-      status: "succeeded",
-      message: "Draft is reviewable under the current Mimir staging lifecycle."
-    },
-    {
-      step: "promote_note",
-      status: "succeeded",
-      message: "Draft promoted through the Mimir promotion service."
-    }
-  ];
-
-  return {
-    ok: true,
-    data: {
-      draftNoteId,
-      accepted: true,
-      finalReviewState: "promotion_ready",
-      promotedNoteId: promoted.data.promotedNoteId,
-      canonicalPath: promoted.data.canonicalPath,
-      supersededNoteIds: promoted.data.supersededNoteIds,
-      steps,
-      retrievalWarning:
-        promoted.data.chunkCount > 0
-          ? undefined
-          : "Promoted note did not produce retrievable chunks."
-    },
-    warnings: promoted.warnings
-  };
-}
-
-async function rejectNote(
-  request: JsonRecord,
-  container: ServiceContainer
-): Promise<ReviewCommandResult> {
-  const draftNoteId = requireReviewDraftNoteId(request);
-  const draft = await container.ports.stagingNoteRepository.getById(draftNoteId);
-
-  if (!draft) {
-    return reviewNotFound(draftNoteId);
-  }
-
-  const updated = await container.ports.stagingNoteRepository.updateDraft({
-    ...draft,
-    lifecycleState: "rejected",
-    frontmatter: {
-      ...draft.frontmatter,
-      status: "rejected",
-      updated: currentDateIso(),
-      tags: replaceStatusTags(draft.frontmatter.tags, "status/rejected")
-    },
-    body: appendReviewNotes(draft.body, request.reviewNotes)
-  });
-
-  await container.ports.metadataControlStore.upsertNote({
-    noteId: updated.noteId,
-    corpusId: updated.corpusId,
-    notePath: updated.draftPath,
-    noteType: updated.frontmatter.type,
-    lifecycleState: updated.lifecycleState,
-    revision: updated.revision,
-    updatedAt: currentTimestampIso(),
-    currentState: updated.frontmatter.currentState,
-    validFrom: updated.frontmatter.validFrom,
-    validUntil: updated.frontmatter.validUntil,
-    summary: updated.frontmatter.summary,
-    scope: updated.frontmatter.scope,
-    tags: updated.frontmatter.tags
-  });
-
-  return {
-    ok: true,
-    data: {
-      draftNoteId,
-      rejected: true,
-      finalReviewState: "rejected",
-      archivedPath: updated.draftPath,
-      steps: [
-        {
-          step: "mark_rejected",
-          status: "succeeded",
-          message: "Draft was marked rejected in the staging repository."
-        }
-      ] satisfies ReviewStep[]
-    }
-  };
-}
-
-function optionalReviewCorpus(value: unknown): CorpusId | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  const normalized = normalizeCliCorpus(requireCliString(value, "targetCorpus"));
-  if (!REVIEWABLE_CORPORA.includes(normalized as CorpusId)) {
-    throw new Error(
-      `Invalid review field 'targetCorpus': must be one of ${REVIEWABLE_CORPORA.join(", ")}.`
-    );
-  }
-
-  return normalized as CorpusId;
-}
-
-function requireReviewDraftNoteId(request: JsonRecord): string {
-  if (typeof request.draftNoteId !== "string" || request.draftNoteId.trim() === "") {
-    throw new Error("Invalid review field 'draftNoteId': must be a non-empty string.");
-  }
-
-  return request.draftNoteId.trim();
-}
-
-function shouldIncludeReviewDraft(lifecycleState: StagingDraft["lifecycleState"], includeRejected: boolean): boolean {
-  if (["promoted", "superseded", "archived"].includes(lifecycleState)) {
-    return false;
-  }
-
-  if (lifecycleState === "rejected") {
-    return includeRejected;
-  }
-
-  return true;
-}
-
-function reviewStateForLifecycle(lifecycleState: StagingDraft["lifecycleState"]): string {
-  if (lifecycleState === "rejected") {
-    return "rejected";
-  }
-
-  if (lifecycleState === "validated") {
-    return "promotion_ready";
-  }
-
-  return "unreviewed";
-}
-
-function summarizeReviewWarnings(
-  lifecycleState: StagingDraft["lifecycleState"],
-  body: string
-): string[] {
-  const warnings: string[] = [];
-
-  if (lifecycleState === "draft") {
-    warnings.push("Draft has not reached the staged lifecycle state yet.");
-  }
-
-  if (lifecycleState === "rejected") {
-    warnings.push("Draft has already been rejected.");
-  }
-
-  if (body.trim() === "") {
-    warnings.push("Draft body is empty.");
-  }
-
-  return warnings;
-}
-
-function reviewNotFound(draftNoteId: string): ReviewCommandResult {
-  return {
-    ok: false,
-    error: {
-      code: "not_found",
-      message: `Draft note '${draftNoteId}' was not found.`,
-      details: {
-        draftNoteId
-      }
-    }
-  };
-}
-
-function replaceStatusTags(
-  tags: StagingDraft["frontmatter"]["tags"],
-  statusTag: StagingDraft["frontmatter"]["tags"][number]
-): StagingDraft["frontmatter"]["tags"] {
-  const nextTags = new Set(tags.filter((tag) => !tag.startsWith("status/")));
-  nextTags.add(statusTag);
-  return [...nextTags];
-}
-
-function appendReviewNotes(body: string, reviewNotes: unknown): string {
-  if (typeof reviewNotes !== "string" || reviewNotes.trim() === "") {
-    return body;
-  }
-
-  return `${body.trimEnd()}\n\n## Review Notes\n\n${reviewNotes.trim()}\n`;
-}
-
-function currentDateIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function currentTimestampIso(): string {
-  return new Date().toISOString();
 }
 
 function parseCli(argv: string[]): ParsedCli {
@@ -1002,7 +484,7 @@ async function readStdin(): Promise<string> {
   return chunks.join("");
 }
 
-function buildActorContext(command: RoutedCommandName, actor: unknown): ActorContext {
+function buildActorContext(command: RuntimeCliCommandName, actor: unknown): ActorContext {
   const input = actor && typeof actor === "object" ? actor as Partial<ActorContext> : {};
   const now = new Date().toISOString();
 
@@ -1018,7 +500,7 @@ function buildActorContext(command: RoutedCommandName, actor: unknown): ActorCon
   };
 }
 
-function normalizeCommandRequest(command: RoutedCommandName, request: JsonRecord): JsonRecord {
+function normalizeCommandRequest(command: RuntimeCliCommandName, request: JsonRecord): JsonRecord {
   if (
     command === "execute-coding-task" &&
     typeof request.repoRoot !== "string"
@@ -1032,7 +514,7 @@ function normalizeCommandRequest(command: RoutedCommandName, request: JsonRecord
   return request;
 }
 
-function shouldFailProcess(result: unknown, command: RoutedCommandName): boolean {
+function shouldFailProcess(result: unknown, command: RuntimeCliCommandName): boolean {
   if (!result || typeof result !== "object") {
     return true;
   }
@@ -1109,6 +591,9 @@ Commands:
   execute-coding-task  Run a coding-domain task through the vendored safety-gated runtime
   list-agent-traces  List compact operational traces for one local-agent request
   show-tool-output  Read a full spilled local-agent tool output by output id
+  list-ai-tools    List read-only Docker AI tool manifests from the registry
+  check-ai-tools   Validate Docker AI tool manifests and return per-file check results
+  tools-package-plan  Build a reusable Docker package plan for registered AI tools
   search-context   Run bounded retrieval through retrieveContextService
   search-session-archives  Search immutable non-authoritative session archives
   assemble-agent-context  Assemble a fenced local-agent context packet
@@ -1145,6 +630,9 @@ Notes:
   - assemble-agent-context expects query, corpusIds, budget, and optional session recall controls.
   - list-agent-traces expects requestId.
   - show-tool-output expects outputId.
+  - list-ai-tools accepts optional JSON input with ids (string array), includeEnvironment (boolean), and includeRuntime (boolean).
+  - check-ai-tools accepts optional JSON input with ids (string array) to filter by tool id.
+  - tools-package-plan accepts optional JSON input with ids (string array) and returns Docker compose run plans without executing tools.
   - issue-auth-token expects JSON input with actorId, actorRole, and optional source, allowedTransports, allowedCommands, allowedAdminActions, validFrom, validUntil, or ttlMinutes.
   - revoke-auth-token expects JSON input with tokenId or a valid issued token, and optional reason.
   - Input payloads are JSON objects shaped like the existing service contracts.

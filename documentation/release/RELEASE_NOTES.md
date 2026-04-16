@@ -15,10 +15,15 @@ adding practical local-agent ergonomics inspired by Hermes.
   `assemble-agent-context`.
 - Coding tasks can receive bounded memory context without gaining direct memory
   write authority.
+- Docker AI tool registry surfaces expose read-only manifest discovery,
+  validation, and package-plan output through CLI, HTTP, and MCP.
 - Session archives are searchable as non-authoritative recall.
 - Local-agent traces are persisted and inspectable by operator/system actors.
 - Oversized tool outputs spill to storage and stay available through
   `show-tool-output`.
+- The thin staging-review workflow now has CLI, HTTP, and MCP parity through
+  `list-review-queue`, `read-review-note`, `accept-note`, and `reject-note`,
+  plus `/v1/review/*` routes and matching MCP tools.
 - Provider errors are classified into actionable categories.
 - `qwen3-coder` is represented as an explicit deterministic local coding lane.
 - Retrieval eval fixtures provide a small regression harness for recall quality.

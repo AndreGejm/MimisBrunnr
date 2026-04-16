@@ -6,6 +6,8 @@ export * from "./coding/coding-domain-controller.js";
 export * from "./model-roles/model-role-registry.js";
 export * from "./model-roles/provider-registry.js";
 export * from "./root/actor-authorization-policy.js";
+export * from "./root/actor-registry-policy.js";
+export * from "./root/actor-token-inspector.js";
 export * from "./root/administrative-action.js";
 export * from "./root/issued-actor-token.js";
 export * from "./root/mimir-orchestrator.js";

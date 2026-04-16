@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mimir.local/schemas/docker-tool-registry.schema.json",
+  "title": "Mimir Docker AI Tool Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "displayName",
+    "kind",
+    "image",
+    "dockerProfile",
+    "entrypoint",
+    "capabilities",
+    "mounts",
+    "memoryWritePolicy",
+    "allowedMimirCommands",
+    "authRole",
+    "requiresOperatorReview",
+    "healthcheck"
+  ],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "displayName": { "type": "string", "minLength": 1 },
+    "kind": { "enum": ["cli", "coding_agent", "repo_indexer", "mcp_server"] },
+    "image": { "type": "string", "minLength": 1 },
+    "dockerProfile": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "entrypoint": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "mounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workspace", "cache", "mimisbrunnr"],
+      "properties": {
+        "workspace": { "enum": ["none", "read_only", "read_write"] },
+        "cache": { "enum": ["none", "read_only", "read_write"] },
+        "mimisbrunnr": { "const": "none" }
+      }
+    },
+    "memoryWritePolicy": { "enum": ["none", "session_only", "draft_note_only"] },
+    "allowedMimirCommands": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "execute-coding-task",
+          "list-agent-traces",
+          "show-tool-output",
+          "list-ai-tools",
+          "check-ai-tools",
+          "tools-package-plan",
+          "search-context",
+          "search-session-archives",
+          "assemble-agent-context",
+          "list-context-tree",
+          "read-context-node",
+          "get-context-packet",
+          "fetch-decision-summary",
+          "draft-note",
+          "create-refresh-draft",
+          "create-refresh-drafts",
+          "validate-note",
+          "promote-note",
+          "import-resource",
+          "query-history",
+          "create-session-archive"
+        ]
+      }
+    },
+    "authRole": { "enum": ["retrieval", "writer", "orchestrator", "system", "operator"] },
+    "requiresOperatorReview": { "type": "boolean" },
+    "healthcheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command"],
+      "properties": {
+        "command": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

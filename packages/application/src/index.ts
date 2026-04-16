@@ -31,6 +31,7 @@ export * from "./services/provider-error-classifier.js";
 export * from "./services/retrieval-candidate.js";
 export * from "./services/retrieval-trace-service.js";
 export * from "./services/retrieve-context-service.js";
+export * from "./services/review-command-service.js";
 export * from "./services/session-archive-service.js";
 export * from "./services/staging-draft-service.js";
 export * from "./services/temporal-refresh-service.js";

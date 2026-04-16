@@ -1,0 +1,21 @@
+{
+  "id": "rtk",
+  "displayName": "RTK",
+  "kind": "cli",
+  "image": "mimir-tool-rtk:local",
+  "dockerProfile": "rtk",
+  "entrypoint": ["rtk"],
+  "capabilities": ["command_rewrite", "token_saving", "repo_inspection"],
+  "mounts": {
+    "workspace": "read_only",
+    "cache": "none",
+    "mimisbrunnr": "none"
+  },
+  "memoryWritePolicy": "none",
+  "allowedMimirCommands": [],
+  "authRole": "operator",
+  "requiresOperatorReview": false,
+  "healthcheck": {
+    "command": ["rtk", "--version"]
+  }
+}

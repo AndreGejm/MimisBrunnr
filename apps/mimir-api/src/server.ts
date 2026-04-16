@@ -1,18 +1,25 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
+import {
+  RUNTIME_COMMAND_DEFINITIONS,
+  type RuntimeCliCommandName
+} from "@mimir/contracts";
 import type {
   ActorContext,
   ActorRole,
   AssembleAgentContextRequest,
   AssembleContextPacketRequest,
+  CheckAiToolsRequest,
   CreateSessionArchiveRequest,
   CreateRefreshDraftBatchRequest,
   CreateRefreshDraftRequest,
   DraftNoteRequest,
   ExecuteCodingTaskRequest,
   GetDecisionSummaryRequest,
+  GetAiToolPackagePlanRequest,
   ImportResourceRequest,
   ListAgentTracesRequest,
+  ListAiToolsRequest,
   ListContextTreeRequest,
   PromoteNoteRequest,
   QueryHistoryRequest,
@@ -26,7 +33,9 @@ import type {
 import {
   ActorAuthorizationError,
   buildServiceContainer,
+  dispatchRuntimeCommand,
   FileIssuedTokenRevocationStore,
+  getRuntimeCommandHttpStatus,
   issueActorAccessToken,
   loadEnvironment,
   runRuntimeHealthChecks,
@@ -39,49 +48,16 @@ import {
   type AppEnvironment
 } from "@mimir/infrastructure";
 
-type RouteName =
-  | "execute-coding-task"
-  | "list-agent-traces"
-  | "show-tool-output"
-  | "search-context"
-  | "search-session-archives"
-  | "assemble-agent-context"
-  | "get-context-packet"
-  | "fetch-decision-summary"
-  | "draft-note"
-  | "create-refresh-draft"
-  | "create-refresh-drafts"
-  | "validate-note"
-  | "promote-note"
-  | "import-resource"
-  | "query-history"
-  | "create-session-archive"
-  | "list-context-tree"
-  | "read-context-node";
+type RouteName = RuntimeCliCommandName;
 
 type JsonRecord = Record<string, unknown>;
 
-const DEFAULT_ACTOR_ROLE: Record<RouteName, ActorRole> = {
-  "execute-coding-task": "operator",
-  "list-agent-traces": "operator",
-  "show-tool-output": "operator",
-  "search-context": "retrieval",
-  "search-session-archives": "retrieval",
-  "assemble-agent-context": "retrieval",
-  "list-context-tree": "retrieval",
-  "read-context-node": "retrieval",
-  "get-context-packet": "retrieval",
-  "fetch-decision-summary": "retrieval",
-  "draft-note": "writer",
-  "create-refresh-draft": "operator",
-  "create-refresh-drafts": "operator",
-  "validate-note": "orchestrator",
-  "promote-note": "orchestrator",
-  "import-resource": "operator",
-  "query-history": "operator",
-  "create-session-archive": "operator"
-};
-
+const DEFAULT_ACTOR_ROLE: Record<RouteName, ActorRole> = Object.fromEntries(
+  RUNTIME_COMMAND_DEFINITIONS.map((command) => [
+    command.cliName,
+    command.defaultActorRole
+  ])
+) as Record<RouteName, ActorRole>;
 const ROUTES: Record<string, { method: "GET" | "POST"; name?: RouteName; healthMode?: "live" | "ready" }> = {
   "/health/live": { method: "GET", healthMode: "live" },
   "/health/ready": { method: "GET", healthMode: "ready" },
@@ -95,6 +71,9 @@ const ROUTES: Record<string, { method: "GET" | "POST"; name?: RouteName; healthM
   "/v1/coding/execute": { method: "POST", name: "execute-coding-task" },
   "/v1/coding/traces": { method: "POST", name: "list-agent-traces" },
   "/v1/coding/tool-output": { method: "POST", name: "show-tool-output" },
+  "/v1/tools/ai": { method: "POST", name: "list-ai-tools" },
+  "/v1/tools/ai/check": { method: "POST", name: "check-ai-tools" },
+  "/v1/tools/ai/package-plan": { method: "POST", name: "tools-package-plan" },
   "/v1/context/search": { method: "POST", name: "search-context" },
   "/v1/context/agent-context": { method: "POST", name: "assemble-agent-context" },
   "/v1/context/tree": { method: "POST", name: "list-context-tree" },
@@ -102,6 +81,10 @@ const ROUTES: Record<string, { method: "GET" | "POST"; name?: RouteName; healthM
   "/v1/context/packet": { method: "POST", name: "get-context-packet" },
   "/v1/context/decision-summary": { method: "POST", name: "fetch-decision-summary" },
   "/v1/notes/drafts": { method: "POST", name: "draft-note" },
+  "/v1/review/queue": { method: "POST", name: "list-review-queue" },
+  "/v1/review/note": { method: "POST", name: "read-review-note" },
+  "/v1/review/accept": { method: "POST", name: "accept-note" },
+  "/v1/review/reject": { method: "POST", name: "reject-note" },
   "/v1/system/freshness/refresh-draft": { method: "POST", name: "create-refresh-draft" },
   "/v1/system/freshness/refresh-drafts": { method: "POST", name: "create-refresh-drafts" },
   "/v1/notes/validate": { method: "POST", name: "validate-note" },
@@ -111,6 +94,39 @@ const ROUTES: Record<string, { method: "GET" | "POST"; name?: RouteName; healthM
   "/v1/history/session-archives": { method: "POST", name: "create-session-archive" },
   "/v1/history/session-archives/search": { method: "POST", name: "search-session-archives" }
 };
+export interface RuntimeHttpRouteDefinition {
+  path: string;
+  method: "GET" | "POST";
+  commandName: RouteName;
+  defaultActorRole: ActorRole;
+}
+
+export function getRuntimeHttpRouteDefinitions(): RuntimeHttpRouteDefinition[] {
+  const routeByCommandName = new Map<RouteName, { path: string; method: "GET" | "POST" }>();
+
+  for (const [path, route] of Object.entries(ROUTES)) {
+    if (route.name) {
+      routeByCommandName.set(route.name, {
+        path,
+        method: route.method
+      });
+    }
+  }
+
+  return RUNTIME_COMMAND_DEFINITIONS.map((command) => {
+    const route = routeByCommandName.get(command.cliName);
+    if (!route) {
+      throw new Error(`HTTP route is not registered for runtime command '${command.cliName}'.`);
+    }
+
+    return {
+      path: route.path,
+      method: route.method,
+      commandName: command.cliName,
+      defaultActorRole: DEFAULT_ACTOR_ROLE[command.cliName]
+    };
+  });
+}
 
 export interface MimirApiServer {
   env: AppEnvironment;
@@ -395,134 +411,8 @@ async function handleRequest(
   const actor = buildActorContext(route.name, validatedBody.actor, request.headers);
   const normalizedRequest = { ...validatedBody, actor };
 
-  switch (route.name) {
-    case "execute-coding-task": {
-      const result = await container.orchestrator.executeCodingTask(
-        normalizedRequest as unknown as ExecuteCodingTaskRequest
-      );
-      sendJson(response, mapCodingStatusToStatusCode(result.status), result);
-      return;
-    }
-    case "list-agent-traces": {
-      const result = await container.orchestrator.listAgentTraces(
-        normalizedRequest as unknown as ListAgentTracesRequest
-      );
-      sendJson(response, 200, result);
-      return;
-    }
-    case "show-tool-output": {
-      const result = await container.orchestrator.showToolOutput(
-        normalizedRequest as unknown as ShowToolOutputRequest
-      );
-      sendJson(response, result.found ? 200 : 404, result);
-      return;
-    }
-    case "search-context": {
-      const result = await container.orchestrator.searchContext(
-        normalizedRequest as unknown as RetrieveContextRequest
-      );
-      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
-      return;
-    }
-    case "search-session-archives": {
-      const result = await container.orchestrator.searchSessionArchives(
-        normalizedRequest as unknown as SearchSessionArchivesRequest
-      );
-      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
-      return;
-    }
-    case "assemble-agent-context": {
-      const result = await container.orchestrator.assembleAgentContext(
-        normalizedRequest as unknown as AssembleAgentContextRequest
-      );
-      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
-      return;
-    }
-    case "list-context-tree": {
-      const result = await container.services.contextNamespaceService.listTree(
-        normalizedRequest as unknown as ListContextTreeRequest
-      );
-      sendJson(response, 200, result);
-      return;
-    }
-    case "read-context-node": {
-      const result = await container.services.contextNamespaceService.readNode(
-        normalizedRequest as unknown as ReadContextNodeRequest
-      );
-      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
-      return;
-    }
-    case "get-context-packet": {
-      const result = await container.orchestrator.getContextPacket(
-        normalizedRequest as unknown as AssembleContextPacketRequest
-      );
-      sendJson(response, 200, result);
-      return;
-    }
-    case "fetch-decision-summary": {
-      const result = await container.orchestrator.fetchDecisionSummary(
-        normalizedRequest as unknown as GetDecisionSummaryRequest
-      );
-      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
-      return;
-    }
-    case "draft-note": {
-      const result = await container.orchestrator.draftNote(
-        normalizedRequest as unknown as DraftNoteRequest
-      );
-      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
-      return;
-    }
-    case "create-refresh-draft": {
-      const result = await container.orchestrator.createRefreshDraft(
-        normalizedRequest as unknown as CreateRefreshDraftRequest
-      );
-      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
-      return;
-    }
-    case "create-refresh-drafts": {
-      const result = await container.orchestrator.createRefreshDraftBatch(
-        normalizedRequest as unknown as CreateRefreshDraftBatchRequest
-      );
-      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
-      return;
-    }
-    case "validate-note": {
-      const result = container.orchestrator.validateNote(
-        normalizedRequest as unknown as ValidateNoteRequest
-      );
-      sendJson(response, result.valid ? 200 : 422, result);
-      return;
-    }
-    case "promote-note": {
-      const result = await container.orchestrator.promoteNote(
-        normalizedRequest as unknown as PromoteNoteRequest
-      );
-      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
-      return;
-    }
-    case "import-resource": {
-      const result = await container.orchestrator.importResource(
-        normalizedRequest as unknown as ImportResourceRequest
-      );
-      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
-      return;
-    }
-    case "query-history": {
-      const result = await container.orchestrator.queryHistory(
-        normalizedRequest as unknown as QueryHistoryRequest
-      );
-      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
-      return;
-    }
-    case "create-session-archive": {
-      const result = await container.orchestrator.createSessionArchive(
-        normalizedRequest as unknown as CreateSessionArchiveRequest
-      );
-      sendJson(response, result.ok ? 200 : mapServiceErrorToStatus(result.error), result);
-      return;
-    }
-  }
+  const result = await dispatchRuntimeCommand(route.name, normalizedRequest, container);
+  sendJson(response, getRuntimeCommandHttpStatus(route.name, result), result);
 }
 
 async function readJsonBody(request: IncomingMessage): Promise<JsonRecord> {

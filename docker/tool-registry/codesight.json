@@ -1,0 +1,24 @@
+{
+  "id": "codesight",
+  "displayName": "Codesight",
+  "kind": "repo_indexer",
+  "image": "mimir-tool-codesight:local",
+  "dockerProfile": "codesight",
+  "entrypoint": ["codesight"],
+  "capabilities": ["repo_map", "symbol_index", "architecture_summary"],
+  "mounts": {
+    "workspace": "read_only",
+    "cache": "read_write",
+    "mimisbrunnr": "none"
+  },
+  "memoryWritePolicy": "draft_note_only",
+  "allowedMimirCommands": ["create-session-archive", "draft-note"],
+  "authRole": "operator",
+  "requiresOperatorReview": true,
+  "healthcheck": {
+    "command": ["codesight", "--version"]
+  },
+  "environment": {
+    "MIMIR_API_URL": "http://mimir-api:8080"
+  }
+}

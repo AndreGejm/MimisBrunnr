@@ -13,7 +13,10 @@ import {
   runRuntimeHealthChecks,
   validateTransportRequest
 } from "../../packages/infrastructure/dist/index.js";
-import { COMPATIBILITY_LAUNCHER_NAMES } from "../../scripts/lib/default-access.mjs";
+import {
+  COMPATIBILITY_LAUNCHER_NAMES,
+  evaluateDefaultAccess
+} from "../../scripts/lib/default-access.mjs";
 
 
 test("default launcher compatibility includes old and shorthand aliases", () => {
@@ -31,6 +34,137 @@ test("default launcher compatibility includes old and shorthand aliases", () => 
   assert.ok(COMPATIBILITY_LAUNCHER_NAMES.includes("multiagentbrain"));
   assert.ok(COMPATIBILITY_LAUNCHER_NAMES.includes("multi-agent-brain"));
   assert.ok(COMPATIBILITY_LAUNCHER_NAMES.includes("mab"));
+});
+test("default access doctor reports reusable Docker tool assets", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-doctor-docker-tools-"));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const missing = evaluateDefaultAccess({
+    repoRoot: root,
+    codexConfigPath: path.join(root, "config.toml"),
+    launcherBinDir: path.join(root, "bin"),
+    manifestPath: path.join(root, "installation.json"),
+    pathValue: ""
+  });
+  assert.equal(missing.dockerTools.reusable, false);
+  assert.equal(missing.dockerTools.compose.exists, false);
+  assert.equal(missing.dockerTools.registry.exists, false);
+  assert.ok(
+    missing.recommendations.some((recommendation) =>
+      /docker tool assets/i.test(recommendation)
+    )
+  );
+
+  await fsMkdir(path.join(root, "docker", "tool-registry"), { recursive: true });
+  await fsWriteFile(path.join(root, "docker", "compose.tools.yml"), "services:\n  rtk:\n    image: mimir-tool-rtk:local\n", "utf8");
+  await fsWriteFile(path.join(root, "docker", "tool-registry", "rtk.json"), "{}\n", "utf8");
+
+  const invalid = evaluateDefaultAccess({
+    repoRoot: root,
+    codexConfigPath: path.join(root, "config.toml"),
+    launcherBinDir: path.join(root, "bin"),
+    manifestPath: path.join(root, "installation.json"),
+    pathValue: ""
+  });
+  assert.equal(invalid.dockerTools.reusable, false);
+  assert.equal(invalid.dockerTools.registry.manifestCount, 1);
+  assert.equal(invalid.dockerTools.registry.invalidManifestCount, 1);
+  assert.deepEqual(invalid.dockerTools.registry.manifestFiles, ["rtk.json"]);
+  assert.equal(invalid.dockerTools.registry.manifests[0].fileName, "rtk.json");
+  assert.equal(invalid.dockerTools.registry.manifests[0].status, "invalid");
+  assert.match(invalid.dockerTools.registry.manifests[0].errors.join("\n"), /id/);
+
+  await fsWriteFile(path.join(root, "docker", "tool-registry", "rtk.json"), JSON.stringify({
+    id: "rtk",
+    displayName: "RTK",
+    kind: "cli",
+    image: "mimir-tool-rtk:local",
+    dockerProfile: "rtk",
+    entrypoint: ["rtk"],
+    capabilities: ["command_rewrite"],
+    mounts: {
+      workspace: "read_only",
+      cache: "none",
+      mimisbrunnr: "none"
+    },
+    memoryWritePolicy: "none",
+    allowedMimirCommands: [],
+    authRole: "operator",
+    requiresOperatorReview: false,
+    healthcheck: {
+      command: ["rtk", "--version"]
+    }
+  }, null, 2), "utf8");
+
+  const reusable = evaluateDefaultAccess({
+    repoRoot: root,
+    codexConfigPath: path.join(root, "config.toml"),
+    launcherBinDir: path.join(root, "bin"),
+    manifestPath: path.join(root, "installation.json"),
+    pathValue: ""
+  });
+  assert.equal(reusable.dockerTools.reusable, true);
+  assert.equal(reusable.dockerTools.compose.exists, true);
+  assert.equal(reusable.dockerTools.registry.exists, true);
+  assert.equal(reusable.dockerTools.registry.manifestCount, 1);
+  assert.equal(reusable.dockerTools.registry.invalidManifestCount, 0);
+  assert.deepEqual(reusable.dockerTools.registry.manifestFiles, ["rtk.json"]);
+  assert.deepEqual(reusable.dockerTools.registry.tools, [
+    {
+      id: "rtk",
+      kind: "cli",
+      image: "mimir-tool-rtk:local",
+      dockerProfile: "rtk",
+      entrypoint: ["rtk"],
+      workspaceMount: "read_only",
+      cacheMount: "none",
+      memoryWritePolicy: "none",
+      allowedMimirCommands: [],
+      requiresOperatorReview: false
+    }
+  ]);
+});
+
+test("default access health does not require optional Docker tool assets", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-doctor-base-install-"));
+  const binDir = path.join(root, "bin");
+  const codexConfigPath = path.join(root, "config.toml");
+  const manifestPath = path.join(root, "installation.json");
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await fsMkdir(path.join(root, "scripts"), { recursive: true });
+  await fsMkdir(path.join(root, "apps", "mimir-cli", "dist"), { recursive: true });
+  await fsMkdir(path.join(root, "apps", "mimir-mcp", "dist"), { recursive: true });
+  await fsMkdir(binDir, { recursive: true });
+  await fsWriteFile(path.join(root, "scripts", "launch-mimir-cli.mjs"), "", "utf8");
+  await fsWriteFile(path.join(root, "scripts", "launch-mimir-mcp.mjs"), "", "utf8");
+  await fsWriteFile(path.join(root, "apps", "mimir-cli", "dist", "main.js"), "", "utf8");
+  await fsWriteFile(path.join(root, "apps", "mimir-mcp", "dist", "main.js"), "", "utf8");
+  await fsWriteFile(codexConfigPath, "[mcp_servers.mimir]\ncommand = 'node'\n", "utf8");
+  await fsWriteFile(manifestPath, "{}\n", "utf8");
+  for (const launcherName of COMPATIBILITY_LAUNCHER_NAMES) {
+    await fsWriteFile(path.join(binDir, `${launcherName}.cmd`), "", "utf8");
+  }
+
+  const report = evaluateDefaultAccess({
+    repoRoot: root,
+    codexConfigPath,
+    launcherBinDir: binDir,
+    manifestPath,
+    pathValue: binDir
+  });
+
+  assert.equal(report.status, "healthy");
+  assert.equal(report.dockerTools.reusable, false);
+  assert.ok(
+    report.recommendations.some((recommendation) =>
+      /docker tool assets/i.test(recommendation)
+    )
+  );
 });
 test("transport validation normalizes legacy context-brain corpus aliases to mimisbrunnr", () => {
   const search = validateTransportRequest("search-context", {

@@ -2,9 +2,10 @@
 
 import { randomUUID } from "node:crypto";
 import process from "node:process";
-import type {
+import { toCliCommandName } from "@mimir/contracts";import type {
   ActorContext,
   AssembleAgentContextRequest,
+  CheckAiToolsRequest,
   CreateSessionArchiveRequest,
   CreateRefreshDraftBatchRequest,
   CreateRefreshDraftRequest,
@@ -12,8 +13,10 @@ import type {
   DraftNoteRequest,
   ExecuteCodingTaskRequest,
   GetDecisionSummaryRequest,
+  GetAiToolPackagePlanToolRequest,
   ImportResourceRequest,
   ListAgentTracesRequest,
+  ListAiToolsRequest,
   ListContextTreeToolRequest,
   PromoteNoteRequest,
   QueryHistoryRequest,
@@ -26,6 +29,7 @@ import type {
 import {
   ActorAuthorizationError,
   buildServiceContainer,
+  dispatchRuntimeCommand,
   loadEnvironment,
   TransportValidationError,
   validateTransportRequest
@@ -268,88 +272,18 @@ async function callTool(name: string, args: JsonRecord): Promise<unknown> {
 }
 
 async function runTool(name: string, request: JsonRecord): Promise<unknown> {
-  switch (name) {
-    case "execute_coding_task":
-      return container.orchestrator.executeCodingTask(
-        request as unknown as ExecuteCodingTaskRequest
-      );
-    case "list_agent_traces":
-      return container.orchestrator.listAgentTraces(
-        request as unknown as ListAgentTracesRequest
-      );
-    case "show_tool_output":
-      return container.orchestrator.showToolOutput(
-        request as unknown as ShowToolOutputRequest
-      );
-    case "search_context":
-      return container.orchestrator.searchContext(
-        request as unknown as RetrieveContextRequest
-      );
-    case "search_session_archives":
-      return container.orchestrator.searchSessionArchives(
-        request as unknown as SearchSessionArchivesRequest
-      );
-    case "assemble_agent_context":
-      return container.orchestrator.assembleAgentContext(
-        request as unknown as AssembleAgentContextRequest
-      );
-    case "list_context_tree":
-      return container.services.contextNamespaceService.listTree(
-        request as unknown as ListContextTreeToolRequest
-      );
-    case "read_context_node":
-      return container.services.contextNamespaceService.readNode(
-        request as unknown as ReadContextNodeToolRequest
-      );
-    case "get_context_packet":
-      return container.orchestrator.getContextPacket(
-        request as unknown as GetContextPacketToolRequest
-      );
-    case "draft_note":
-      return container.orchestrator.draftNote(
-        request as unknown as DraftNoteRequest
-      );
-    case "create_refresh_draft":
-      return container.orchestrator.createRefreshDraft(
-        request as unknown as CreateRefreshDraftRequest
-      );
-    case "create_refresh_drafts":
-      return container.orchestrator.createRefreshDraftBatch(
-        request as unknown as CreateRefreshDraftBatchRequest
-      );
-    case "import_resource":
-      return container.orchestrator.importResource(
-        request as unknown as ImportResourceRequest
-      );
-    case "fetch_decision_summary":
-      return container.orchestrator.fetchDecisionSummary(
-        request as unknown as GetDecisionSummaryRequest
-      );
-    case "validate_note":
-      return container.orchestrator.validateNote(
-        request as unknown as ValidateNoteRequest
-      );
-    case "promote_note":
-      return container.orchestrator.promoteNote(
-        request as unknown as PromoteNoteRequest
-      );
-    case "query_history":
-      return container.orchestrator.queryHistory(
-        request as unknown as QueryHistoryRequest
-      );
-    case "create_session_archive":
-      return container.orchestrator.createSessionArchive(
-        request as unknown as CreateSessionArchiveRequest
-      );
-    default:
-      return {
-        ok: false,
-        error: {
-          code: "tool_not_found",
-          message: `Tool '${name}' is not supported by this MCP server.`
-        }
-      };
+  const commandName = toCliCommandName(name);
+  if (!commandName) {
+    return {
+      ok: false,
+      error: {
+        code: "tool_not_found",
+        message: `No runtime command is registered for MCP tool '${name}'.`
+      }
+    };
   }
+
+  return dispatchRuntimeCommand(commandName, request, container);
 }
 
 function buildActorContext(

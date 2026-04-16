@@ -3,7 +3,7 @@ import type {
   AdministrativeAction,
   OrchestratorCommand
 } from "@mimir/orchestration";
-import { TransportValidationError } from "./request-validation.js";
+import { TransportValidationError } from "./transport-validation-error.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -39,7 +39,9 @@ const COMMAND_NAMES = new Set<OrchestratorCommand>([
   "query_history",
   "execute_coding_task",
   "list_agent_traces",
-  "show_tool_output"
+  "show_tool_output",
+  "list_ai_tools",
+  "check_ai_tools"
 ]);
 
 const ADMIN_ACTION_NAMES = new Set<AdministrativeAction>([

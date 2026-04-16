@@ -1,0 +1,24 @@
+{
+  "id": "aider",
+  "displayName": "Aider",
+  "kind": "coding_agent",
+  "image": "mimir-tool-aider:local",
+  "dockerProfile": "aider",
+  "entrypoint": ["aider"],
+  "capabilities": ["edit_files", "explain_code", "propose_patch"],
+  "mounts": {
+    "workspace": "read_write",
+    "cache": "read_write",
+    "mimisbrunnr": "none"
+  },
+  "memoryWritePolicy": "draft_note_only",
+  "allowedMimirCommands": ["assemble-agent-context", "create-session-archive", "draft-note"],
+  "authRole": "operator",
+  "requiresOperatorReview": true,
+  "healthcheck": {
+    "command": ["aider", "--version"]
+  },
+  "environment": {
+    "MIMIR_API_URL": "http://mimir-api:8080"
+  }
+}

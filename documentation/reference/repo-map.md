@@ -14,7 +14,7 @@ This map is based on tracked repository content. It intentionally separates trac
 | `.env.example` | reference env template |
 | `apps/` | transport entrypoints |
 | `packages/` | layered TypeScript code |
-| `docker/` | Dockerfile and compose profile |
+| `docker/` | Dockerfiles, compose profiles, and Docker AI tool manifests |
 | `documentation/` | canonical docs plus planning/history docs |
 | `runtimes/` | vendored Python coding runtime |
 | `tests/` | end-to-end test suite |
@@ -30,6 +30,22 @@ This map is based on tracked repository content. It intentionally separates trac
 
 ### Shared runtime layers
 
+- command catalog: `packages/contracts/src/orchestration/command-catalog.ts`
+- shared runtime command dispatcher: `packages/infrastructure/src/transport/runtime-command-dispatcher.ts`
+- transport validator registry: `packages/infrastructure/src/transport/request-validation.ts`
+- request field validators: `packages/infrastructure/src/transport/request-field-validation.ts`
+- coding request validators: `packages/infrastructure/src/transport/coding-request-validation.ts`
+- transport validation error type: `packages/infrastructure/src/transport/transport-validation-error.ts`
+- environment/config modules: `packages/infrastructure/src/config/*.ts` via `packages/infrastructure/src/config/env.ts`
+- provider factory registry: `packages/infrastructure/src/providers/provider-factory-registry.ts`
+- Docker AI tool registry facade: `packages/infrastructure/src/tools/tool-registry.ts`
+- tool manifest store and descriptor builders: `packages/infrastructure/src/tools/tool-manifest-store.ts`, `packages/infrastructure/src/tools/tool-runtime-descriptor.ts`, and `packages/infrastructure/src/tools/tool-package-planner.ts`
+- command authorization role matrix: `packages/orchestration/src/root/command-authorization-matrix.ts`
+- actor registry policy: `packages/orchestration/src/root/actor-registry-policy.ts`
+- actor token inspector: `packages/orchestration/src/root/actor-token-inspector.ts`
+- external source contracts: `packages/contracts/src/external-sources/external-source.contract.ts` and `packages/contracts/src/external-sources/external-source-registry.contract.ts`
+- external source adapter registry: `packages/infrastructure/src/external-sources/external-source-registry.ts`
+- read-only Obsidian vault source adapter: `packages/infrastructure/src/external-sources/obsidian-vault-source.ts`
 - `packages/domain`
 - `packages/contracts`
 - `packages/application`
@@ -68,6 +84,8 @@ This map is based on tracked repository content. It intentionally separates trac
 - `docker/mimir-mcp.Dockerfile`
 - `docker/compose.mcp-session.yml`
 - `docker/mimir-mcp-session-entrypoint.mjs`
+- `docker/compose.tools.yml`
+- `docker/tool-registry/*.json`
 
 ## Storage surfaces
 
@@ -106,6 +124,26 @@ This map is based on tracked repository content. It intentionally separates trac
 - paid OpenAI-compatible provider:
   - `packages/infrastructure/src/providers/openai-compatible-local-reasoning-provider.ts`
 
+### External source adapters
+
+- source contracts and policy shape: `packages/contracts/src/external-sources/external-source.contract.ts`
+- registry contract: `packages/contracts/src/external-sources/external-source-registry.contract.ts`
+- infrastructure registry: `packages/infrastructure/src/external-sources/external-source-registry.ts`
+- read-only Obsidian vault adapter: `packages/infrastructure/src/external-sources/obsidian-vault-source.ts`
+
+External source adapters are gatekeeper surfaces for user-owned files. The current Obsidian adapter is registered through the external source registry exposed from `buildServiceContainer(...).ports.externalSourceRegistry`, lists and reads policy-allowed Markdown notes, parses simple frontmatter and links, blocks `.obsidian/**`, rejects path traversal, and exposes no write method. It is intended as the code foundation for a future local Obsidian plugin without weakening Mimisbrunnr staging, review, audit, and promotion rules.
+
+### Docker AI tool registry
+
+- registry facade: `packages/infrastructure/src/tools/tool-registry.ts`
+- manifest store: `packages/infrastructure/src/tools/tool-manifest-store.ts`
+- runtime descriptor builder: `packages/infrastructure/src/tools/tool-runtime-descriptor.ts`
+- package-plan builder: `packages/infrastructure/src/tools/tool-package-planner.ts`
+- declarative tool manifests: `docker/tool-registry/*.json`
+- manifest schema for reusable toolbox packaging: `docker/tool-registry.schema.json`
+- Docker Desktop profiles: `docker/compose.tools.yml`
+- installer/doctor reusable asset preflight and standalone Docker tool manifest summaries: `scripts/lib/default-access.mjs`
+
 ### Internal process boundary
 
 - Python subprocess runtime: `runtimes/local_experts/**`
@@ -122,11 +160,20 @@ This map is based on tracked repository content. It intentionally separates trac
 - `tests/e2e/hierarchical-retrieval.test.mjs`
 - `tests/e2e/session-archives.test.mjs`
 - `tests/e2e/hermes-bridge-runtime.test.mjs`
+- `tests/e2e/authorization-policy.test.mjs`
 - `tests/e2e/service-boundaries-and-regression.test.mjs`
 - `tests/e2e/import-pipeline.test.mjs`
+- `tests/e2e/external-source-policy.test.mjs`
 - `tests/e2e/transport-adapters.test.mjs`
 - `tests/e2e/mcp-adapter.test.mjs`
 - `tests/e2e/local-model-providers.test.mjs`
+- `tests/e2e/external-source-registry.test.mjs`
+- `tests/e2e/config-boundaries.test.mjs`
+- `tests/e2e/command-catalog.test.mjs`
+- `tests/e2e/transport-validation-boundaries.test.mjs`
+- `tests/e2e/request-field-validation-boundaries.test.mjs`
+- `tests/e2e/coding-transport-validation-boundaries.test.mjs`
+- `tests/e2e/tool-registry.test.mjs`
 - `tests/e2e/mcp-session-startup.test.mjs`
 
 ### Python test surface
@@ -186,4 +233,4 @@ Those are not part of the tracked repository unless they are later committed.
 
 ### TODO gaps
 
-- If the tracked repo gains CI, deployment, migration, or additional release automation surfaces, add them here
+- If tracked CI workflows or installer artifacts are added later, expand the top-level map and tracked absences sections

@@ -8,7 +8,7 @@ import test from "node:test";
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
-test("mimir-mcp serves initialize, tools/list, list_context_tree, read_context_node, get_context_packet, and validate_note over stdio MCP framing", async (t) => {
+test("mimir-mcp serves initialize, tools/list, review tools, context tools, and validate_note over stdio MCP framing", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "mimir-mcp-"));
   const canonical = await seedCanonicalTemporalNote(root, {
     title: "MCP Namespace Canonical Node",
@@ -48,6 +48,7 @@ test("mimir-mcp serves initialize, tools/list, list_context_tree, read_context_n
         MAB_PROVIDER_DOCKER_OLLAMA_BASE_URL: "http://127.0.0.1:1",
         MAB_OLLAMA_BASE_URL: "http://127.0.0.1:1",
         MAB_LOG_LEVEL: "error",
+        MAB_TOOL_REGISTRY_DIR: path.resolve("docker", "tool-registry"),
         MAB_RELEASE_VERSION: "0.4.0",
         MAB_GIT_TAG: "v0.4.0",
         MAB_GIT_COMMIT: "fedcba9876543210",
@@ -91,6 +92,13 @@ test("mimir-mcp serves initialize, tools/list, list_context_tree, read_context_n
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "get_context_packet"));
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "create_refresh_draft"));
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "execute_coding_task"));
+  assert.ok(listResponse.result.tools.some((tool) => tool.name === "list_ai_tools"));
+  assert.ok(listResponse.result.tools.some((tool) => tool.name === "check_ai_tools"));
+  assert.ok(listResponse.result.tools.some((tool) => tool.name === "tools_package_plan"));
+  assert.ok(listResponse.result.tools.some((tool) => tool.name === "list_review_queue"));
+  assert.ok(listResponse.result.tools.some((tool) => tool.name === "read_review_note"));
+  assert.ok(listResponse.result.tools.some((tool) => tool.name === "accept_note"));
+  assert.ok(listResponse.result.tools.some((tool) => tool.name === "reject_note"));
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "list_context_tree"));
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "read_context_node"));
   const listContextTreeTool = listResponse.result.tools.find(
@@ -100,6 +108,77 @@ test("mimir-mcp serves initialize, tools/list, list_context_tree, read_context_n
   assert.deepEqual(
     Object.keys(listContextTreeTool.inputSchema.properties).sort(),
     ["authorityStates", "ownerScope"]
+  );
+
+
+
+
+  writeMcpMessage(child.stdin, {
+    jsonrpc: "2.0",
+    id: 200,
+    method: "tools/call",
+    params: {
+      name: "list_ai_tools",
+      arguments: {
+        ids: ["rtk"]
+      }
+    }
+  });
+
+  const aiToolsResponse = await transport.next();
+  assert.equal(aiToolsResponse.result.isError, false);
+  assert.deepEqual(
+    aiToolsResponse.result.structuredContent.tools.map((tool) => tool.id),
+    ["rtk"]
+  );
+  assert.equal(
+    "environment" in aiToolsResponse.result.structuredContent.tools[0],
+    false
+  );
+
+  writeMcpMessage(child.stdin, {
+    jsonrpc: "2.0",
+    id: 201,
+    method: "tools/call",
+    params: {
+      name: "check_ai_tools",
+      arguments: {
+        ids: ["rtk"]
+      }
+    }
+  });
+
+  const aiToolChecksResponse = await transport.next();
+  assert.equal(aiToolChecksResponse.result.isError, false);
+  assert.equal(aiToolChecksResponse.result.structuredContent.ok, true);
+  assert.deepEqual(
+    aiToolChecksResponse.result.structuredContent.checks.map((check) => check.toolId),
+    ["rtk"]
+  );
+  assert.equal(aiToolChecksResponse.result.structuredContent.checks[0].status, "valid");
+
+  writeMcpMessage(child.stdin, {
+    jsonrpc: "2.0",
+    id: 202,
+    method: "tools/call",
+    params: {
+      name: "tools_package_plan",
+      arguments: {
+        ids: ["rtk"]
+      }
+    }
+  });
+
+  const aiToolPackagePlanResponse = await transport.next();
+  assert.equal(aiToolPackagePlanResponse.result.isError, false);
+  assert.equal(aiToolPackagePlanResponse.result.structuredContent.packageReady, true);
+  assert.deepEqual(
+    aiToolPackagePlanResponse.result.structuredContent.tools.map((tool) => tool.id),
+    ["rtk"]
+  );
+  assert.equal(
+    aiToolPackagePlanResponse.result.structuredContent.tools[0].mimisbrunnrMountAllowed,
+    false
   );
 
   writeMcpMessage(child.stdin, {
@@ -153,6 +232,60 @@ test("mimir-mcp serves initialize, tools/list, list_context_tree, read_context_n
     `mimir://mimisbrunnr/note/${canonical.noteId}`
   );
   assert.equal(nodeResponse.result.structuredContent.data.node.authorityState, "canonical");
+
+  writeMcpMessage(child.stdin, {
+    jsonrpc: "2.0",
+    id: 401,
+    method: "tools/call",
+    params: {
+      name: "list_review_queue",
+      arguments: {}
+    }
+  });
+
+  const reviewQueueResponse = await transport.next();
+  assert.equal(reviewQueueResponse.result.isError, false);
+  const reviewQueueItem = reviewQueueResponse.result.structuredContent.data.items.find(
+    (item) => item.draftNoteId === staging.draftNoteId
+  );
+  assert.equal(reviewQueueItem?.title, "MCP Namespace Staging Node");
+  assert.equal(reviewQueueItem?.reviewState, "unreviewed");
+
+  writeMcpMessage(child.stdin, {
+    jsonrpc: "2.0",
+    id: 402,
+    method: "tools/call",
+    params: {
+      name: "read_review_note",
+      arguments: {
+        draftNoteId: staging.draftNoteId
+      }
+    }
+  });
+
+  const reviewReadResponse = await transport.next();
+  assert.equal(reviewReadResponse.result.isError, false);
+  assert.equal(reviewReadResponse.result.structuredContent.data.draftNoteId, staging.draftNoteId);
+  assert.match(reviewReadResponse.result.structuredContent.data.body, /## (Context|Summary)/);
+
+  writeMcpMessage(child.stdin, {
+    jsonrpc: "2.0",
+    id: 403,
+    method: "tools/call",
+    params: {
+      name: "reject_note",
+      arguments: {
+        draftNoteId: staging.draftNoteId,
+        reviewNotes: "Rejected through MCP thin review surface coverage."
+      }
+    }
+  });
+
+  const reviewRejectResponse = await transport.next();
+  assert.equal(reviewRejectResponse.result.isError, false);
+  assert.equal(reviewRejectResponse.result.structuredContent.ok, true);
+  assert.equal(reviewRejectResponse.result.structuredContent.data.rejected, true);
+  assert.equal(reviewRejectResponse.result.structuredContent.data.finalReviewState, "rejected");
 
   writeMcpMessage(child.stdin, {
     jsonrpc: "2.0",
@@ -359,6 +492,7 @@ test("mimir-mcp enforces registered actor tokens when auth mode is enforced", as
         MAB_PROVIDER_DOCKER_OLLAMA_BASE_URL: "http://127.0.0.1:1",
         MAB_OLLAMA_BASE_URL: "http://127.0.0.1:1",
         MAB_LOG_LEVEL: "error",
+        MAB_TOOL_REGISTRY_DIR: path.resolve("docker", "tool-registry"),
         MAB_AUTH_MODE: "enforced",
         MAB_AUTH_ACTOR_REGISTRY_JSON: JSON.stringify([
           {
@@ -434,6 +568,8 @@ test("mimir-mcp enforces registered actor tokens when auth mode is enforced", as
   const unauthorized = await transport.next();
   assert.equal(unauthorized.result.isError, true);
   assert.equal(unauthorized.result.structuredContent.error.code, "unauthorized");
+
+
 
   writeMcpMessage(child.stdin, {
     jsonrpc: "2.0",
@@ -536,6 +672,7 @@ test("mimir-mcp loads a file-backed actor registry and honors rotated credential
         MAB_PROVIDER_DOCKER_OLLAMA_BASE_URL: "http://127.0.0.1:1",
         MAB_OLLAMA_BASE_URL: "http://127.0.0.1:1",
         MAB_LOG_LEVEL: "error",
+        MAB_TOOL_REGISTRY_DIR: path.resolve("docker", "tool-registry"),
         MAB_AUTH_MODE: "enforced",
         MAB_AUTH_ACTOR_REGISTRY_PATH: registryPath
       },
@@ -606,6 +743,8 @@ test("mimir-mcp loads a file-backed actor registry and honors rotated credential
   assert.equal(expired.result.isError, true);
   assert.equal(expired.result.structuredContent.error.code, "unauthorized");
   assert.match(expired.result.structuredContent.error.message, /expired|inactive/i);
+
+
 
   writeMcpMessage(child.stdin, {
     jsonrpc: "2.0",

@@ -20,9 +20,21 @@ Then open the specific files for the task area.
 
 - trust runtime entrypoint code over planning docs
 - trust `packages/infrastructure/src/config/env.ts` over assumptions about `.env`
-- trust `apps/mimir-api/src/server.ts`, `apps/mimir-cli/src/main.ts`, and `apps/mimir-mcp/src/tool-definitions.ts` for transport surfaces
+- trust `packages/contracts/src/orchestration/command-catalog.ts` for routed runtime command identity
+- trust `packages/orchestration/src/root/actor-authorization-policy.ts` for command role policy and `getCommandAuthorizationRoles()`
+- trust `apps/mimir-api/src/server.ts`, `apps/mimir-cli/src/main.ts`, and `apps/mimir-mcp/src/tool-definitions.ts` for transport adapter surfaces
+- trust `packages/infrastructure/src/transport/request-validation.ts` for transport payload validator ownership
+- trust `packages/infrastructure/src/transport/request-field-validation.ts` for request field validator primitives
+- trust `packages/infrastructure/src/transport/coding-request-validation.ts` for coding request validator ownership
+- trust `packages/infrastructure/src/transport/transport-validation-error.ts` for transport validation error ownership
+- trust `packages/infrastructure/src/tools/tool-registry.ts` and `docker/tool-registry/*.json` for Docker AI tool registry ownership
 - trust `packages/infrastructure/src/bootstrap/build-service-container.ts` for runtime wiring
 - trust `tests/e2e/*.test.mjs` when docs and planning material disagree
+- use `tests/e2e/command-catalog.test.mjs` to catch CLI, HTTP, MCP, router, auth-policy, and transport-validator command drift
+- use `tests/e2e/transport-validation-boundaries.test.mjs` to catch shared transport validation error ownership regressions
+- use `tests/e2e/request-field-validation-boundaries.test.mjs` to preserve request field validation semantics
+- use `tests/e2e/coding-transport-validation-boundaries.test.mjs` to preserve coding transport validation semantics
+- use `tests/e2e/tool-registry.test.mjs` to preserve Docker AI tool manifest safety and validation rules
 
 ## Canonical edit zones by task
 
@@ -30,7 +42,8 @@ Then open the specific files for the task area.
 
 Start with:
 
-- `packages/contracts/src/**`
+- `packages/contracts/src/orchestration/command-catalog.ts` for routed command identity
+- `packages/contracts/src/**` for payload contracts
 - `apps/mimir-api/src/server.ts`
 - whichever orchestrator or service file handles the command
 - `documentation/reference/interfaces.md`
@@ -39,7 +52,8 @@ Start with:
 
 Start with:
 
-- `packages/contracts/src/**`
+- `packages/contracts/src/orchestration/command-catalog.ts` for routed command identity and default actor role
+- `packages/contracts/src/**` for payload contracts
 - `apps/mimir-cli/src/main.ts`
 - target orchestrator/service file
 - `documentation/reference/interfaces.md`
@@ -48,7 +62,8 @@ Start with:
 
 Start with:
 
-- `apps/mimir-mcp/src/tool-definitions.ts`
+- `packages/contracts/src/orchestration/command-catalog.ts` for routed command identity
+- `apps/mimir-mcp/src/tool-definitions.ts` for MCP schemas
 - `apps/mimir-mcp/src/main.ts`
 - target orchestrator/service file
 - `documentation/reference/interfaces.md`
@@ -74,6 +89,17 @@ Start with:
 - `packages/application/src/services/context-packet-service.ts`
 - `packages/infrastructure/src/fts/sqlite-fts-index.ts`
 - `packages/infrastructure/src/vector/qdrant-vector-index.ts`
+
+### Add or change a Docker AI tool
+
+Start with:
+
+- `docker/tool-registry/*.json` for declared tool identity, mounts, allowed Mimir commands, and review policy
+- `packages/infrastructure/src/tools/tool-registry.ts` for manifest validation rules
+- `docker/compose.tools.yml` for Docker Desktop profile wiring
+- `tests/e2e/tool-registry.test.mjs` for safety and validation regression coverage
+
+Do not add a direct mimisbrunnr mount. Tools that need durable memory should use governed Mimir commands and create drafts or session archives.
 
 ### Change coding behavior
 
@@ -110,7 +136,7 @@ Be especially careful in these files because they affect multiple runtime surfac
 - some planning docs still describe older rollout assumptions
 
 If you change the MCP surface, update the runtime, the docs, and
-`packages/contracts/src/mcp/index.ts` in the same pass.
+`packages/contracts/src/orchestration/command-catalog.ts` and `packages/contracts/src/mcp/index.ts` in the same pass.
 
 ## Practical onboarding path for agents
 

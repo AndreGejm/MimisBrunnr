@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -73,6 +73,237 @@ export function getCliWrapperPath(repoRoot) {
 
 export function getMcpWrapperPath(repoRoot) {
   return path.join(repoRoot, "scripts", "launch-mimir-mcp.mjs");
+}
+
+export function getDockerToolsComposePath(repoRoot) {
+  return path.join(repoRoot, "docker", "compose.tools.yml");
+}
+
+export function getDockerToolRegistryDir(repoRoot) {
+  return path.join(repoRoot, "docker", "tool-registry");
+}
+
+const DOCKER_TOOL_ID_PATTERN = /^[a-z][a-z0-9-]*$/;
+const DOCKER_TOOL_KINDS = new Set(["cli", "coding_agent", "repo_indexer", "mcp_server"]);
+const DOCKER_TOOL_MOUNT_ACCESSES = new Set(["none", "read_only", "read_write"]);
+const DOCKER_TOOL_MEMORY_POLICIES = new Set(["none", "session_only", "draft_note_only"]);
+
+export function evaluateDockerToolAssets(repoRoot) {
+  const composePath = getDockerToolsComposePath(repoRoot);
+  const registryDir = getDockerToolRegistryDir(repoRoot);
+  const manifestFiles = listDockerToolManifestFiles(registryDir);
+  const composeExists = existsSync(composePath);
+  const registryExists = existsSync(registryDir);
+  const manifests = summarizeDockerToolManifests(registryDir, manifestFiles);
+  const invalidManifestCount = manifests.filter((manifest) => manifest.status === "invalid").length;
+  const tools = manifests
+    .filter((manifest) => manifest.status === "valid")
+    .map((manifest) => manifest.tool);
+
+  return {
+    reusable: composeExists && registryExists && manifestFiles.length > 0 && invalidManifestCount === 0,
+    compose: {
+      path: composePath,
+      exists: composeExists
+    },
+    registry: {
+      path: registryDir,
+      exists: registryExists,
+      manifestCount: manifestFiles.length,
+      invalidManifestCount,
+      manifestFiles,
+      manifests,
+      tools
+    }
+  };
+}
+
+function listDockerToolManifestFiles(registryDir) {
+  if (!existsSync(registryDir)) {
+    return [];
+  }
+
+  try {
+    return readdirSync(registryDir)
+      .filter((entry) => entry.endsWith(".json"))
+      .sort((left, right) => left.localeCompare(right));
+  } catch {
+    return [];
+  }
+}
+
+function summarizeDockerToolManifests(registryDir, manifestFiles) {
+  return manifestFiles.map((fileName) =>
+    summarizeDockerToolManifest(path.join(registryDir, fileName), fileName)
+  );
+}
+
+function summarizeDockerToolManifest(filePath, fileName) {
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(filePath, "utf8"));
+  } catch (error) {
+    return {
+      fileName,
+      status: "invalid",
+      errors: [error instanceof Error ? error.message : String(error)]
+    };
+  }
+
+  const errors = [];
+  const tool = buildDockerToolSummary(parsed, errors);
+  if (errors.length > 0 || !tool) {
+    return {
+      fileName,
+      status: "invalid",
+      errors
+    };
+  }
+
+  return {
+    fileName,
+    status: "valid",
+    errors: [],
+    tool
+  };
+}
+
+function buildDockerToolSummary(value, errors) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    errors.push("manifest must be a JSON object");
+    return null;
+  }
+
+  const manifest = value;
+  const id = readRequiredPattern(manifest, "id", DOCKER_TOOL_ID_PATTERN, errors);
+  const kind = readRequiredEnum(manifest, "kind", DOCKER_TOOL_KINDS, errors);
+  const image = readRequiredString(manifest, "image", errors);
+  const dockerProfile = readRequiredPattern(manifest, "dockerProfile", DOCKER_TOOL_ID_PATTERN, errors);
+  const entrypoint = readRequiredStringArray(manifest, "entrypoint", errors);
+  readRequiredString(manifest, "displayName", errors);
+  readRequiredStringArray(manifest, "capabilities", errors);
+  const mounts = readRequiredObject(manifest, "mounts", errors);
+  const workspaceMount = mounts
+    ? readRequiredEnum(mounts, "mounts.workspace", DOCKER_TOOL_MOUNT_ACCESSES, errors, "workspace")
+    : undefined;
+  const cacheMount = mounts
+    ? readRequiredEnum(mounts, "mounts.cache", DOCKER_TOOL_MOUNT_ACCESSES, errors, "cache")
+    : undefined;
+  const mimisbrunnrMount = mounts
+    ? readRequiredEnum(mounts, "mounts.mimisbrunnr", DOCKER_TOOL_MOUNT_ACCESSES, errors, "mimisbrunnr")
+    : undefined;
+  if (mimisbrunnrMount && mimisbrunnrMount !== "none") {
+    errors.push("mounts.mimisbrunnr must be none");
+  }
+
+  const memoryWritePolicy = readRequiredEnum(
+    manifest,
+    "memoryWritePolicy",
+    DOCKER_TOOL_MEMORY_POLICIES,
+    errors
+  );
+  const allowedMimirCommands = readRequiredStringArray(
+    manifest,
+    "allowedMimirCommands",
+    errors,
+    "allowedMimirCommands",
+    { allowEmpty: true }
+  );
+  readRequiredString(manifest, "authRole", errors);
+  const requiresOperatorReview = readRequiredBoolean(manifest, "requiresOperatorReview", errors);
+  const healthcheck = readRequiredObject(manifest, "healthcheck", errors);
+  if (healthcheck) {
+    readRequiredStringArray(healthcheck, "healthcheck.command", errors, "command");
+  }
+
+  if (errors.length > 0) {
+    return null;
+  }
+
+  return {
+    id,
+    kind,
+    image,
+    dockerProfile,
+    entrypoint,
+    workspaceMount,
+    cacheMount,
+    memoryWritePolicy,
+    allowedMimirCommands,
+    requiresOperatorReview
+  };
+}
+
+function readRequiredObject(record, field, errors, propertyName = field) {
+  const value = record[propertyName];
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    errors.push(`${field} must be a JSON object`);
+    return null;
+  }
+
+  return value;
+}
+
+function readRequiredString(record, field, errors, propertyName = field) {
+  const value = record[propertyName];
+  if (typeof value !== "string" || value.trim() === "") {
+    errors.push(`${field} must be a non-empty string`);
+    return undefined;
+  }
+
+  return value;
+}
+
+function readRequiredPattern(record, field, pattern, errors, propertyName = field) {
+  const value = readRequiredString(record, field, errors, propertyName);
+  if (value !== undefined && !pattern.test(value)) {
+    errors.push(`${field} must match ${pattern}`);
+  }
+
+  return value;
+}
+
+function readRequiredEnum(record, field, allowedValues, errors, propertyName = field) {
+  const value = readRequiredString(record, field, errors, propertyName);
+  if (value !== undefined && !allowedValues.has(value)) {
+    errors.push(`${field} must be one of ${[...allowedValues].join(", ")}`);
+  }
+
+  return value;
+}
+
+function readRequiredBoolean(record, field, errors, propertyName = field) {
+  const value = record[propertyName];
+  if (typeof value !== "boolean") {
+    errors.push(`${field} must be a boolean`);
+    return undefined;
+  }
+
+  return value;
+}
+
+function readRequiredStringArray(record, field, errors, propertyName = field, options = {}) {
+  const value = record[propertyName];
+  if (!Array.isArray(value)) {
+    errors.push(`${field} must be a string array`);
+    return undefined;
+  }
+
+  if (value.length === 0 && options.allowEmpty !== true) {
+    errors.push(`${field} must be a non-empty string array`);
+    return undefined;
+  }
+
+  const strings = [];
+  for (const [index, item] of value.entries()) {
+    if (typeof item !== "string" || item.trim() === "") {
+      errors.push(`${field}[${index}] must be a non-empty string`);
+      continue;
+    }
+    strings.push(item);
+  }
+
+  return strings;
 }
 
 export function renderCodexMcpServerBlock(name, command, args) {
@@ -233,6 +464,8 @@ export function evaluateDefaultAccess({
   const launchersOnPath = pathContainsBinDir(pathValue, launcherBinDir);
   const codexConfigured = hasCodexMcpServerBlock(configText, serverName);
 
+  const dockerTools = evaluateDockerToolAssets(repoRoot);
+
   const report = {
     status: "degraded",
     repoRoot,
@@ -274,6 +507,7 @@ export function evaluateDefaultAccess({
       error: manifest.error,
       content: manifest.value
     },
+    dockerTools,
     recommendations: []
   };
 
@@ -303,6 +537,12 @@ export function evaluateDefaultAccess({
   if (!launchersInstalled || !launchersOnPath) {
     report.recommendations.push(
       "Run install-mimir-launchers.mjs or install-default-access.mjs and ensure the launcher bin directory is on PATH."
+    );
+  }
+
+  if (!dockerTools.reusable) {
+    report.recommendations.push(
+      "Package reusable Docker tool assets: docker/compose.tools.yml and valid docker/tool-registry/*.json manifests."
     );
   }
 

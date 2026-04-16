@@ -13,6 +13,7 @@ import type {
   MetadataControlStore,
   NoteValidationService,
   PromotionOrchestratorService,
+  ReviewCommandService,
   RetrieveContextService,
   RerankerProvider,
   SessionArchiveStore,
@@ -23,6 +24,7 @@ import type {
   VectorIndex
 } from "@mimir/application";
 import type { LocalAgentTraceStore, ToolOutputStore } from "@mimir/domain";
+import type { ExternalSourceRegistry } from "@mimir/contracts";
 import {
   AuditHistoryService as ConcreteAuditHistoryService,
   AgentContextAssemblyService as ConcreteAgentContextAssemblyService,
@@ -36,6 +38,7 @@ import {
   HierarchicalRetrievalService as ConcreteHierarchicalRetrievalService,
   NoteValidationService as ConcreteNoteValidationService,
   PromotionOrchestratorService as ConcretePromotionOrchestratorService,
+  ReviewCommandService as ConcreteReviewCommandService,
   RetrieveContextService as ConcreteRetrieveContextService,
   SessionArchiveService as ConcreteSessionArchiveService,
   StagingDraftService as ConcreteStagingDraftService,
@@ -51,20 +54,14 @@ import {
   MimirOrchestrator,
   ModelRoleRegistry,
   RoleProviderRegistry,
-  TaskFamilyRouter,
-  type ModelRoleBinding
+  TaskFamilyRouter
 } from "@mimir/orchestration";
 import { PythonCodingControllerBridge } from "../coding/python-coding-controller-bridge.js";
+import { buildDefaultExternalSourceRegistry } from "../external-sources/external-source-registry.js";
+import { FileSystemToolRegistry } from "../tools/tool-registry.js";
 import { loadEnvironment, normalizeEnvironment, type AppEnvironment } from "../config/env.js";
 import { SqliteFtsIndex } from "../fts/sqlite-fts-index.js";
-import { HashEmbeddingProvider } from "../providers/hash-embedding-provider.js";
-import { HeuristicLocalReasoningProvider } from "../providers/heuristic-local-reasoning-provider.js";
-import { HeuristicRerankerProvider } from "../providers/heuristic-reranker-provider.js";
-import { OpenAiCompatibleLocalReasoningProvider } from "../providers/openai-compatible-local-reasoning-provider.js";
-import { OllamaDraftingProvider } from "../providers/ollama-drafting-provider.js";
-import { OllamaEmbeddingProvider } from "../providers/ollama-embedding-provider.js";
-import { OllamaLocalReasoningProvider } from "../providers/ollama-local-reasoning-provider.js";
-import { OllamaRerankerProvider } from "../providers/ollama-reranker-provider.js";
+import { buildDefaultProviderFactoryRegistry } from "../providers/provider-factory-registry.js";
 import { SqliteAuditLog } from "../sqlite/sqlite-audit-log.js";
 import { SqliteContextNamespaceStore } from "../sqlite/sqlite-context-namespace-store.js";
 import { SqliteContextRepresentationStore } from "../sqlite/sqlite-context-representation-store.js";
@@ -95,6 +92,7 @@ export interface ServicePortRegistry {
   localReasoningProvider?: LocalReasoningProvider;
   draftingProvider?: DraftingProvider;
   rerankerProvider?: RerankerProvider;
+  externalSourceRegistry: ExternalSourceRegistry;
   modelRoleRegistry: ModelRoleRegistry;
   roleProviderRegistry: RoleProviderRegistry;
 }
@@ -110,6 +108,7 @@ export interface ServiceRegistry {
   agentContextAssemblyService: AgentContextAssemblyService;
   contextPacketService: ConcreteContextPacketService;
   decisionSummaryService: ConcreteDecisionSummaryService;
+  reviewCommandService: ReviewCommandService;
   importOrchestrationService: ConcreteImportOrchestrationService;
   contextNamespaceService: ConcreteContextNamespaceService;
   contextRepresentationService: ConcreteContextRepresentationService;
@@ -154,36 +153,39 @@ export function buildServiceContainer(
   });
 
   const modelRoleRegistry = new ModelRoleRegistry(Object.values(env.roleBindings));
+  const providerFactoryRegistry = buildDefaultProviderFactoryRegistry();
   const roleProviderRegistry = new RoleProviderRegistry({
     embeddingProviders: {
-      embedding_primary: createEmbeddingProvider(
-        modelRoleRegistry.resolve("embedding_primary"),
-        env
-      )
+      embedding_primary: providerFactoryRegistry.createEmbedding({
+        env,
+        binding: modelRoleRegistry.resolve("embedding_primary")
+      })
     },
     reasoningProviders: {
-      mimisbrunnr_primary: createReasoningProvider(
-        modelRoleRegistry.resolve("mimisbrunnr_primary"),
-        env
-      ),
-      paid_escalation: createReasoningProvider(
-        modelRoleRegistry.resolve("paid_escalation"),
-        env
-      )
+      mimisbrunnr_primary: providerFactoryRegistry.createReasoning({
+        env,
+        binding: modelRoleRegistry.resolve("mimisbrunnr_primary")
+      }),
+      paid_escalation: providerFactoryRegistry.createReasoning({
+        env,
+        binding: modelRoleRegistry.resolve("paid_escalation")
+      })
     },
     draftingProviders: {
-      mimisbrunnr_primary: createDraftingProvider(
-        modelRoleRegistry.resolve("mimisbrunnr_primary"),
-        env
-      )
+      mimisbrunnr_primary: providerFactoryRegistry.createDrafting({
+        env,
+        binding: modelRoleRegistry.resolve("mimisbrunnr_primary")
+      })
     },
     rerankerProviders: {
-      reranker_primary: createRerankerProvider(
-        modelRoleRegistry.resolve("reranker_primary"),
-        env
-      )
+      reranker_primary: providerFactoryRegistry.createReranker({
+        env,
+        binding: modelRoleRegistry.resolve("reranker_primary")
+      })
     }
   });
+
+  const externalSourceRegistry = buildDefaultExternalSourceRegistry();
 
   const embeddingProvider =
     roleProviderRegistry.getEmbeddingProvider("embedding_primary");
@@ -249,6 +251,11 @@ export function buildServiceContainer(
   const decisionSummaryService = new ConcreteDecisionSummaryService(
     retrieveContextService,
     auditHistoryService
+  );
+  const reviewCommandService = new ConcreteReviewCommandService(
+    stagingNoteRepository,
+    metadataControlStore,
+    promotionOrchestratorService
   );
   const importOrchestrationService = new ConcreteImportOrchestrationService(
     importJobStore
@@ -318,13 +325,15 @@ export function buildServiceContainer(
     },
     toolOutputBudgetService
   );
+  const toolRegistry = new FileSystemToolRegistry(env.toolRegistryDir);
   const orchestrator = new MimirOrchestrator(
     new TaskFamilyRouter(),
     mimisbrunnrController,
     codingDomainController,
     authPolicy,
     modelRoleRegistry,
-    roleProviderRegistry
+    roleProviderRegistry,
+    toolRegistry
   );
 
   return {
@@ -346,6 +355,7 @@ export function buildServiceContainer(
       localReasoningProvider,
       draftingProvider,
       rerankerProvider,
+      externalSourceRegistry,
       modelRoleRegistry,
       roleProviderRegistry
     },
@@ -360,6 +370,7 @@ export function buildServiceContainer(
       agentContextAssemblyService,
       contextPacketService,
       decisionSummaryService,
+      reviewCommandService,
       importOrchestrationService,
       contextNamespaceService,
       contextRepresentationService,
@@ -382,118 +393,6 @@ export function buildServiceContainer(
       closeIfSupported(revocationStore);
     }
   };
-}
-
-function createEmbeddingProvider(
-  binding: ModelRoleBinding,
-  env: AppEnvironment
-): EmbeddingProvider | undefined {
-  switch (binding.providerId) {
-    case "disabled":
-      return undefined;
-    case "internal_hash":
-      return new HashEmbeddingProvider();
-    case "docker_ollama":
-      return new OllamaEmbeddingProvider({
-        baseUrl: env.providerEndpoints.dockerOllamaBaseUrl,
-        model: binding.modelId ?? env.ollamaEmbeddingModel,
-        fallback: env.disableProviderFallbacks
-          ? undefined
-          : new HashEmbeddingProvider()
-      });
-    default:
-      throw new Error(`Unsupported embedding provider '${binding.providerId}'.`);
-  }
-}
-
-function createReasoningProvider(
-  binding: ModelRoleBinding,
-  env: AppEnvironment
-): LocalReasoningProvider | undefined {
-  switch (binding.providerId) {
-    case "disabled":
-      return undefined;
-    case "internal_heuristic":
-      return new HeuristicLocalReasoningProvider();
-    case "docker_ollama":
-      return new OllamaLocalReasoningProvider({
-        baseUrl: env.providerEndpoints.dockerOllamaBaseUrl,
-        model: binding.modelId ?? env.ollamaReasoningModel,
-        temperature: binding.temperature,
-        seed: binding.seed,
-        maxOutputTokens: binding.maxOutputTokens,
-        timeoutMs: binding.timeoutMs,
-        fallback: env.disableProviderFallbacks
-          ? undefined
-          : new HeuristicLocalReasoningProvider()
-      });
-    case "paid_openai_compat":
-      if (!env.providerEndpoints.paidEscalationBaseUrl || !binding.modelId) {
-        return undefined;
-      }
-
-      return new OpenAiCompatibleLocalReasoningProvider({
-        baseUrl: env.providerEndpoints.paidEscalationBaseUrl,
-        apiKey: env.providerEndpoints.paidEscalationApiKey,
-        model: binding.modelId,
-        temperature: binding.temperature,
-        seed: binding.seed,
-        maxOutputTokens: binding.maxOutputTokens,
-        timeoutMs: binding.timeoutMs,
-        fallback: env.disableProviderFallbacks
-          ? undefined
-          : new HeuristicLocalReasoningProvider()
-      });
-    default:
-      throw new Error(`Unsupported reasoning provider '${binding.providerId}'.`);
-  }
-}
-
-function createDraftingProvider(
-  binding: ModelRoleBinding,
-  env: AppEnvironment
-): DraftingProvider | undefined {
-  switch (binding.providerId) {
-    case "disabled":
-      return undefined;
-    case "docker_ollama":
-      return new OllamaDraftingProvider({
-        baseUrl: env.providerEndpoints.dockerOllamaBaseUrl,
-        model: binding.modelId ?? env.ollamaDraftingModel,
-        temperature: binding.temperature,
-        seed: binding.seed,
-        maxOutputTokens: binding.maxOutputTokens,
-        timeoutMs: binding.timeoutMs
-      });
-    default:
-      return undefined;
-  }
-}
-
-function createRerankerProvider(
-  binding: ModelRoleBinding,
-  env: AppEnvironment
-): RerankerProvider | undefined {
-  switch (binding.providerId) {
-    case "disabled":
-      return undefined;
-    case "internal_heuristic":
-      return new HeuristicRerankerProvider();
-    case "docker_ollama":
-      return new OllamaRerankerProvider({
-        baseUrl: env.providerEndpoints.dockerOllamaBaseUrl,
-        model: binding.modelId ?? "qwen3-reranker",
-        temperature: binding.temperature,
-        seed: binding.seed,
-        maxOutputTokens: binding.maxOutputTokens,
-        timeoutMs: binding.timeoutMs,
-        fallback: env.disableProviderFallbacks
-          ? undefined
-          : new HeuristicRerankerProvider()
-      });
-    default:
-      throw new Error(`Unsupported reranker provider '${binding.providerId}'.`);
-  }
 }
 
 function closeIfSupported(resource: unknown): void {

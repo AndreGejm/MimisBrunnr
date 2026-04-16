@@ -1,4 +1,32 @@
-type JsonRecord = Record<string, unknown>;
+import {
+  RUNTIME_COMMAND_DEFINITIONS,
+  toCliCommandName,
+  type RuntimeCliCommandName
+} from "@mimir/contracts";
+import {
+  optionalBoolean,
+  optionalEnum,
+  optionalEnumArray,
+  optionalInteger,
+  optionalString,
+  optionalStringArray,
+  requestValidationError,
+  requireArray,
+  requireBoolean,
+  requireEnum,
+  requireEnumArray,
+  requireInteger,
+  requireNumber,
+  requireObject,
+  requireString,
+  requireStringArray,
+  type JsonRecord
+} from "./request-field-validation.js";
+import {
+  validateExecuteCodingTaskRequest,
+  validateListAgentTracesRequest,
+  validateShowToolOutputRequest
+} from "./coding-request-validation.js";
 
 const ACTOR_ROLES = new Set([
   "retrieval",
@@ -22,6 +50,7 @@ const CORPUS_ALIASES = new Map<string, string>([
   ["multi-agent-brain", "mimisbrunnr"],
   ["multiagentbrain", "mimisbrunnr"]
 ]);
+const CONTEXT_ALIAS_OPTIONS = { aliases: CORPUS_ALIASES };
 const NOTE_TYPES = new Set([
   "decision",
   "constraint",
@@ -73,14 +102,6 @@ const SESSION_ARCHIVE_MESSAGE_ROLES = new Set([
   "assistant",
   "tool"
 ]);
-const CODING_TASK_TYPES = new Set([
-  "triage",
-  "review",
-  "draft_patch",
-  "generate_tests",
-  "summarize_diff",
-  "propose_fix"
-]);
 const STALENESS_CLASSES = new Set(["current", "stale", "superseded"]);
 const TEMPORAL_REFRESH_STATES = new Set([
   "expired",
@@ -88,26 +109,177 @@ const TEMPORAL_REFRESH_STATES = new Set([
   "expiring_soon"
 ]);
 
-export class TransportValidationError extends Error {
-  constructor(
-    message: string,
-    readonly details?: Record<string, unknown>
-  ) {
-    super(message);
-    this.name = "TransportValidationError";
-  }
+type TransportCommandValidator = (
+  payload: JsonRecord,
+  actor: JsonRecord | undefined
+) => JsonRecord;
 
-  toServiceError(): {
-    code: "validation_failed";
-    message: string;
-    details?: Record<string, unknown>;
-  } {
-    return {
-      code: "validation_failed",
-      message: this.message,
-      details: this.details
-    };
-  }
+const TRANSPORT_COMMAND_VALIDATORS: Record<RuntimeCliCommandName, TransportCommandValidator> = {
+  "execute-coding-task": validateExecuteCodingTaskRequest,
+  "list-agent-traces": validateListAgentTracesRequest,
+  "show-tool-output": validateShowToolOutputRequest,
+  "list-ai-tools": (payload, actor) => ({
+    actor,
+    ids: optionalStringArray(payload.ids, "ids"),
+    includeEnvironment: optionalBoolean(payload.includeEnvironment, "includeEnvironment"),
+    includeRuntime: optionalBoolean(payload.includeRuntime, "includeRuntime")
+  }),
+  "check-ai-tools": (payload, actor) => ({
+    actor,
+    ids: optionalStringArray(payload.ids, "ids")
+  }),
+  "tools-package-plan": (payload, actor) => ({
+    actor,
+    ids: optionalStringArray(payload.ids, "ids")
+  }),
+  "search-context": (payload, actor) => ({
+    actor,
+    query: requireString(payload.query, "query"),
+    budget: validateBudget(payload.budget, "budget"),
+    corpusIds: requireEnumArray(payload.corpusIds, "corpusIds", CORPORA, { ...CONTEXT_ALIAS_OPTIONS, minItems: 1 }),
+    strategy: optionalEnum(payload.strategy, "strategy", RETRIEVAL_STRATEGIES),
+    intentHint: optionalEnum(payload.intentHint, "intentHint", QUERY_INTENTS),
+    noteTypePriority: optionalEnumArray(payload.noteTypePriority, "noteTypePriority", NOTE_TYPES),
+    tagFilters: optionalStringArray(payload.tagFilters, "tagFilters"),
+    includeSuperseded: optionalBoolean(payload.includeSuperseded, "includeSuperseded"),
+    requireEvidence: optionalBoolean(payload.requireEvidence, "requireEvidence"),
+    includeTrace: optionalBoolean(payload.includeTrace, "includeTrace")
+  }),
+  "search-session-archives": (payload, actor) => ({
+    actor,
+    query: requireString(payload.query, "query"),
+    sessionId: optionalString(payload.sessionId, "sessionId"),
+    limit: optionalInteger(payload.limit, "limit", { min: 1 }),
+    maxTokens: optionalInteger(payload.maxTokens, "maxTokens", { min: 1 })
+  }),
+  "assemble-agent-context": (payload, actor) => ({
+    actor,
+    query: requireString(payload.query, "query"),
+    budget: validateBudget(payload.budget, "budget"),
+    corpusIds: requireEnumArray(payload.corpusIds, "corpusIds", CORPORA, { ...CONTEXT_ALIAS_OPTIONS, minItems: 1 }),
+    includeTrace: optionalBoolean(payload.includeTrace, "includeTrace"),
+    includeSessionArchives: optionalBoolean(payload.includeSessionArchives, "includeSessionArchives"),
+    sessionId: optionalString(payload.sessionId, "sessionId"),
+    sessionLimit: optionalInteger(payload.sessionLimit, "sessionLimit", { min: 1 }),
+    sessionMaxTokens: optionalInteger(payload.sessionMaxTokens, "sessionMaxTokens", { min: 1 })
+  }),
+  "list-context-tree": (payload, actor) => ({
+    actor,
+    ownerScope: optionalEnum(payload.ownerScope, "ownerScope", CONTEXT_OWNER_SCOPES, CONTEXT_ALIAS_OPTIONS),
+    authorityStates: optionalEnumArray(
+      payload.authorityStates,
+      "authorityStates",
+      CONTEXT_AUTHORITY_STATES
+    )
+  }),
+  "read-context-node": (payload, actor) => ({
+    actor,
+    uri: requireString(payload.uri, "uri")
+  }),
+  "get-context-packet": (payload, actor) => ({
+    actor,
+    intent: requireEnum(payload.intent, "intent", QUERY_INTENTS),
+    budget: validateBudget(payload.budget, "budget"),
+    candidates: validateCandidates(payload.candidates, "candidates"),
+    includeRawExcerpts: requireBoolean(payload.includeRawExcerpts, "includeRawExcerpts")
+  }),
+  "fetch-decision-summary": (payload, actor) => ({
+    actor,
+    topic: requireString(payload.topic, "topic"),
+    budget: validateBudget(payload.budget, "budget")
+  }),
+  "draft-note": (payload, actor) => ({
+    actor,
+    targetCorpus: requireEnum(payload.targetCorpus, "targetCorpus", CORPORA, CONTEXT_ALIAS_OPTIONS),
+    noteType: requireEnum(payload.noteType, "noteType", NOTE_TYPES),
+    title: requireString(payload.title, "title"),
+    sourcePrompt: requireString(payload.sourcePrompt, "sourcePrompt"),
+    supportingSources: validateSupportingSources(payload.supportingSources, "supportingSources"),
+    frontmatterOverrides: optionalFrontmatterOverrides(payload.frontmatterOverrides, "frontmatterOverrides"),
+    bodyHints: optionalStringArray(payload.bodyHints, "bodyHints")
+  }),
+  "list-review-queue": (payload, actor) => ({
+    actor,
+    targetCorpus: optionalEnum(payload.targetCorpus, "targetCorpus", CORPORA, CONTEXT_ALIAS_OPTIONS),
+    includeRejected: optionalBoolean(payload.includeRejected, "includeRejected")
+  }),
+  "read-review-note": (payload, actor) => ({
+    actor,
+    draftNoteId: requireString(payload.draftNoteId, "draftNoteId")
+  }),
+  "accept-note": (payload, actor) => ({
+    actor,
+    draftNoteId: requireString(payload.draftNoteId, "draftNoteId")
+  }),
+  "reject-note": (payload, actor) => ({
+    actor,
+    draftNoteId: requireString(payload.draftNoteId, "draftNoteId"),
+    reviewNotes: optionalString(payload.reviewNotes, "reviewNotes")
+  }),
+  "create-refresh-draft": (payload, actor) => ({
+    actor,
+    noteId: requireString(payload.noteId, "noteId"),
+    asOf: optionalString(payload.asOf, "asOf"),
+    expiringWithinDays: optionalInteger(payload.expiringWithinDays, "expiringWithinDays", { min: 1 }),
+    bodyHints: optionalStringArray(payload.bodyHints, "bodyHints")
+  }),
+  "create-refresh-drafts": (payload, actor) => ({
+    actor,
+    asOf: optionalString(payload.asOf, "asOf"),
+    expiringWithinDays: optionalInteger(payload.expiringWithinDays, "expiringWithinDays", { min: 1 }),
+    corpusId: optionalEnum(payload.corpusId, "corpusId", CORPORA, CONTEXT_ALIAS_OPTIONS),
+    limitPerCategory: optionalInteger(payload.limitPerCategory, "limitPerCategory", { min: 1 }),
+    maxDrafts: optionalInteger(payload.maxDrafts, "maxDrafts", { min: 1 }),
+    sourceStates: optionalEnumArray(
+      payload.sourceStates,
+      "sourceStates",
+      TEMPORAL_REFRESH_STATES
+    ),
+    bodyHints: optionalStringArray(payload.bodyHints, "bodyHints")
+  }),
+  "validate-note": (payload, actor) => ({
+    actor,
+    targetCorpus: requireEnum(payload.targetCorpus, "targetCorpus", CORPORA, CONTEXT_ALIAS_OPTIONS),
+    notePath: requireString(payload.notePath, "notePath"),
+    frontmatter: validateNoteFrontmatter(payload.frontmatter, "frontmatter"),
+    body: requireString(payload.body, "body"),
+    validationMode: requireEnum(payload.validationMode, "validationMode", new Set(["draft", "promotion"]))
+  }),
+  "promote-note": (payload, actor) => ({
+    actor,
+    draftNoteId: requireString(payload.draftNoteId, "draftNoteId"),
+    targetCorpus: requireEnum(payload.targetCorpus, "targetCorpus", CORPORA, CONTEXT_ALIAS_OPTIONS),
+    expectedDraftRevision: optionalString(payload.expectedDraftRevision, "expectedDraftRevision"),
+    targetPath: optionalString(payload.targetPath, "targetPath"),
+    promoteAsCurrentState: requireBoolean(payload.promoteAsCurrentState, "promoteAsCurrentState")
+  }),
+  "import-resource": (payload, actor) => ({
+    actor,
+    sourcePath: requireString(payload.sourcePath, "sourcePath"),
+    importKind: requireString(payload.importKind, "importKind")
+  }),
+  "query-history": (payload, actor) => ({
+    actor,
+    noteId: optionalString(payload.noteId, "noteId"),
+    since: optionalString(payload.since, "since"),
+    until: optionalString(payload.until, "until"),
+    limit: requireInteger(payload.limit, "limit", { min: 1 })
+  }),
+  "create-session-archive": (payload, actor) => ({
+    actor,
+    sessionId: requireString(payload.sessionId, "sessionId"),
+    messages: validateSessionArchiveMessages(payload.messages, "messages")
+  })
+};
+
+export function getSupportedTransportCommandNames(): RuntimeCliCommandName[] {
+  return RUNTIME_COMMAND_DEFINITIONS.map((command) => {
+    if (!TRANSPORT_COMMAND_VALIDATORS[command.cliName]) {
+      throw new Error(`Transport validator is not registered for runtime command '${command.cliName}'.`);
+    }
+
+    return command.cliName;
+  });
 }
 
 export function validateTransportRequest(
@@ -118,174 +290,15 @@ export function validateTransportRequest(
   const actor = payload.actor === undefined
     ? undefined
     : validateActorOverride(payload.actor, "actor");
+  const validator = (TRANSPORT_COMMAND_VALIDATORS as Partial<Record<string, TransportCommandValidator>>)[
+    normalizedCommand
+  ];
 
-  switch (normalizedCommand) {
-    case "execute-coding-task":
-      return {
-        actor,
-        taskType: requireEnum(payload.taskType, "taskType", CODING_TASK_TYPES),
-        task: requireString(payload.task, "task"),
-        context: optionalString(payload.context, "context"),
-        memoryContext: validateCodingMemoryContext(payload.memoryContext, "memoryContext"),
-        repoRoot: optionalString(payload.repoRoot, "repoRoot"),
-        filePath: optionalString(payload.filePath, "filePath"),
-        symbolName: optionalString(payload.symbolName, "symbolName"),
-        diffText: optionalString(payload.diffText, "diffText"),
-        pytestTarget: optionalString(payload.pytestTarget, "pytestTarget"),
-        lintTarget: optionalString(payload.lintTarget, "lintTarget")
-      };
-    case "search-context":
-      return {
-        actor,
-        query: requireString(payload.query, "query"),
-        budget: validateBudget(payload.budget, "budget"),
-        corpusIds: requireEnumArray(payload.corpusIds, "corpusIds", CORPORA, { minItems: 1 }),
-        strategy: optionalEnum(payload.strategy, "strategy", RETRIEVAL_STRATEGIES),
-        intentHint: optionalEnum(payload.intentHint, "intentHint", QUERY_INTENTS),
-        noteTypePriority: optionalEnumArray(payload.noteTypePriority, "noteTypePriority", NOTE_TYPES),
-        tagFilters: optionalStringArray(payload.tagFilters, "tagFilters"),
-        includeSuperseded: optionalBoolean(payload.includeSuperseded, "includeSuperseded"),
-        requireEvidence: optionalBoolean(payload.requireEvidence, "requireEvidence"),
-        includeTrace: optionalBoolean(payload.includeTrace, "includeTrace")
-      };
-    case "search-session-archives":
-      return {
-        actor,
-        query: requireString(payload.query, "query"),
-        sessionId: optionalString(payload.sessionId, "sessionId"),
-        limit: optionalInteger(payload.limit, "limit", { min: 1 }),
-        maxTokens: optionalInteger(payload.maxTokens, "maxTokens", { min: 1 })
-      };
-    case "assemble-agent-context":
-      return {
-        actor,
-        query: requireString(payload.query, "query"),
-        budget: validateBudget(payload.budget, "budget"),
-        corpusIds: requireEnumArray(payload.corpusIds, "corpusIds", CORPORA, { minItems: 1 }),
-        includeTrace: optionalBoolean(payload.includeTrace, "includeTrace"),
-        includeSessionArchives: optionalBoolean(payload.includeSessionArchives, "includeSessionArchives"),
-        sessionId: optionalString(payload.sessionId, "sessionId"),
-        sessionLimit: optionalInteger(payload.sessionLimit, "sessionLimit", { min: 1 }),
-        sessionMaxTokens: optionalInteger(payload.sessionMaxTokens, "sessionMaxTokens", { min: 1 })
-      };
-    case "list-context-tree":
-      return {
-        actor,
-        ownerScope: optionalEnum(payload.ownerScope, "ownerScope", CONTEXT_OWNER_SCOPES),
-        authorityStates: optionalEnumArray(
-          payload.authorityStates,
-          "authorityStates",
-          CONTEXT_AUTHORITY_STATES
-        )
-      };
-    case "read-context-node":
-      return {
-        actor,
-        uri: requireString(payload.uri, "uri")
-      };
-    case "get-context-packet":
-      return {
-        actor,
-        intent: requireEnum(payload.intent, "intent", QUERY_INTENTS),
-        budget: validateBudget(payload.budget, "budget"),
-        candidates: validateCandidates(payload.candidates, "candidates"),
-        includeRawExcerpts: requireBoolean(payload.includeRawExcerpts, "includeRawExcerpts")
-      };
-    case "fetch-decision-summary":
-      return {
-        actor,
-        topic: requireString(payload.topic, "topic"),
-        budget: validateBudget(payload.budget, "budget")
-      };
-    case "draft-note":
-      return {
-        actor,
-        targetCorpus: requireEnum(payload.targetCorpus, "targetCorpus", CORPORA),
-        noteType: requireEnum(payload.noteType, "noteType", NOTE_TYPES),
-        title: requireString(payload.title, "title"),
-        sourcePrompt: requireString(payload.sourcePrompt, "sourcePrompt"),
-        supportingSources: validateSupportingSources(payload.supportingSources, "supportingSources"),
-        frontmatterOverrides: optionalFrontmatterOverrides(payload.frontmatterOverrides, "frontmatterOverrides"),
-        bodyHints: optionalStringArray(payload.bodyHints, "bodyHints")
-      };
-    case "create-refresh-draft":
-      return {
-        actor,
-        noteId: requireString(payload.noteId, "noteId"),
-        asOf: optionalString(payload.asOf, "asOf"),
-        expiringWithinDays: optionalInteger(payload.expiringWithinDays, "expiringWithinDays", { min: 1 }),
-        bodyHints: optionalStringArray(payload.bodyHints, "bodyHints")
-      };
-    case "create-refresh-drafts":
-      return {
-        actor,
-        asOf: optionalString(payload.asOf, "asOf"),
-        expiringWithinDays: optionalInteger(payload.expiringWithinDays, "expiringWithinDays", { min: 1 }),
-        corpusId: optionalEnum(payload.corpusId, "corpusId", CORPORA),
-        limitPerCategory: optionalInteger(payload.limitPerCategory, "limitPerCategory", { min: 1 }),
-        maxDrafts: optionalInteger(payload.maxDrafts, "maxDrafts", { min: 1 }),
-        sourceStates: optionalEnumArray(
-          payload.sourceStates,
-          "sourceStates",
-          TEMPORAL_REFRESH_STATES
-        ),
-        bodyHints: optionalStringArray(payload.bodyHints, "bodyHints")
-      };
-    case "validate-note":
-      return {
-        actor,
-        targetCorpus: requireEnum(payload.targetCorpus, "targetCorpus", CORPORA),
-        notePath: requireString(payload.notePath, "notePath"),
-        frontmatter: validateNoteFrontmatter(payload.frontmatter, "frontmatter"),
-        body: requireString(payload.body, "body"),
-        validationMode: requireEnum(payload.validationMode, "validationMode", new Set(["draft", "promotion"]))
-      };
-    case "promote-note":
-      return {
-        actor,
-        draftNoteId: requireString(payload.draftNoteId, "draftNoteId"),
-        targetCorpus: requireEnum(payload.targetCorpus, "targetCorpus", CORPORA),
-        expectedDraftRevision: optionalString(payload.expectedDraftRevision, "expectedDraftRevision"),
-        targetPath: optionalString(payload.targetPath, "targetPath"),
-        promoteAsCurrentState: requireBoolean(payload.promoteAsCurrentState, "promoteAsCurrentState")
-      };
-    case "query-history":
-      return {
-        actor,
-        noteId: optionalString(payload.noteId, "noteId"),
-        since: optionalString(payload.since, "since"),
-        until: optionalString(payload.until, "until"),
-        limit: requireInteger(payload.limit, "limit", { min: 1 })
-      };
-    case "list-agent-traces":
-      return {
-        actor,
-        requestId: requireString(payload.requestId, "requestId")
-      };
-    case "show-tool-output":
-      return {
-        actor,
-        outputId: requireString(payload.outputId, "outputId")
-      };
-    case "import-resource":
-      return {
-        actor,
-        sourcePath: requireString(payload.sourcePath, "sourcePath"),
-        importKind: requireString(payload.importKind, "importKind")
-      };
-    case "create-session-archive":
-      return {
-        actor,
-        sessionId: requireString(payload.sessionId, "sessionId"),
-        messages: validateSessionArchiveMessages(payload.messages, "messages")
-      };
-    default:
-      return payload;
-  }
+  return validator ? validator(payload, actor) : payload;
 }
 
 function normalizeCommandName(commandName: string): string {
-  return commandName.replace(/_/g, "-");
+  return toCliCommandName(commandName) ?? commandName.replace(/_/g, "-");
 }
 
 function validateActorOverride(value: unknown, field: string): JsonRecord {
@@ -308,33 +321,6 @@ function validateBudget(value: unknown, field: string): JsonRecord {
     maxSources: requireInteger(budget.maxSources, `${field}.maxSources`, { min: 1 }),
     maxRawExcerpts: requireInteger(budget.maxRawExcerpts, `${field}.maxRawExcerpts`, { min: 0 }),
     maxSummarySentences: requireInteger(budget.maxSummarySentences, `${field}.maxSummarySentences`, { min: 0 })
-  };
-}
-
-function optionalBudget(value: unknown, field: string): JsonRecord | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  return validateBudget(value, field);
-}
-
-function validateCodingMemoryContext(value: unknown, field: string): JsonRecord | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  const memoryContext = requireObject(value, field);
-  return {
-    query: optionalString(memoryContext.query, `${field}.query`),
-    corpusIds: optionalEnumArray(memoryContext.corpusIds, `${field}.corpusIds`, CORPORA),
-    budget: optionalBudget(memoryContext.budget, `${field}.budget`),
-    includeSessionArchives: optionalBoolean(
-      memoryContext.includeSessionArchives,
-      `${field}.includeSessionArchives`
-    ),
-    sessionId: optionalString(memoryContext.sessionId, `${field}.sessionId`),
-    includeTrace: optionalBoolean(memoryContext.includeTrace, `${field}.includeTrace`)
   };
 }
 
@@ -387,7 +373,7 @@ function validateSessionArchiveMessages(
 ): Array<{ role: string; content: string }> {
   const messages = requireArray(value, field);
   if (messages.length === 0) {
-    throw validationError(field, "must contain at least 1 item(s)");
+    throw requestValidationError(field, "must contain at least 1 item(s)");
   }
 
   return messages.map((message, index) => {
@@ -421,7 +407,7 @@ function optionalFrontmatterOverrides(value: unknown, field: string): JsonRecord
     summary: optionalString(frontmatter.summary, `${field}.summary`),
     tags: optionalStringArray(frontmatter.tags, `${field}.tags`),
     scope: optionalString(frontmatter.scope, `${field}.scope`),
-    corpusId: optionalEnum(frontmatter.corpusId, `${field}.corpusId`, CORPORA),
+    corpusId: optionalEnum(frontmatter.corpusId, `${field}.corpusId`, CORPORA, CONTEXT_ALIAS_OPTIONS),
     currentState: optionalBoolean(frontmatter.currentState, `${field}.currentState`),
     validFrom: optionalString(frontmatter.validFrom, `${field}.validFrom`),
     validUntil: optionalString(frontmatter.validUntil, `${field}.validUntil`),
@@ -442,186 +428,11 @@ function validateNoteFrontmatter(value: unknown, field: string): JsonRecord {
     summary: requireString(frontmatter.summary, `${field}.summary`),
     tags: requireStringArray(frontmatter.tags, `${field}.tags`),
     scope: requireString(frontmatter.scope, `${field}.scope`),
-    corpusId: requireEnum(frontmatter.corpusId, `${field}.corpusId`, CORPORA),
+    corpusId: requireEnum(frontmatter.corpusId, `${field}.corpusId`, CORPORA, CONTEXT_ALIAS_OPTIONS),
     currentState: requireBoolean(frontmatter.currentState, `${field}.currentState`),
     validFrom: optionalString(frontmatter.validFrom, `${field}.validFrom`),
     validUntil: optionalString(frontmatter.validUntil, `${field}.validUntil`),
     supersedes: optionalStringArray(frontmatter.supersedes, `${field}.supersedes`),
     supersededBy: optionalString(frontmatter.supersededBy, `${field}.supersededBy`)
   };
-}
-
-function requireObject(value: unknown, field: string): JsonRecord {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw validationError(field, "must be a JSON object");
-  }
-
-  return value as JsonRecord;
-}
-
-function requireArray(value: unknown, field: string): unknown[] {
-  if (!Array.isArray(value)) {
-    throw validationError(field, "must be an array");
-  }
-
-  return value;
-}
-
-function requireString(value: unknown, field: string): string {
-  if (typeof value !== "string" || value.trim() === "") {
-    throw validationError(field, "must be a non-empty string");
-  }
-
-  return value;
-}
-
-function optionalString(value: unknown, field: string): string | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  return requireString(value, field);
-}
-
-function requireBoolean(value: unknown, field: string): boolean {
-  if (typeof value !== "boolean") {
-    throw validationError(field, "must be a boolean");
-  }
-
-  return value;
-}
-
-function optionalBoolean(value: unknown, field: string): boolean | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  return requireBoolean(value, field);
-}
-
-function requireNumber(value: unknown, field: string): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw validationError(field, "must be a finite number");
-  }
-
-  return value;
-}
-
-function requireInteger(
-  value: unknown,
-  field: string,
-  options: { min?: number } = {}
-): number {
-  const numberValue = requireNumber(value, field);
-  if (!Number.isInteger(numberValue)) {
-    throw validationError(field, "must be an integer");
-  }
-
-  if (options.min !== undefined && numberValue < options.min) {
-    throw validationError(field, `must be greater than or equal to ${options.min}`);
-  }
-
-  return numberValue;
-}
-
-function optionalInteger(
-  value: unknown,
-  field: string,
-  options: { min?: number } = {}
-): number | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  return requireInteger(value, field, options);
-}
-
-function requireEnum<T extends string>(
-  value: unknown,
-  field: string,
-  allowedValues: ReadonlySet<T>
-): T {
-  const stringValue = normalizeEnumValue(requireString(value, field), allowedValues);
-  if (!allowedValues.has(stringValue as T)) {
-    throw validationError(field, `must be one of: ${[...allowedValues].join(", ")}`);
-  }
-
-  return stringValue as T;
-}
-
-function normalizeEnumValue(
-  value: string,
-  allowedValues: ReadonlySet<string>
-): string {
-  if (allowedValues === CORPORA || allowedValues === CONTEXT_OWNER_SCOPES) {
-    return CORPUS_ALIASES.get(value.trim().toLowerCase()) ?? value;
-  }
-
-  return value;
-}
-
-function optionalEnum<T extends string>(
-  value: unknown,
-  field: string,
-  allowedValues: ReadonlySet<T>
-): T | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  return requireEnum(value, field, allowedValues);
-}
-
-function requireStringArray(
-  value: unknown,
-  field: string
-): string[] {
-  const values = requireArray(value, field);
-  return values.map((item, index) => requireString(item, `${field}[${index}]`));
-}
-
-function optionalStringArray(
-  value: unknown,
-  field: string
-): string[] | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  return requireStringArray(value, field);
-}
-
-function requireEnumArray<T extends string>(
-  value: unknown,
-  field: string,
-  allowedValues: ReadonlySet<T>,
-  options: { minItems?: number } = {}
-): T[] {
-  const values = requireArray(value, field);
-  if (options.minItems !== undefined && values.length < options.minItems) {
-    throw validationError(field, `must contain at least ${options.minItems} item(s)`);
-  }
-
-  return values.map((item, index) =>
-    requireEnum(item, `${field}[${index}]`, allowedValues)
-  );
-}
-
-function optionalEnumArray<T extends string>(
-  value: unknown,
-  field: string,
-  allowedValues: ReadonlySet<T>
-): T[] | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  return requireEnumArray(value, field, allowedValues);
-}
-
-function validationError(field: string, problem: string): TransportValidationError {
-  return new TransportValidationError(
-    `Invalid request field '${field}': ${problem}.`,
-    { field, problem }
-  );
 }

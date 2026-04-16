@@ -19,6 +19,20 @@ They currently handle:
 
 They do **not** own core business rules.
 
+## Runtime command identity is shared
+
+Routed runtime command identity is owned by `packages/contracts/src/orchestration/command-catalog.ts`.
+
+That catalog defines:
+
+- snake_case runtime command names
+- kebab-case CLI/transport names
+- task domains
+- task families
+- default actor roles
+
+The task-family router, runtime command dispatcher, and CLI command/default-role metadata consume the catalog directly. Read-side authorization policy is owned by `packages/orchestration/src/root/command-authorization-matrix.ts`, which exposes `getCommandAuthorizationRoles()` and `getAdministrativeActionAuthorizationRoles()` so tests can verify every catalog command and administrative action has an explicit role policy. Transport request validation exposes `getSupportedTransportCommandNames()` from `packages/infrastructure/src/transport/request-validation.ts`, and the command-catalog regression test compares that registry with the catalog. Transport adapters may still keep adapter-specific validation and schema wiring, but new routed commands should be added to the catalog before they are exposed through CLI, HTTP, MCP, transport validation, or orchestration code.
+
 ## Authority states stay separate
 
 The code distinguishes between:
@@ -34,6 +48,24 @@ Important consequences:
 - imports are recorded as imported jobs and do not directly create canonical outputs
 - session archives are immutable non-authoritative artifacts
 - namespace browsing currently projects note-backed canonical/staging rows, not imported jobs or session archives
+
+## External personal-note sources are read-only
+
+External sources such as Obsidian vaults are user-owned files outside Mimisbrunnr authority. They may be listed and read through explicit source contracts, but they must not become canonical memory or staging drafts without going through governed Mimir flows.
+
+The current Obsidian vault source boundary is:
+
+- external source contracts live in `packages/contracts/src/external-sources/external-source.contract.ts`
+- external source registry contracts live in `packages/contracts/src/external-sources/external-source-registry.contract.ts`
+- the infrastructure registry lives in `packages/infrastructure/src/external-sources/external-source-registry.ts` and is exposed through `buildServiceContainer(...).ports.externalSourceRegistry`
+- the read-only adapter lives in `packages/infrastructure/src/external-sources/obsidian-vault-source.ts`
+- source access is controlled by allowed and denied read globs
+- `.obsidian/**` is denied by default
+- path traversal and absolute paths are rejected
+- `allowWrites` must be `false`
+- the adapter exposes no write method
+
+A future Obsidian plugin should call Mimir/Mimisbrunnr through this kind of policy boundary, then submit import jobs or draft proposals for review instead of writing directly to canonical memory.
 
 ## Current-state notes are governed
 
@@ -65,7 +97,29 @@ The retrieval layer is designed to:
 
 Do not replace bounded packet assembly with unbounded note dumping without revisiting both tests and docs.
 
+## Docker AI tools do not own memory authority
+
+Docker AI tool profiles are declared in `docker/tool-registry/*.json` and validated by `packages/infrastructure/src/tools/tool-registry.ts`.
+
+The registry enforces this boundary:
+
+- tool workspace mounts may be read-only or read-write depending on the tool
+- tool cache mounts may be used for local acceleration
+- `mimisbrunnr` mounts must be `none`
+- durable memory writes must go through governed Mimir commands such as `create-session-archive` or `draft-note`
+
+The registry may be discovered through CLI `list-ai-tools`, HTTP `/v1/tools/ai`, or MCP `list_ai_tools`. It may be validated through CLI `check-ai-tools`, HTTP `/v1/tools/ai/check`, or MCP `check_ai_tools`. Those surfaces return metadata and validation results only; they do not execute tools.
+
+Do not grant a tool direct filesystem access to mimisbrunnr as a shortcut. That bypasses staging, review, audit, and promotion boundaries.
+
 ## Auth is command-aware and transport-aware
+
+Auth responsibilities are currently split across:
+
+- `packages/orchestration/src/root/command-authorization-matrix.ts` for command and administrative-action role policy
+- `packages/orchestration/src/root/actor-registry-policy.ts` for actor normalization, lifecycle summaries, validity windows, and static credential matching
+- `packages/orchestration/src/root/actor-token-inspector.ts` for static and issued token inspection against registry and revocation state
+- `packages/orchestration/src/root/actor-authorization-policy.ts` as the public facade and transport-facing error boundary
 
 Auth decisions currently consider:
 
@@ -80,7 +134,7 @@ Auth decisions currently consider:
 - centrally issued tokens
 - revocation state
 
-Do not document auth as “token present means allowed.” The policy is stricter than that.
+Do not document auth as "token present means allowed." The policy is stricter than that.
 
 ## Vector search is allowed to degrade
 
@@ -105,7 +159,7 @@ That makes adapter edits operationally significant even when they look local.
 
 ## Environment loading is explicit
 
-The Node apps read `process.env` directly through `loadEnvironment()`. There is no tracked dotenv loader.
+The Node apps read `process.env` through the thin `loadEnvironment()` facade in `packages/infrastructure/src/config/env.ts`. Parsing and defaults are split across `packages/infrastructure/src/config/*.ts`. There is no tracked dotenv loader.
 
 Documentation and automation should not assume `.env` support unless code is added for it.
 

@@ -4,6 +4,8 @@ import {
   type AssembleAgentContextResponse,
   type AssembleContextPacketRequest,
   type AssembleContextPacketResponse,
+  type CheckAiToolsRequest,
+  type CheckAiToolsResponse,
   type CreateSessionArchiveRequest,
   type CreateRefreshDraftBatchRequest,
   type CreateRefreshDraftRequest,
@@ -11,9 +13,13 @@ import {
   type ExecuteCodingTaskRequest,
   type ExecuteCodingTaskResponse,
   type GetDecisionSummaryRequest,
+  type GetAiToolPackagePlanRequest,
+  type GetAiToolPackagePlanResponse,
   type ImportResourceRequest,
   type ListAgentTracesRequest,
   type ListAgentTracesResponse,
+  type ListAiToolsRequest,
+  type ListAiToolsResponse,
   type PromoteNoteRequest,
   type QueryHistoryRequest,
   type RetrieveContextRequest,
@@ -31,6 +37,12 @@ import type { ModelRoleRegistry } from "../model-roles/model-role-registry.js";
 import type { RoleProviderRegistry } from "../model-roles/provider-registry.js";
 import type { OrchestratorCommand, TaskFamilyRouter } from "../routing/task-family-router.js";
 
+interface AiToolRegistry {
+  listTools(request: Pick<ListAiToolsRequest, "ids" | "includeEnvironment" | "includeRuntime">): ListAiToolsResponse;
+  checkTools(request: Pick<CheckAiToolsRequest, "ids">): CheckAiToolsResponse;
+  getPackagePlan(request: Pick<GetAiToolPackagePlanRequest, "ids">): GetAiToolPackagePlanResponse;
+}
+
 export class MimirOrchestrator {
   constructor(
     private readonly router: TaskFamilyRouter,
@@ -38,7 +50,8 @@ export class MimirOrchestrator {
     private readonly codingController: CodingDomainController,
     private readonly actorAuthorizationPolicy: ActorAuthorizationPolicy,
     readonly modelRoleRegistry: ModelRoleRegistry,
-    readonly providerRegistry: RoleProviderRegistry
+    readonly providerRegistry: RoleProviderRegistry,
+    private readonly toolRegistry: AiToolRegistry
   ) {}
 
   async searchContext(
@@ -181,6 +194,40 @@ export class MimirOrchestrator {
 
     const output = await this.codingController.showToolOutput(request.outputId);
     return output ? { found: true, output } : { found: false };
+  }
+
+  listAiTools(request: ListAiToolsRequest): ListAiToolsResponse {
+    this.assertAuthorized("list_ai_tools", request.actor);
+    const route = this.router.route("list_ai_tools");
+    if (route.domain !== "coding") {
+      throw new Error("AI tool registry route is misconfigured.");
+    }
+
+    return this.toolRegistry.listTools({
+      ids: request.ids,
+      includeEnvironment: request.includeEnvironment,
+      includeRuntime: request.includeRuntime
+    });
+  }
+
+  getAiToolPackagePlan(request: GetAiToolPackagePlanRequest): GetAiToolPackagePlanResponse {
+    this.assertAuthorized("tools_package_plan", request.actor);
+    const route = this.router.route("tools_package_plan");
+    if (route.domain !== "coding") {
+      throw new Error("AI tool package-plan route is misconfigured.");
+    }
+
+    return this.toolRegistry.getPackagePlan({ ids: request.ids });
+  }
+
+  checkAiTools(request: CheckAiToolsRequest): CheckAiToolsResponse {
+    this.assertAuthorized("check_ai_tools", request.actor);
+    const route = this.router.route("check_ai_tools");
+    if (route.domain !== "coding") {
+      throw new Error("AI tool check route is misconfigured.");
+    }
+
+    return this.toolRegistry.checkTools({ ids: request.ids });
   }
 
   private assertMimisbrunnrRoute(

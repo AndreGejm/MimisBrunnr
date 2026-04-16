@@ -1,4 +1,7 @@
-import type { ActorRole } from "@mimir/contracts";
+import {
+  RUNTIME_COMMAND_DEFINITIONS,
+  type ActorRole
+} from "@mimir/contracts";
 
 export interface McpToolDefinition {
   name: string;
@@ -8,7 +11,7 @@ export interface McpToolDefinition {
   inputSchema: Record<string, unknown>;
 }
 
-export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
+const UNORDERED_MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
   {
     name: "execute_coding_task",
     title: "Execute Coding Task",
@@ -86,6 +89,50 @@ export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
       properties: {
         actor: { type: "object" },
         outputId: { type: "string" }
+      }
+    }
+  },
+  {
+    name: "list_ai_tools",
+    title: "List AI Tools",
+    description: "List read-only Docker AI tool manifests from the registry.",
+    defaultActorRole: "operator",
+    inputSchema: {
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        actor: { type: "object" },
+        ids: { type: "array", items: { type: "string" } },
+        includeEnvironment: { type: "boolean" },
+        includeRuntime: { type: "boolean" }
+      }
+    }
+  },
+  {
+    name: "check_ai_tools",
+    title: "Check AI Tools",
+    description: "Validate Docker AI tool manifests and return per-file check results without executing tools.",
+    defaultActorRole: "operator",
+    inputSchema: {
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        actor: { type: "object" },
+        ids: { type: "array", items: { type: "string" } }
+      }
+    }
+  },
+  {
+    name: "tools_package_plan",
+    title: "Tools Package Plan",
+    description: "Build a reusable Docker package plan for registered AI tools without executing tools.",
+    defaultActorRole: "operator",
+    inputSchema: {
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        actor: { type: "object" },
+        ids: { type: "array", items: { type: "string" } }
       }
     }
   },
@@ -371,6 +418,67 @@ export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
     }
   },
   {
+    name: "list_review_queue",
+    title: "List Review Queue",
+    description: "List active staging notes for thin review frontends without moving files directly.",
+    defaultActorRole: "operator",
+    inputSchema: {
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        actor: { type: "object" },
+        targetCorpus: { type: "string", enum: ["mimisbrunnr", "general_notes"] },
+        includeRejected: { type: "boolean" }
+      }
+    }
+  },
+  {
+    name: "read_review_note",
+    title: "Read Review Note",
+    description: "Read one staging note for thin review frontends without direct vault access.",
+    defaultActorRole: "operator",
+    inputSchema: {
+      type: "object",
+      required: ["draftNoteId"],
+      additionalProperties: true,
+      properties: {
+        actor: { type: "object" },
+        draftNoteId: { type: "string" }
+      }
+    }
+  },
+  {
+    name: "accept_note",
+    title: "Accept Note",
+    description: "Accept one staging note and promote it through the governed review flow.",
+    defaultActorRole: "operator",
+    inputSchema: {
+      type: "object",
+      required: ["draftNoteId"],
+      additionalProperties: true,
+      properties: {
+        actor: { type: "object" },
+        draftNoteId: { type: "string" }
+      }
+    }
+  },
+  {
+    name: "reject_note",
+    title: "Reject Note",
+    description: "Reject one staging note through the governed review flow without moving files directly.",
+    defaultActorRole: "operator",
+    inputSchema: {
+      type: "object",
+      required: ["draftNoteId"],
+      additionalProperties: true,
+      properties: {
+        actor: { type: "object" },
+        draftNoteId: { type: "string" },
+        reviewNotes: { type: "string" }
+      }
+    }
+  },
+  {
     name: "fetch_decision_summary",
     title: "Fetch Decision Summary",
     description: "Retrieve a bounded decision packet for a topic from canonical context.",
@@ -483,6 +591,16 @@ export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
     }
   }
 ];
+const MCP_TOOL_ORDER = new Map<string, number>(
+  RUNTIME_COMMAND_DEFINITIONS.map((command, index) => [command.name, index])
+);
+
+export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
+  ...UNORDERED_MCP_TOOL_DEFINITIONS
+].sort((left, right) =>
+  (MCP_TOOL_ORDER.get(left.name) ?? Number.MAX_SAFE_INTEGER) -
+  (MCP_TOOL_ORDER.get(right.name) ?? Number.MAX_SAFE_INTEGER)
+);
 
 export function getToolDefinition(name: string): McpToolDefinition | undefined {
   return MCP_TOOL_DEFINITIONS.find((tool) => tool.name === name);
