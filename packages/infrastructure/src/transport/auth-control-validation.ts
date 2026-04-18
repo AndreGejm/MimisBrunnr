@@ -46,10 +46,13 @@ const COMMAND_NAMES = new Set<OrchestratorCommand>([
 
 const ADMIN_ACTION_NAMES = new Set<AdministrativeAction>([
   "view_auth_status",
+  "view_auth_issuers",
   "view_issued_tokens",
+  "manage_auth_issuers",
   "issue_auth_token",
   "inspect_auth_token",
   "revoke_auth_token",
+  "revoke_auth_tokens",
   "view_freshness_status"
 ]);
 const ISSUED_TOKEN_LIFECYCLE_STATUSES = new Set<
@@ -93,6 +96,22 @@ export interface ListIssuedActorTokensControlRequest {
   limit?: number;
 }
 
+export interface RevokeIssuedActorTokensControlRequest
+  extends ListIssuedActorTokensControlRequest {
+  dryRun?: boolean;
+  reason?: string;
+}
+
+export interface SetAuthIssuerStateControlRequest {
+  actorId: string;
+  enabled: boolean;
+  allowIssueAuthToken: boolean;
+  allowRevokeAuthToken: boolean;
+  validFrom?: string;
+  validUntil?: string;
+  reason?: string;
+}
+
 export function validateIssueActorTokenControlRequest(
   payload: JsonRecord
 ): IssueActorTokenControlRequest {
@@ -116,8 +135,8 @@ export function validateIssueActorTokenControlRequest(
       ADMIN_ACTION_NAMES
     ),
     allowedCorpora: optionalStringArray(payload.allowedCorpora, "allowedCorpora"),
-    validFrom: optionalString(payload.validFrom, "validFrom"),
-    validUntil: optionalString(payload.validUntil, "validUntil"),
+    validFrom: optionalIsoTimestamp(payload.validFrom, "validFrom"),
+    validUntil: optionalIsoTimestamp(payload.validUntil, "validUntil"),
     ttlMinutes: optionalInteger(payload.ttlMinutes, "ttlMinutes", 1)
   };
 }
@@ -180,6 +199,50 @@ export function validateListIssuedActorTokensControlRequest(
   };
 }
 
+export function validateRevokeIssuedActorTokensControlRequest(
+  payload: JsonRecord
+): RevokeIssuedActorTokensControlRequest {
+  const request = {
+    ...validateListIssuedActorTokensControlRequest(payload),
+    dryRun: optionalBoolean(payload.dryRun, "dryRun"),
+    reason: optionalString(payload.reason, "reason")
+  };
+
+  if (
+    request.actorId === undefined &&
+    request.issuedByActorId === undefined &&
+    request.revokedByActorId === undefined &&
+    request.lifecycleStatus === undefined
+  ) {
+    throw validationError(
+      "filters",
+      "at least one of actorId, issuedByActorId, revokedByActorId, or lifecycleStatus must be supplied"
+    );
+  }
+
+  return request;
+}
+
+export function validateSetAuthIssuerStateControlRequest(
+  payload: JsonRecord
+): SetAuthIssuerStateControlRequest {
+  return {
+    actorId: requireString(payload.actorId, "actorId"),
+    enabled: requireBoolean(payload.enabled, "enabled"),
+    allowIssueAuthToken: requireBoolean(
+      payload.allowIssueAuthToken,
+      "allowIssueAuthToken"
+    ),
+    allowRevokeAuthToken: requireBoolean(
+      payload.allowRevokeAuthToken,
+      "allowRevokeAuthToken"
+    ),
+    validFrom: optionalIsoTimestamp(payload.validFrom, "validFrom"),
+    validUntil: optionalIsoTimestamp(payload.validUntil, "validUntil"),
+    reason: optionalString(payload.reason, "reason")
+  };
+}
+
 function requireString(value: unknown, field: string): string {
   if (typeof value !== "string" || value.trim() === "") {
     throw validationError(field, "must be a non-empty string");
@@ -239,6 +302,26 @@ function optionalBoolean(value: unknown, field: string): boolean | undefined {
     return undefined;
   }
 
+  return requireBoolean(value, field);
+}
+
+function optionalIsoTimestamp(
+  value: unknown,
+  field: string
+): string | undefined {
+  const normalized = optionalString(value, field);
+  if (normalized === undefined) {
+    return undefined;
+  }
+
+  if (Number.isNaN(Date.parse(normalized))) {
+    throw validationError(field, "must be a valid ISO-8601 timestamp");
+  }
+
+  return normalized;
+}
+
+function requireBoolean(value: unknown, field: string): boolean {
   if (typeof value !== "boolean") {
     throw validationError(field, "must be a boolean");
   }

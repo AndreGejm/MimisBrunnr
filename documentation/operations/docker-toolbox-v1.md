@@ -29,7 +29,7 @@ V1 uses profile-bound sessions only.
 3. Request toolbox activation
 4. Receive a reconnect or fork handoff
 5. Reconnect into the approved profile
-6. Keep `mimir-control` visible and use `list_active_tools` to inspect the active surface
+6. Keep `mimir-control` visible and use `list_active_tools` to inspect the active surface, declared profile tools, and any overlay-suppressed tools
 
 Mimir stays the primary semantic/internal MCP surface we own, but it is not the transport path to peer servers.
 
@@ -140,6 +140,7 @@ Composite profiles are only allowed for repeated workflows with explicit fixture
 - overlays may not widen trust class or mutation level
 - `legacy-direct`, `toolbox-bootstrap`, and `toolbox-activated` remain explicit session modes
 - scoped requests require a revision-bound, audience-bound session lease
+- deactivation with an expired lease now emits an explicit `toolbox_expired` audit event before the normal deactivation event
 - `fallbackProfile` is only for denied requests, reconnect-after-expiry, or operator-guided downgrade
 - activation, denial, and deactivation now return structured reconnect handoff data instead of only an implicit reconnect flag
 

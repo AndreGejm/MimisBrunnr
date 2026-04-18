@@ -14,6 +14,7 @@ import type {
 } from "@mimir/contracts";
 import { compileToolboxPolicyFromDirectory } from "./policy-compiler.js";
 import {
+  assertToolboxSessionLeaseLifecycle,
   issueToolboxSessionLease,
   verifyToolboxSessionLease
 } from "./session-lease.js";
@@ -127,7 +128,10 @@ export class MimirControlSurface {
         allowedCategories: toolbox.allowedCategories,
         deniedCategories: toolbox.deniedCategories,
         fallbackProfile: toolbox.fallbackProfile,
-        tools: this.applyClientOverlay(profile.tools, this.policy.clients[this.options.clientId]),
+        tools: this.buildToolVisibilityReport(
+          profile,
+          this.policy.clients[this.options.clientId]
+        ).activeTools,
         antiUseCases: toolbox.deniedCategories.map((category) => ({
           type: "denied_category",
           category
@@ -477,10 +481,14 @@ export class MimirControlSurface {
   async listActiveTools() {
     const profile = this.policy.profiles[this.options.activeProfileId];
     const client = this.policy.clients[this.options.clientId];
+    const visibility = this.buildToolVisibilityReport(profile, client);
     return {
       profileId: profile.id,
       clientId: client.id,
-      tools: this.applyClientOverlay(profile.tools, client)
+      tools: visibility.activeTools,
+      declaredTools: visibility.declaredTools,
+      activeTools: visibility.activeTools,
+      suppressedTools: visibility.suppressedTools
     };
   }
 
@@ -537,6 +545,26 @@ export class MimirControlSurface {
         }
       },
       auditEvents: [
+        ...(leaseInspection.reasonCode === "toolbox_expired"
+          ? [
+              this.buildAuditEvent("toolbox_expired", occurredAt, {
+                outcome: "accepted",
+                profileId: profile.id,
+                clientId: this.options.clientId,
+                leaseId: leaseInspection.leaseId,
+                details: this.buildAuditDetails({
+                  reasonCode: "toolbox_expired",
+                  diagnostics: {
+                    ...diagnostics,
+                    reasonCode: "toolbox_expired"
+                  },
+                  profileId: profile.id,
+                  clientId: this.options.clientId,
+                  leaseId: leaseInspection.leaseId
+                })
+              })
+            ]
+          : []),
         this.buildAuditEvent("toolbox_deactivated", occurredAt, {
           outcome: "accepted",
           profileId: profile.id,
@@ -590,17 +618,66 @@ export class MimirControlSurface {
     return undefined;
   }
 
-  private applyClientOverlay(
-    tools: CompiledToolboxToolDescriptor[],
+  private buildToolVisibilityReport(
+    profile: CompiledToolboxProfile,
     client: CompiledToolboxClientOverlay
-  ): CompiledToolboxToolDescriptor[] {
-    return tools.filter(
-      (tool) =>
-        !client.suppressServerIds.includes(tool.serverId) &&
-        !client.suppressToolIds.includes(tool.toolId) &&
-        !client.suppressCategories.includes(tool.category) &&
-        !client.suppressedSemanticCapabilities.includes(tool.semanticCapabilityId)
-      );
+  ): {
+    declaredTools: CompiledToolboxToolDescriptor[];
+    activeTools: CompiledToolboxToolDescriptor[];
+    suppressedTools: CompiledToolboxToolDescriptor[];
+  } {
+    const declaredTools = profile.tools.map((tool) => ({
+      ...tool,
+      availabilityState: "declared" as const,
+      suppressionReasons: undefined
+    }));
+    const activeTools: CompiledToolboxToolDescriptor[] = [];
+    const suppressedTools: CompiledToolboxToolDescriptor[] = [];
+
+    for (const tool of declaredTools) {
+      const suppressionReasons = this.collectSuppressionReasons(tool, client);
+      if (suppressionReasons.length === 0) {
+        activeTools.push({
+          ...tool,
+          availabilityState: "active"
+        });
+        continue;
+      }
+
+      suppressedTools.push({
+        ...tool,
+        availabilityState: "suppressed",
+        suppressionReasons
+      });
+    }
+
+    return {
+      declaredTools,
+      activeTools,
+      suppressedTools
+    };
+  }
+
+  private collectSuppressionReasons(
+    tool: CompiledToolboxToolDescriptor,
+    client: CompiledToolboxClientOverlay
+  ): string[] {
+    const reasons: string[] = [];
+
+    if (client.suppressServerIds.includes(tool.serverId)) {
+      reasons.push(`suppressed-server:${tool.serverId}`);
+    }
+    if (client.suppressToolIds.includes(tool.toolId)) {
+      reasons.push(`suppressed-tool:${tool.toolId}`);
+    }
+    if (client.suppressCategories.includes(tool.category)) {
+      reasons.push(`suppressed-category:${tool.category}`);
+    }
+    if (client.suppressedSemanticCapabilities.includes(tool.semanticCapabilityId)) {
+      reasons.push(`suppressed-semantic-capability:${tool.semanticCapabilityId}`);
+    }
+
+    return reasons;
   }
 
   private buildSessionHandoff(input: {
@@ -827,6 +904,27 @@ export class MimirControlSurface {
 
     try {
       const claims = verifyToolboxSessionLease(leaseToken, this.options.leaseIssuerSecret);
+      try {
+        assertToolboxSessionLeaseLifecycle(claims, 30_000);
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === "Toolbox session lease has expired."
+        ) {
+          return {
+            verified: false,
+            leaseId: claims.leaseId,
+            reasonCode: "toolbox_expired"
+          };
+        }
+
+        return {
+          verified: false,
+          leaseId: claims.leaseId,
+          reasonCode: "toolbox_deactivated_invalid_lease_token"
+        };
+      }
+
       return {
         verified: true,
         leaseId: claims.leaseId,

@@ -6,7 +6,11 @@ import process from "node:process";
 import test from "node:test";
 import { spawn } from "node:child_process";
 import * as application from "../../packages/application/dist/index.js";
-import { SqliteAuditLog } from "../../packages/infrastructure/dist/index.js";
+import {
+  compileToolboxPolicyFromDirectory,
+  issueToolboxSessionLease,
+  SqliteAuditLog
+} from "../../packages/infrastructure/dist/index.js";
 
 function writeMcpMessage(stream, message) {
   const body = Buffer.from(JSON.stringify(message), "utf8");
@@ -226,6 +230,17 @@ test("mimir-control MCP exposes toolbox discovery tools and bootstrap-safe activ
     assert.ok(activeToolIds.includes("search_context"));
     assert.ok(!activeToolIds.includes("draft_note"));
     assert.ok(!activeToolIds.includes("github.search"));
+    assert.ok(
+      activeTools.result.structuredContent.declaredTools.some(
+        (tool) => tool.toolId === "search_context" && tool.availabilityState === "declared"
+      )
+    );
+    assert.ok(
+      activeTools.result.structuredContent.activeTools.some(
+        (tool) => tool.toolId === "search_context" && tool.availabilityState === "active"
+      )
+    );
+    assert.deepEqual(activeTools.result.structuredContent.suppressedTools, []);
 
     writeMcpMessage(child.stdin, {
       jsonrpc: "2.0",
@@ -300,6 +315,18 @@ test("mimir-control MCP applies client overlay suppression to activated profile 
     assert.ok(!codexToolIds.includes("github.search"));
     assert.ok(claudeToolIds.includes("github.search"));
     assert.ok(codexToolIds.includes("brave.web_search"));
+    assert.ok(
+      codexTools.result.structuredContent.suppressedTools.some(
+        (tool) =>
+          tool.toolId === "github.search" &&
+          tool.suppressionReasons.includes("suppressed-semantic-capability:github.search")
+      )
+    );
+    assert.ok(
+      !claudeTools.result.structuredContent.suppressedTools.some(
+        (tool) => tool.toolId === "github.search"
+      )
+    );
   } finally {
     await stopChild(codexChild);
     await stopChild(claudeChild);
@@ -345,6 +372,71 @@ test("mimir-control MCP records activation denial diagnostics and audit history"
 
     const history = await readAuditHistory(sqlitePath);
     assert.ok(history.entries.some((entry) => entry.actionType === "toolbox_activation_denied"));
+  } finally {
+    await stopChild(child);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("mimir-control MCP emits toolbox_expired when deactivating an expired lease", async () => {
+  const { root, sqlitePath } = await createTempSqlitePath();
+  const child = spawnControlServer({
+    activeProfile: "docs-research",
+    clientId: "codex",
+    sqlitePath
+  });
+  try {
+    const policy = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+    const expiredLease = issueToolboxSessionLease(
+      {
+        version: 1,
+        sessionId: "expired-toolbox-session",
+        issuer: "mimir-control",
+        audience: "mimir-core",
+        clientId: "codex",
+        approvedProfile: "docs-research",
+        approvedCategories: policy.profiles["docs-research"].allowedCategories,
+        deniedCategories: policy.profiles["docs-research"].deniedCategories,
+        trustClass: policy.intents["docs-research"].trustClass,
+        manifestRevision: policy.manifestRevision,
+        profileRevision: policy.profiles["docs-research"].profileRevision,
+        issuedAt: "2026-01-01T00:00:00.000Z",
+        expiresAt: "2026-01-01T00:01:00.000Z",
+        nonce: "expired-toolbox-nonce"
+      },
+      "toolbox-secret"
+    );
+
+    const transport = createMessageCollector(child.stdout);
+    await initializeMcp(transport, child.stdin);
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
+      id: 80,
+      method: "tools/call",
+      params: {
+        name: "deactivate_toolbox",
+        arguments: {
+          leaseToken: expiredLease
+        }
+      }
+    });
+
+    const deactivation = await transport.next();
+    assert.equal(deactivation.result.structuredContent.reasonCode, "toolbox_deactivated");
+    assert.equal(
+      deactivation.result.structuredContent.diagnostics.lease.reasonCode,
+      "toolbox_expired"
+    );
+    assert.ok(
+      deactivation.result.structuredContent.auditEvents.some(
+        (event) => event.type === "toolbox_expired"
+      )
+    );
+
+    const history = await readAuditHistory(sqlitePath);
+    assert.ok(history.entries.some((entry) => entry.actionType === "toolbox_expired"));
+    assert.ok(history.entries.some((entry) => entry.actionType === "toolbox_deactivated"));
   } finally {
     await stopChild(child);
     await rm(root, { recursive: true, force: true });

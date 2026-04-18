@@ -79,7 +79,8 @@ export interface CompiledToolboxToolDescriptor {
   semanticCapabilityId: string;
   serverId: string;
   source: ToolboxServerManifest["source"];
-  availabilityState: "declared";
+  availabilityState: "declared" | "active" | "suppressed";
+  suppressionReasons?: string[];
 }
 
 export interface CompiledToolboxServer extends ToolboxServerManifest {

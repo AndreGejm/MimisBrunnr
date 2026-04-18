@@ -21,7 +21,7 @@ The repository is not yet at "enable by default for every workspace" readiness.
 
 The main remaining gaps are:
 
-- auth boundaries are registry-backed with file-based loading, rotated credentials, validity windows, issued tokens, persisted issued-token lifecycle reporting, issuer- and revoker-attributed token lifecycle operations, queryable issuer/revoker/lifecycle filtering on the token ledger, filtered issue/revoke audit-history queries, and protected CLI plus HTTP operator auth-control surfaces for status and token lifecycle operations, but not yet fully hardened for shared rollout
+- auth boundaries are registry-backed with file-based loading, rotated credentials, validity windows, issued tokens, persisted issued-token lifecycle reporting, central issuer lifecycle controls, registry-bounded no-widening semantics, bounded bulk revocation, filtered issue/revoke plus issuer-control audit history, and protected CLI plus HTTP operator auth-control surfaces. This is now a baseline guardrail, not an open rollout blocker by itself.
 - temporal-validity handling is stronger with runtime freshness reporting, operator-visible refresh candidates, governed refresh-draft creation, bounded batch refresh-draft creation, idempotent refresh-draft reuse, and retrieval warnings, but still limited beyond the new validity-window baseline
 - shared rollout still needs continued operator hardening and freshness governance after the versioning contract work
 - hierarchical retrieval is implemented, but default enablement remains intentionally gated behind side-by-side packet diff review and an explicit rollback path to `flat`
@@ -39,32 +39,33 @@ Use these guardrails for every rollout candidate:
 
 These are the rollout-critical backlog items in the recommended implementation order.
 
-### 1. Remaining `BK-001` shared-rollout hardening
-
-Extend the current actor-registry auth model into a more operationally complete shared-rollout boundary.
-
-Why first:
-
-- broad multi-workspace rollout still needs a fuller central issuance and multi-operator lifecycle-management control plane than the current registry-plus-issued-token-plus-ledger-plus-audit model, even after the CLI and HTTP auth-control surfaces are guarded in enforced mode, issuance plus revocation are attributed in the ledger, operators can query lifecycle state by issuer or revoker, and token lifecycle actions land in bounded, filterable audit history
-
-### 2. Remaining `BK-007` temporal validity refinement
+### 1. Remaining `BK-007` temporal validity refinement
 
 Expand temporal-validity handling beyond current-state snapshots, validity windows, refresh-candidate reporting, bounded batch refresh workflows, and staleness heuristics.
 
-Why second:
+Why first:
 
 - all-workspace use will increase note volume
 - freshness governance becomes more important as more workspaces depend on shared memory
 
-### 3. Remaining `BK-008` hierarchical rollout gating
+### 2. Remaining `BK-008` hierarchical rollout gating
 
 Keep hierarchical retrieval behind explicit rollout review until packet diff checks are part of release sign-off.
 
-Why third:
+Why second:
 
 - flat retrieval is still the operational baseline
 - side-by-side flat versus hierarchical diffs are required before changing the default
 - rollback must stay as a low-risk switch back to `flat`
+
+### 3. `RV-006` authority-state enforcement follow-through
+
+Turn the documented authority-state and namespace semantics into stronger runtime guardrails where the current repo still relies on convention.
+
+Why third:
+
+- rollout now depends more on read-path semantics and namespace correctness than on basic auth issuance
+- this work can proceed without reopening the now-complete `BK-001` issuer-control plane
 
 ## Pilot Gate
 
@@ -108,9 +109,9 @@ The system should become the default MCP tool across all workspaces only after t
 
 These items should be closed or materially complete before all-workspace default rollout:
 
-- the remaining shared-rollout hardening under `BK-001`
 - the remaining freshness-governance work under `BK-007`
 - the remaining hierarchical rollout gating under `BK-008`
+- the authority-state enforcement follow-through under `RV-006`
 
 ### Operational checklist
 
@@ -141,7 +142,7 @@ Recommended earliest target for all-workspace default rollout:
 
 This date assumes:
 
-- the required rollout-critical backlog items above are completed
+- the remaining rollout-critical items above are completed
 - the pilot runs cleanly for at least one week
 - no new boundary regressions appear during pilot use
 
@@ -152,6 +153,6 @@ If those conditions are not met, rollout should remain opt-in rather than defaul
 Use this decision rule for rollout:
 
 - if pilot is clean and required backlog items are closed, go live broadly
-- if pilot is clean but shared-rollout auth hardening is still incomplete, keep rollout opt-in
 - if packet diff checks are missing or the rollback switch to `flat` is unclear, keep flat as the default
+- if freshness governance or authority-state enforcement is still incomplete, keep rollout opt-in
 - if pilot reveals write-boundary or retrieval-boundary regressions, stop expansion and treat rollout as blocked

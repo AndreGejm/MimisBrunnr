@@ -32,8 +32,10 @@ import type {
 } from "@mimir/contracts";
 import {
   ActorAuthorizationError,
+  AuthIssuerLifecycleService,
   buildServiceContainer,
   dispatchRuntimeCommand,
+  executeBulkIssuedTokenRevocation,
   FileIssuedTokenRevocationStore,
   getRuntimeCommandHttpStatus,
   issueActorAccessToken,
@@ -41,8 +43,11 @@ import {
   recordIssuedAuthTokenAudit,
   recordRevokedAuthTokenAudit,
   runRuntimeHealthChecks,
+  SqliteAuthIssuerControlStore,
   validateListIssuedActorTokensControlRequest,
   validateRevokeActorTokenControlRequest,
+  validateRevokeIssuedActorTokensControlRequest,
+  validateSetAuthIssuerStateControlRequest,
   TransportValidationError,
   validateInspectActorTokenControlRequest,
   validateIssueActorTokenControlRequest,
@@ -64,10 +69,13 @@ const ROUTES: Record<string, { method: "GET" | "POST"; name?: RouteName; healthM
   "/health/live": { method: "GET", healthMode: "live" },
   "/health/ready": { method: "GET", healthMode: "ready" },
   "/v1/system/auth": { method: "GET" },
+  "/v1/system/auth/issuers": { method: "GET" },
   "/v1/system/auth/issued-tokens": { method: "GET" },
+  "/v1/system/auth/issuer-state": { method: "POST" },
   "/v1/system/auth/issue-token": { method: "POST" },
   "/v1/system/auth/introspect-token": { method: "POST" },
   "/v1/system/auth/revoke-token": { method: "POST" },
+  "/v1/system/auth/revoke-tokens": { method: "POST" },
   "/v1/system/freshness": { method: "GET" },
   "/v1/system/version": { method: "GET" },
   "/v1/coding/execute": { method: "POST", name: "execute-coding-task" },
@@ -249,6 +257,30 @@ async function handleRequest(
     return;
   }
 
+  if (url.pathname === "/v1/system/auth/issuers") {
+    const issuerControlStore = new SqliteAuthIssuerControlStore(
+      container.env.sqlitePath
+    );
+    const issuerLifecycleService = new AuthIssuerLifecycleService(
+      container.authPolicy,
+      issuerControlStore,
+      container.services.auditHistoryService
+    );
+    try {
+      container.authPolicy.authorizeAdministrativeAction(
+        "view_auth_issuers",
+        buildAdministrativeActorContext("view_auth_issuers", request.headers)
+      );
+      sendJson(response, 200, {
+        ok: true,
+        ...issuerLifecycleService.listIssuerControls()
+      });
+      return;
+    } finally {
+      issuerControlStore.close();
+    }
+  }
+
   if (url.pathname === "/v1/system/auth/issued-tokens") {
     container.authPolicy.authorizeAdministrativeAction(
       "view_issued_tokens",
@@ -264,88 +296,104 @@ async function handleRequest(
   }
 
   if (url.pathname === "/v1/system/auth/issue-token") {
-    const administrativeActor = buildAdministrativeActorContext(
-      "issue_auth_token",
-      request.headers
+    const issuerControlStore = new SqliteAuthIssuerControlStore(
+      container.env.sqlitePath
     );
-    container.authPolicy.authorizeAdministrativeAction(
-      "issue_auth_token",
-      administrativeActor
+    const issuerLifecycleService = new AuthIssuerLifecycleService(
+      container.authPolicy,
+      issuerControlStore,
+      container.services.auditHistoryService
     );
-    if (!container.env.auth.issuerSecret) {
-      sendJson(response, 422, {
-        ok: false,
-        error: {
-          code: "validation_failed",
-          message: "MAB_AUTH_ISSUER_SECRET must be configured to issue actor access tokens."
-        }
-      });
-      return;
-    }
+    try {
+      const administrativeActor = buildAdministrativeActorContext(
+        "issue_auth_token",
+        request.headers
+      );
+      container.authPolicy.authorizeAdministrativeAction(
+        "issue_auth_token",
+        administrativeActor
+      );
+      issuerLifecycleService.assertAdministrativeActionAllowed(
+        administrativeActor,
+        "issue_auth_token"
+      );
+      if (!container.env.auth.issuerSecret) {
+        sendJson(response, 422, {
+          ok: false,
+          error: {
+            code: "validation_failed",
+            message: "MAB_AUTH_ISSUER_SECRET must be configured to issue actor access tokens."
+          }
+        });
+        return;
+      }
 
-    const body = await readJsonBody(request);
-    const validated = validateIssueActorTokenControlRequest(body);
-    const issuedAt = new Date().toISOString();
-    const validUntil =
-      validated.validUntil ??
-      (validated.ttlMinutes !== undefined
-        ? new Date(Date.now() + validated.ttlMinutes * 60_000).toISOString()
-        : undefined);
-    const issuedToken = issueActorAccessToken(
-      {
-        actorId: validated.actorId,
-        actorRole: validated.actorRole,
-        source: validated.source,
-        allowedTransports: validated.allowedTransports,
-        allowedCommands: validated.allowedCommands,
-        allowedAdminActions: validated.allowedAdminActions,
-        allowedCorpora: validated.allowedCorpora,
-        validFrom: validated.validFrom,
-        validUntil,
-        issuedAt
-      },
-      container.env.auth.issuerSecret
-    );
-    const warnings: string[] = [];
-    const inspection = container.authPolicy.inspectToken(issuedToken);
-    if (inspection.tokenKind === "issued" && inspection.claims?.tokenId) {
-      container.ports.issuedTokenStore.recordIssuedToken(inspection.claims, {
-        issuedBy: {
-          actorId: administrativeActor.actorId,
-          actorRole: administrativeActor.actorRole,
-          source: administrativeActor.source,
-          transport: administrativeActor.transport
-        }
-      });
-      warnings.push(
-        ...(await recordIssuedAuthTokenAudit({
-          auditHistoryService: container.services.auditHistoryService,
-          administrativeActor,
-          tokenId: inspection.claims.tokenId,
-          targetActorId: validated.actorId,
-          targetActorRole: validated.actorRole,
-          targetSource: validated.source,
-          command: "issue-token",
+      const body = await readJsonBody(request);
+      const validated = validateIssueActorTokenControlRequest(body);
+      const issuedAt = new Date().toISOString();
+      const validUntil =
+        validated.validUntil ??
+        (validated.ttlMinutes !== undefined
+          ? new Date(Date.now() + validated.ttlMinutes * 60_000).toISOString()
+          : undefined);
+      const issuedToken = issueActorAccessToken(
+        {
+          actorId: validated.actorId,
+          actorRole: validated.actorRole,
+          source: validated.source,
+          allowedTransports: validated.allowedTransports,
+          allowedCommands: validated.allowedCommands,
+          allowedAdminActions: validated.allowedAdminActions,
+          allowedCorpora: validated.allowedCorpora,
           validFrom: validated.validFrom,
           validUntil,
-          hasAllowedCommands: (validated.allowedCommands?.length ?? 0) > 0,
-          hasAllowedAdminActions: (validated.allowedAdminActions?.length ?? 0) > 0,
-          hasAllowedCorpora: (validated.allowedCorpora?.length ?? 0) > 0
-        })).warnings
+          issuedAt
+        },
+        container.env.auth.issuerSecret
       );
-    }
+      const warnings: string[] = [];
+      const inspection = container.authPolicy.inspectToken(issuedToken);
+      if (inspection.tokenKind === "issued" && inspection.claims?.tokenId) {
+        container.ports.issuedTokenStore.recordIssuedToken(inspection.claims, {
+          issuedBy: {
+            actorId: administrativeActor.actorId,
+            actorRole: administrativeActor.actorRole,
+            source: administrativeActor.source,
+            transport: administrativeActor.transport
+          }
+        });
+        warnings.push(
+          ...(await recordIssuedAuthTokenAudit({
+            auditHistoryService: container.services.auditHistoryService,
+            administrativeActor,
+            tokenId: inspection.claims.tokenId,
+            targetActorId: validated.actorId,
+            targetActorRole: validated.actorRole,
+            targetSource: validated.source,
+            command: "issue-token",
+            validFrom: validated.validFrom,
+            validUntil,
+            hasAllowedCommands: (validated.allowedCommands?.length ?? 0) > 0,
+            hasAllowedAdminActions: (validated.allowedAdminActions?.length ?? 0) > 0,
+            hasAllowedCorpora: (validated.allowedCorpora?.length ?? 0) > 0
+          })).warnings
+        );
+      }
 
-    sendJson(response, 200, {
-      ok: true,
-      issuedToken,
-      claims: {
-        ...validated,
-        issuedAt,
-        validUntil
-      },
-      ...(warnings.length > 0 ? { warnings } : {})
-    });
-    return;
+      sendJson(response, 200, {
+        ok: true,
+        issuedToken,
+        claims: {
+          ...validated,
+          issuedAt,
+          validUntil
+        },
+        ...(warnings.length > 0 ? { warnings } : {})
+      });
+      return;
+    } finally {
+      issuerControlStore.close();
+    }
   }
 
   if (url.pathname === "/v1/system/auth/introspect-token") {
@@ -368,72 +416,176 @@ async function handleRequest(
   }
 
   if (url.pathname === "/v1/system/auth/revoke-token") {
-    const administrativeActor = buildAdministrativeActorContext(
-      "revoke_auth_token",
-      request.headers
+    const issuerControlStore = new SqliteAuthIssuerControlStore(
+      container.env.sqlitePath
     );
-    container.authPolicy.authorizeAdministrativeAction(
-      "revoke_auth_token",
-      administrativeActor
+    const issuerLifecycleService = new AuthIssuerLifecycleService(
+      container.authPolicy,
+      issuerControlStore,
+      container.services.auditHistoryService
     );
-    if (!container.env.auth.issuedTokenRevocationPath) {
-      sendJson(response, 422, {
-        ok: false,
-        error: {
-          code: "validation_failed",
-          message:
-            "MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_PATH must be configured to revoke actor access tokens."
-        }
-      });
-      return;
-    }
-
-    const body = await readJsonBody(request);
-    const validated = validateRevokeActorTokenControlRequest(body);
-    const revocationStore = await FileIssuedTokenRevocationStore.create(
-      container.env.auth.issuedTokenRevocationPath,
-      container.authPolicy.getRevokedIssuedTokenIds()
-    );
-    const tokenId = resolveIssuedTokenIdForRevocation(
-      validated,
-      container.authPolicy
-    );
-    const revocation = await revocationStore.revokeTokenId(tokenId);
-    container.authPolicy.revokeIssuedTokenId(tokenId);
-    const ledgerRevocation = container.ports.issuedTokenStore.markTokenRevoked(
-      tokenId,
-      {
-        reason: validated.reason,
-        revokedBy: {
-          actorId: administrativeActor.actorId,
-          actorRole: administrativeActor.actorRole,
-          source: administrativeActor.source,
-          transport: administrativeActor.transport
-        }
-      }
-    );
-    const warnings = (
-      await recordRevokedAuthTokenAudit({
-        auditHistoryService: container.services.auditHistoryService,
+    try {
+      const administrativeActor = buildAdministrativeActorContext(
+        "revoke_auth_token",
+        request.headers
+      );
+      container.authPolicy.authorizeAdministrativeAction(
+        "revoke_auth_token",
+        administrativeActor
+      );
+      issuerLifecycleService.assertAdministrativeActionAllowed(
         administrativeActor,
+        "revoke_auth_token"
+      );
+      if (!container.env.auth.issuedTokenRevocationPath) {
+        sendJson(response, 422, {
+          ok: false,
+          error: {
+            code: "validation_failed",
+            message:
+              "MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_PATH must be configured to revoke actor access tokens."
+          }
+        });
+        return;
+      }
+
+      const body = await readJsonBody(request);
+      const validated = validateRevokeActorTokenControlRequest(body);
+      const revocationStore = await FileIssuedTokenRevocationStore.create(
+        container.env.auth.issuedTokenRevocationPath,
+        container.authPolicy.getRevokedIssuedTokenIds()
+      );
+      const tokenId = resolveIssuedTokenIdForRevocation(
+        validated,
+        container.authPolicy
+      );
+      const revocation = await revocationStore.revokeTokenId(tokenId);
+      container.authPolicy.revokeIssuedTokenId(tokenId);
+      const ledgerRevocation = container.ports.issuedTokenStore.markTokenRevoked(
         tokenId,
-        command: "revoke-token",
-        reason: validated.reason,
+        {
+          reason: validated.reason,
+          revokedBy: {
+            actorId: administrativeActor.actorId,
+            actorRole: administrativeActor.actorRole,
+            source: administrativeActor.source,
+            transport: administrativeActor.transport
+          }
+        }
+      );
+      const warnings = (
+        await recordRevokedAuthTokenAudit({
+          auditHistoryService: container.services.auditHistoryService,
+          administrativeActor,
+          tokenId,
+          command: "revoke-token",
+          reason: validated.reason,
+          alreadyRevoked: revocation.alreadyRevoked,
+          persisted: revocation.persisted,
+          recordedTokenFound: ledgerRevocation.found
+        })
+      ).warnings;
+
+      sendJson(response, 200, {
+        ok: true,
+        revokedTokenId: tokenId,
         alreadyRevoked: revocation.alreadyRevoked,
         persisted: revocation.persisted,
-        recordedTokenFound: ledgerRevocation.found
-      })
-    ).warnings;
+        recordedTokenFound: ledgerRevocation.found,
+        reason: validated.reason,
+        ...(warnings.length > 0 ? { warnings } : {})
+      });
+      return;
+    } finally {
+      issuerControlStore.close();
+    }
+  }
 
-    sendJson(response, 200, {
-      ok: true,
-      revokedTokenId: tokenId,
-      alreadyRevoked: revocation.alreadyRevoked,
-      persisted: revocation.persisted,
-      recordedTokenFound: ledgerRevocation.found,
-      reason: validated.reason,
-      ...(warnings.length > 0 ? { warnings } : {})
-    });
+  if (url.pathname === "/v1/system/auth/revoke-tokens") {
+    const issuerControlStore = new SqliteAuthIssuerControlStore(
+      container.env.sqlitePath
+    );
+    const issuerLifecycleService = new AuthIssuerLifecycleService(
+      container.authPolicy,
+      issuerControlStore,
+      container.services.auditHistoryService
+    );
+    try {
+      const administrativeActor = buildAdministrativeActorContext(
+        "revoke_auth_tokens",
+        request.headers
+      );
+      container.authPolicy.authorizeAdministrativeAction(
+        "revoke_auth_tokens",
+        administrativeActor
+      );
+      issuerLifecycleService.assertAdministrativeActionAllowed(
+        administrativeActor,
+        "revoke_auth_tokens"
+      );
+
+      const body = await readJsonBody(request);
+      const validated = validateRevokeIssuedActorTokensControlRequest(body);
+      const revocationStore = validated.dryRun
+        ? undefined
+        : await FileIssuedTokenRevocationStore.create(
+            requireIssuedTokenRevocationPath(
+              container.env.auth.issuedTokenRevocationPath
+            ),
+            container.authPolicy.getRevokedIssuedTokenIds()
+          );
+      const result = await executeBulkIssuedTokenRevocation({
+        request: validated,
+        issuedTokenStore: container.ports.issuedTokenStore,
+        authPolicy: container.authPolicy,
+        administrativeActor,
+        auditHistoryService: container.services.auditHistoryService,
+        command: "revoke-tokens",
+        revocationStore
+      });
+
+      sendJson(response, 200, {
+        ok: true,
+        ...result
+      });
+      return;
+    } finally {
+      issuerControlStore.close();
+    }
+  }
+
+  if (url.pathname === "/v1/system/auth/issuer-state") {
+    const issuerControlStore = new SqliteAuthIssuerControlStore(
+      container.env.sqlitePath
+    );
+    const issuerLifecycleService = new AuthIssuerLifecycleService(
+      container.authPolicy,
+      issuerControlStore,
+      container.services.auditHistoryService
+    );
+    try {
+      const administrativeActor = buildAdministrativeActorContext(
+        "manage_auth_issuers",
+        request.headers
+      );
+      container.authPolicy.authorizeAdministrativeAction(
+        "manage_auth_issuers",
+        administrativeActor
+      );
+      const body = await readJsonBody(request);
+      const validated = validateSetAuthIssuerStateControlRequest(body);
+      const issuer = await issuerLifecycleService.setIssuerState(
+        validated,
+        administrativeActor
+      );
+
+      sendJson(response, 200, {
+        ok: true,
+        issuer
+      });
+    } finally {
+      issuerControlStore.close();
+    }
     return;
   }
 
@@ -520,10 +672,13 @@ function buildActorContext(
 function buildAdministrativeActorContext(
   administrativeAction:
     | "view_auth_status"
+    | "view_auth_issuers"
     | "view_issued_tokens"
+    | "manage_auth_issuers"
     | "issue_auth_token"
     | "inspect_auth_token"
     | "revoke_auth_token"
+    | "revoke_auth_tokens"
     | "view_freshness_status",
   headers: IncomingMessage["headers"]
 ): ActorContext {
@@ -629,6 +784,22 @@ function resolveIssuedTokenIdForRevocation(
   }
 
   return inspection.claims.tokenId;
+}
+
+function requireIssuedTokenRevocationPath(filePath?: string): string {
+  const normalized = filePath?.trim();
+  if (!normalized) {
+    throw new TransportValidationError(
+      "Invalid auth control field 'revocationStore': MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_PATH must be configured to revoke actor access tokens.",
+      {
+        field: "revocationStore",
+        problem:
+          "MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_PATH must be configured to revoke actor access tokens"
+      }
+    );
+  }
+
+  return normalized;
 }
 
 function parseOptionalPositiveIntegerQuery(

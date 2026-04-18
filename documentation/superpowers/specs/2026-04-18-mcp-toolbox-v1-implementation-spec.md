@@ -41,10 +41,9 @@ The following is already implemented and must be treated as the starting point, 
   - `list_active_toolbox`
   - `list_active_tools`
   - `deactivate_toolbox`
-- The control surface already emits audit events for discovery, approval, denial, lease issuance, lease rejection, reconnect generation, and deactivation.
-- `toolbox_expired` already exists in the audit type system, but expiry-specific emission is still open work.
+- The control surface already emits audit events for discovery, approval, denial, lease issuance, lease rejection, reconnect generation, deactivation, and expired-lease deactivation handling.
 - Compiled tool descriptors already distinguish profile, server, category, trust class, mutation level, and source.
-- Explicit declared-vs-exposed-vs-suppressed active tool reporting remains open work.
+- `list_active_tools` already distinguishes declared tools, active runtime descriptors, and overlay-suppressed tools.
 
 ### Lease and enforcement layer
 
@@ -70,7 +69,7 @@ The repo backlog still contains broader items that remain open outside the immed
 
 ### Repo-wide partial backlog still open
 
-- `BK-001`: shared-rollout auth hardening is still partial. Remaining gap: fuller central issuance lifecycle and broader multi-operator lifecycle control.
+- `BK-001`: shared-rollout auth hardening is baseline complete for the current stack, including central issuer lifecycle controls, registry-bounded no-widening issuer policy, and bulk issued-token revocation. Toolbox work must preserve that control plane rather than bypass it.
 - `BK-007`: freshness lifecycle governance is still partial. Remaining gap: broader lifecycle governance and stronger automated refresh policy.
 - `BK-008`: hierarchical retrieval rollout is still partial. Remaining gap: default enablement must stay gated behind packet-diff review and explicit rollback-to-flat.
 - `RV-006`: authority-state invariants and namespace semantics are marked ready and should be used as a guardrail for toolbox-related namespace or mode semantics.
@@ -81,8 +80,6 @@ The repo backlog still contains broader items that remain open outside the immed
 - Client reconnect and fork behavior must be treated as an explicit compatibility surface, not an informal operator convention.
 - Lease issuance must behave deterministically when issuer secrets are missing, invalid, or rotated.
 - Peer curation still needs to remain category-owned and manifest-driven.
-- Expired lease handling still needs a dedicated emitted `toolbox_expired` audit path rather than only a defined audit type.
-- `list_active_tools` still needs an explicit declared, exposed, and suppressed-state breakdown instead of only the currently active filtered descriptors.
 - Diagnostics must be strong enough that an operator can explain any denial, rejection, or downgrade from the reported data alone.
 
 ## Source Of Truth And Authority

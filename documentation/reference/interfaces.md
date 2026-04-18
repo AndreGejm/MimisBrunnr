@@ -13,10 +13,13 @@ Source of truth: `apps/mimir-api/src/server.ts`
 | `GET` | `/health/live` | liveness and degraded-state health |
 | `GET` | `/health/ready` | readiness health |
 | `GET` | `/v1/system/auth` | auth registry summary plus issued-token summary |
+| `GET` | `/v1/system/auth/issuers` | effective central auth-issuer lifecycle state for registered issuers |
 | `GET` | `/v1/system/auth/issued-tokens` | issued-token listing |
+| `POST` | `/v1/system/auth/issuer-state` | update central auth-issuer lifecycle state for one issuer |
 | `POST` | `/v1/system/auth/issue-token` | centrally issue actor tokens |
 | `POST` | `/v1/system/auth/introspect-token` | inspect token validity and authorization |
 | `POST` | `/v1/system/auth/revoke-token` | revoke issued tokens |
+| `POST` | `/v1/system/auth/revoke-tokens` | bounded bulk revocation of issued tokens |
 | `GET` | `/v1/system/freshness` | temporal validity report |
 | `GET` | `/v1/system/version` | release metadata |
 
@@ -67,12 +70,15 @@ Source of truth: `apps/mimir-cli/src/main.ts`
 ### Commands
 
 - `version`
+- `auth-issuers`
 - `auth-status`
 - `auth-issued-tokens`
 - `auth-introspect-token`
 - `check-mcp-profiles`
 - `freshness-status`
 - `issue-auth-token`
+- `revoke-auth-tokens`
+- `set-auth-issuer-state`
 - `list-active-toolbox`
 - `list-active-tools`
 - `list-toolboxes`
@@ -122,6 +128,7 @@ Commands with no required payload:
 
 Commands with optional payload:
 
+- `auth-issuers`
 - `auth-issued-tokens`
 - `check-mcp-profiles`
 - `freshness-status`
@@ -137,7 +144,7 @@ Commands with optional payload:
 
 From the workspace root, the verified invocation form is `corepack pnpm cli -- <command>`.
 
-For CLI auth-control commands in enforced mode, pass an `actor` object with operator or system credentials in the JSON payload. That applies to `auth-status`, `auth-issued-tokens`, `auth-introspect-token`, `issue-auth-token`, and `revoke-auth-token`.
+For CLI auth-control commands in enforced mode, pass an `actor` object with operator or system credentials in the JSON payload. That applies to `auth-issuers`, `auth-status`, `auth-issued-tokens`, `auth-introspect-token`, `issue-auth-token`, `revoke-auth-token`, `revoke-auth-tokens`, and `set-auth-issuer-state`.
 
 `auth-issued-tokens` and `GET /v1/system/auth/issued-tokens` return operator-attribution fields for token lifecycle operations. Active or future records can include `issuedByActorId`, `issuedByActorRole`, `issuedBySource`, and `issuedByTransport`. Revoked records can also include `revokedByActorId`, `revokedByActorRole`, `revokedBySource`, and `revokedByTransport` alongside `revokedAt` and `revokedReason`.
 
@@ -164,6 +171,12 @@ Toolbox control commands are implemented through the shared control surface. The
 - `list-active-tools`
 - `deactivate-toolbox`
 
+`list-active-tools` now returns three explicit buckets in addition to the compatibility `tools` alias:
+
+- `declaredTools`: tools declared by the active compiled profile before overlay suppression
+- `activeTools`: tools currently exposed to the session after overlay suppression
+- `suppressedTools`: declared tools hidden by overlay rules, including `suppressionReasons`
+
 Issued-token listing filters are implemented end to end across CLI and HTTP. The supported request fields are:
 
 - `actorId`
@@ -175,6 +188,13 @@ Issued-token listing filters are implemented end to end across CLI and HTTP. The
 - `limit`
 
 The issued-token summary returned alongside a filtered listing applies the same filters except for `limit`.
+
+Issuer lifecycle control is implemented end to end across CLI and HTTP:
+
+- `auth-issuers` and `GET /v1/system/auth/issuers` return `asOf`, a lifecycle `summary`, and per-issuer records.
+- Each issuer record includes registry lifecycle state, effective lifecycle state, registry capability booleans, effective issue and revoke booleans, enablement, optional `validFrom` and `validUntil`, and last update attribution fields.
+- `set-auth-issuer-state` and `POST /v1/system/auth/issuer-state` accept `actorId`, `enabled`, `allowIssueAuthToken`, `allowRevokeAuthToken`, and optional `validFrom`, `validUntil`, and `reason`.
+- Central issuer controls can narrow, disable, or time-bound a registered issuer, but they cannot widen an actor beyond the registry’s allowed admin actions.
 
 ## MCP
 

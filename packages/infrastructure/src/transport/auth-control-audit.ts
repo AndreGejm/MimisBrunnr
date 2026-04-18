@@ -20,6 +20,19 @@ interface RecordIssuedAuthTokenAuditInput {
   hasAllowedCorpora: boolean;
 }
 
+interface RecordAuthIssuerControlAuditInput {
+  auditHistoryService: AuditHistoryService;
+  administrativeActor: ActorContext;
+  targetActorId: string;
+  targetActorRole: string;
+  enabled: boolean;
+  allowIssueAuthToken: boolean;
+  allowRevokeAuthToken: boolean;
+  validFrom?: string;
+  validUntil?: string;
+  reason?: string;
+}
+
 interface RecordRevokedAuthTokenAuditInput {
   auditHistoryService: AuditHistoryService;
   administrativeActor: ActorContext;
@@ -29,6 +42,8 @@ interface RecordRevokedAuthTokenAuditInput {
   alreadyRevoked: boolean;
   persisted: boolean;
   recordedTokenFound: boolean;
+  bulkSelection?: Record<string, unknown>;
+  matchedCount?: number;
 }
 
 export async function recordIssuedAuthTokenAudit(
@@ -64,6 +79,37 @@ export async function recordIssuedAuthTokenAudit(
     : { warnings: [recorded.error.message] };
 }
 
+export async function recordAuthIssuerControlAudit(
+  input: RecordAuthIssuerControlAuditInput
+): Promise<AuthControlAuditResult> {
+  const recorded = await input.auditHistoryService.recordAction({
+    actionType: "manage_auth_issuers",
+    actorId: input.administrativeActor.actorId,
+    actorRole: input.administrativeActor.actorRole,
+    source: input.administrativeActor.source,
+    toolName: input.administrativeActor.toolName,
+    occurredAt: new Date().toISOString(),
+    outcome: "accepted",
+    affectedNoteIds: [],
+    affectedChunkIds: [],
+    detail: compactDetail({
+      targetActorId: input.targetActorId,
+      targetActorRole: input.targetActorRole,
+      enabled: input.enabled,
+      allowIssueAuthToken: input.allowIssueAuthToken,
+      allowRevokeAuthToken: input.allowRevokeAuthToken,
+      validFrom: input.validFrom,
+      validUntil: input.validUntil,
+      reason: input.reason,
+      transport: input.administrativeActor.transport
+    })
+  });
+
+  return recorded.ok
+    ? { warnings: [] }
+    : { warnings: [recorded.error.message] };
+}
+
 export async function recordRevokedAuthTokenAudit(
   input: RecordRevokedAuthTokenAuditInput
 ): Promise<AuthControlAuditResult> {
@@ -84,7 +130,9 @@ export async function recordRevokedAuthTokenAudit(
       command: input.command,
       alreadyRevoked: input.alreadyRevoked,
       persisted: input.persisted,
-      recordedTokenFound: input.recordedTokenFound
+      recordedTokenFound: input.recordedTokenFound,
+      bulkSelection: input.bulkSelection,
+      matchedCount: input.matchedCount
     })
   });
 

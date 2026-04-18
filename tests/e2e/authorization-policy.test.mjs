@@ -11,6 +11,18 @@ test("command authorization matrix exposes administrative role policy", () => {
     matrix.getAdministrativeActionAuthorizationRoles("view_freshness_status"),
     ["operator", "orchestrator", "system"]
   );
+  assert.deepEqual(
+    matrix.getAdministrativeActionAuthorizationRoles("view_auth_issuers"),
+    ["operator", "system"]
+  );
+  assert.deepEqual(
+    matrix.getAdministrativeActionAuthorizationRoles("manage_auth_issuers"),
+    ["operator", "system"]
+  );
+  assert.deepEqual(
+    matrix.getAdministrativeActionAuthorizationRoles("revoke_auth_tokens"),
+    ["operator", "system"]
+  );
 });
 
 test("actor registry policy summarizes lifecycle and credential windows", () => {

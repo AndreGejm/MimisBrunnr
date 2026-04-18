@@ -3,6 +3,8 @@ import test from "node:test";
 import {
   TransportValidationError,
   validateIssueActorTokenControlRequest,
+  validateRevokeIssuedActorTokensControlRequest,
+  validateSetAuthIssuerStateControlRequest,
   validateTransportRequest
 } from "../../packages/infrastructure/dist/index.js";
 import { TransportValidationError as TransportValidationErrorModule } from "../../packages/infrastructure/dist/transport/transport-validation-error.js";
@@ -53,6 +55,56 @@ test("transport validation accepts tools-package-plan requests", () => {
   });
 
   assert.deepEqual(request.ids, ["aider"]);
+});
+
+test("transport validation accepts bounded bulk auth token revocation requests", () => {
+  const request = validateRevokeIssuedActorTokensControlRequest({
+    issuedByActorId: "security-cli",
+    lifecycleStatus: "future",
+    dryRun: true,
+    reason: "rotation preview"
+  });
+
+  assert.equal(request.issuedByActorId, "security-cli");
+  assert.equal(request.lifecycleStatus, "future");
+  assert.equal(request.dryRun, true);
+  assert.equal(request.reason, "rotation preview");
+});
+
+test("transport validation rejects bulk auth token revocation without selector filters", () => {
+  const error = captureTransportValidationError(() =>
+    validateRevokeIssuedActorTokensControlRequest({
+      dryRun: true
+    })
+  );
+
+  assert.equal(error.name, "TransportValidationError");
+  assert.deepEqual(error.toServiceError(), {
+    code: "validation_failed",
+    message:
+      "Invalid auth control field 'filters': at least one of actorId, issuedByActorId, revokedByActorId, or lifecycleStatus must be supplied.",
+    details: {
+      field: "filters",
+      problem:
+        "at least one of actorId, issuedByActorId, revokedByActorId, or lifecycleStatus must be supplied"
+    }
+  });
+});
+
+test("transport validation accepts auth issuer state overrides", () => {
+  const request = validateSetAuthIssuerStateControlRequest({
+    actorId: "security-cli",
+    enabled: true,
+    allowIssueAuthToken: false,
+    allowRevokeAuthToken: true,
+    reason: "revoker only"
+  });
+
+  assert.equal(request.actorId, "security-cli");
+  assert.equal(request.enabled, true);
+  assert.equal(request.allowIssueAuthToken, false);
+  assert.equal(request.allowRevokeAuthToken, true);
+  assert.equal(request.reason, "revoker only");
 });
 
 test("transport validation accepts list-review-queue filters and corpus aliases", () => {

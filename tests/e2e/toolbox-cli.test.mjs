@@ -6,7 +6,11 @@ import process from "node:process";
 import test from "node:test";
 import { spawn } from "node:child_process";
 import * as application from "../../packages/application/dist/index.js";
-import { SqliteAuditLog } from "../../packages/infrastructure/dist/index.js";
+import {
+  compileToolboxPolicyFromDirectory,
+  issueToolboxSessionLease,
+  SqliteAuditLog
+} from "../../packages/infrastructure/dist/index.js";
 
 test("mimir-cli exposes toolbox discovery, activation, and sync commands from repo manifests", async () => {
   const sqlitePath = await createTempSqlitePath();
@@ -92,6 +96,25 @@ test("mimir-cli exposes toolbox discovery, activation, and sync commands from re
     activationPayload.activation.handoff.actorDefaults.sessionPolicyTokenFromEnv,
     "MAB_TOOLBOX_SESSION_POLICY_TOKEN"
   );
+
+  const activeToolsResult = await runCliCommand(
+    ["list-active-tools", "--json", "{}", "--no-pretty"],
+    env
+  );
+  assert.equal(activeToolsResult.exitCode, 0, activeToolsResult.stderr);
+  const activeToolsPayload = JSON.parse(activeToolsResult.stdout);
+  assert.equal(activeToolsPayload.ok, true);
+  assert.ok(
+    activeToolsPayload.declaredTools.some(
+      (tool) => tool.toolId === "search_context" && tool.availabilityState === "declared"
+    )
+  );
+  assert.ok(
+    activeToolsPayload.activeTools.some(
+      (tool) => tool.toolId === "search_context" && tool.availabilityState === "active"
+    )
+  );
+  assert.deepEqual(activeToolsPayload.suppressedTools, []);
 
   const deactivationResult = await runCliCommand(
     [
@@ -253,6 +276,66 @@ test("mimir-cli rejects activation when a toolbox lease cannot be issued", async
   const actionTypes = history.entries.map((entry) => entry.actionType);
   assert.ok(actionTypes.includes("toolbox_activation_denied"));
   assert.ok(actionTypes.includes("toolbox_lease_rejected"));
+});
+
+test("mimir-cli records toolbox_expired when deactivating an expired lease", async () => {
+  const sqlitePath = await createTempSqlitePath();
+  const env = {
+    ...process.env,
+    MAB_NODE_ENV: "test",
+    MAB_TOOLBOX_MANIFEST_DIR: path.resolve("docker", "mcp"),
+    MAB_TOOLBOX_ACTIVE_PROFILE: "docs-research",
+    MAB_TOOLBOX_CLIENT_ID: "codex",
+    MAB_TOOLBOX_LEASE_ISSUER: "mimir-control",
+    MAB_TOOLBOX_LEASE_AUDIENCE: "mimir-core",
+    MAB_TOOLBOX_LEASE_ISSUER_SECRET: "toolbox-secret",
+    MAB_SQLITE_PATH: sqlitePath
+  };
+  const policy = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+  const expiredLease = issueToolboxSessionLease(
+    {
+      version: 1,
+      sessionId: "expired-toolbox-session",
+      issuer: "mimir-control",
+      audience: "mimir-core",
+      clientId: "codex",
+      approvedProfile: "docs-research",
+      approvedCategories: policy.profiles["docs-research"].allowedCategories,
+      deniedCategories: policy.profiles["docs-research"].deniedCategories,
+      trustClass: policy.intents["docs-research"].trustClass,
+      manifestRevision: policy.manifestRevision,
+      profileRevision: policy.profiles["docs-research"].profileRevision,
+      issuedAt: "2026-01-01T00:00:00.000Z",
+      expiresAt: "2026-01-01T00:01:00.000Z",
+      nonce: "expired-toolbox-nonce"
+    },
+    "toolbox-secret"
+  );
+
+  const deactivationResult = await runCliCommand(
+    [
+      "deactivate-toolbox",
+      "--json",
+      JSON.stringify({
+        leaseToken: expiredLease
+      }),
+      "--no-pretty"
+    ],
+    env
+  );
+  assert.equal(deactivationResult.exitCode, 0, deactivationResult.stderr);
+  const deactivationPayload = JSON.parse(deactivationResult.stdout);
+  assert.equal(deactivationPayload.ok, true);
+  assert.equal(deactivationPayload.reasonCode, "toolbox_deactivated");
+  assert.equal(deactivationPayload.diagnostics.lease.reasonCode, "toolbox_expired");
+  assert.ok(
+    deactivationPayload.auditEvents.some((event) => event.type === "toolbox_expired")
+  );
+
+  const history = await readAuditHistory(sqlitePath);
+  const actionTypes = history.entries.map((entry) => entry.actionType);
+  assert.ok(actionTypes.includes("toolbox_expired"));
+  assert.ok(actionTypes.includes("toolbox_deactivated"));
 });
 
 function runCliCommand(args, env, cwd = process.cwd()) {

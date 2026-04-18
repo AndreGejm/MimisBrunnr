@@ -87,8 +87,9 @@ The running architecture is a local-first monorepo with clear boundaries:
 - file-backed actor-registry loading with rotated credential windows and entry validity support
 - issuer-secret-backed short-lived issued tokens for registered actors
 - persisted issued-token lifecycle storage and listing through SQLite, including issuer attribution for active records, revoker attribution for revoked records, operator-facing filtering by issuer, revoker, and lifecycle state, and queryable audit-history events for token issue plus revoke operations
+- central auth-issuer lifecycle control surfaces across CLI and HTTP, including operator-visible issuer listings, per-issuer enablement and time-bounded overrides, audit events for issuer-control changes, and registry-bounded no-widening enforcement for multi-operator issuance and revocation roles
 - file-backed issued-token revocation support for immediate denylisting of minted actor tokens
-- protected operator auth-control surfaces for auth status, issued-token listing, token issuance, token introspection, and token revocation across CLI and HTTP
+- protected operator auth-control surfaces for auth status, issuer listing, issued-token listing, token issuance, token introspection, issuer-control updates, and token revocation across CLI and HTTP
 - promotion event recording
 - audit-history queries
 - a documented Git-centric versioning contract with runtime release metadata surfaces
@@ -121,10 +122,13 @@ The running architecture is a local-first monorepo with clear boundaries:
 ### CLI
 
 - `version`
+- `auth-issuers`
 - `auth-status`
 - `auth-issued-tokens`
 - `auth-introspect-token`
 - `revoke-auth-token`
+- `revoke-auth-tokens`
+- `set-auth-issuer-state`
 - `freshness-status`
 - `issue-auth-token`
 - `execute-coding-task`
@@ -143,12 +147,15 @@ The running architecture is a local-first monorepo with clear boundaries:
 - `GET /health/live`
 - `GET /health/ready`
 - `GET /v1/system/auth`
+- `GET /v1/system/auth/issuers`
 - `GET /v1/system/auth/issued-tokens`
 - `GET /v1/system/freshness`
 - `GET /v1/system/version`
+- `POST /v1/system/auth/issuer-state`
 - `POST /v1/system/auth/issue-token`
 - `POST /v1/system/auth/introspect-token`
 - `POST /v1/system/auth/revoke-token`
+- `POST /v1/system/auth/revoke-tokens`
 - `POST /v1/coding/execute`
 - `POST /v1/context/search`
 - `POST /v1/context/packet`
@@ -177,7 +184,6 @@ The running architecture is a local-first monorepo with clear boundaries:
 
 These areas have enabling structure but are not fully complete:
 
-- shared-rollout auth hardening beyond the file-backed actor registry, rotated credentials, issued tokens, persisted issued-token lifecycle reporting, issuer- and revoker-attributed token lifecycle operations, queryable lifecycle filtering, filtered issue/revoke audit-history queries by actor, action type, and source, protected local operator control surfaces, and basic token lifecycle operations
 - richer temporal-validity governance beyond validity windows, refresh-candidate reporting, bounded batch refresh-draft creation, idempotent refresh-draft reuse, explicit refresh-draft creation, freshness warnings, and stale ranking
 - hierarchical retrieval rollout beyond the current `flat` default, explicit opt-in strategy selection, trace metadata, packet-diff checks, and the documented rollback path back to `flat`
 

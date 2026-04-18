@@ -190,6 +190,13 @@ export function verifyToolboxSessionLease(
   return normalizeClaims(parsed);
 }
 
+export function assertToolboxSessionLeaseLifecycle(
+  claims: ToolboxSessionLeaseClaims,
+  clockSkewToleranceMs: number
+): void {
+  assertLeaseLifecycleClaims(claims, clockSkewToleranceMs);
+}
+
 function normalizeClaims(claims: ToolboxSessionLeaseClaims): ToolboxSessionLeaseClaims {
   return {
     version: 1,

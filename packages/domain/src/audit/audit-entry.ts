@@ -8,6 +8,7 @@ export const AUDIT_ACTION_TYPES = [
   "draft_note",
   "create_refresh_draft",
   "issue_auth_token",
+  "manage_auth_issuers",
   "revoke_auth_token",
   "validate_note",
   "promote_note",

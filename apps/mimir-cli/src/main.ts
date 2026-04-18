@@ -17,27 +17,33 @@ import type { AdministrativeAction } from "@mimir/orchestration";
 import {
   ActorAuthorizationError,
   ActorAuthorizationPolicy,
+  AuthIssuerLifecycleService,
   buildMimirControlSurface,
   buildServiceContainer,
   compileDockerMcpRuntimePlan,
   compileToolboxPolicyFromDirectory,
   dispatchRuntimeCommand,
+  executeBulkIssuedTokenRevocation,
   FileIssuedTokenRevocationStore,
   issueActorAccessToken,
   loadEnvironment,
   recordIssuedAuthTokenAudit,
   recordRevokedAuthTokenAudit,
+  SqliteAuthIssuerControlStore,
   SqliteToolboxSessionLeaseStore,
   validateListIssuedActorTokensControlRequest,
   validateInspectActorTokenControlRequest,
   validateIssueActorTokenControlRequest,
   validateRevokeActorTokenControlRequest,
+  validateRevokeIssuedActorTokensControlRequest,
+  validateSetAuthIssuerStateControlRequest,
   TransportValidationError,
   validateTransportRequest
 } from "@mimir/infrastructure";
 
 type SystemCommandName =
   | "version"
+  | "auth-issuers"
   | "auth-status"
   | "auth-issued-tokens"
   | "auth-introspect-token"
@@ -51,6 +57,8 @@ type SystemCommandName =
   | "list-toolboxes"
   | "request-toolbox-activation"
   | "revoke-auth-token"
+  | "revoke-auth-tokens"
+  | "set-auth-issuer-state"
   | "sync-mcp-profiles";
 
 type CommandName = SystemCommandName | RuntimeCliCommandName;
@@ -70,6 +78,7 @@ interface ParsedCli {
 
 const SYSTEM_COMMANDS: ReadonlyArray<SystemCommandName> = [
   "version",
+  "auth-issuers",
   "auth-status",
   "auth-issued-tokens",
   "auth-introspect-token",
@@ -83,6 +92,8 @@ const SYSTEM_COMMANDS: ReadonlyArray<SystemCommandName> = [
   "list-toolboxes",
   "request-toolbox-activation",
   "revoke-auth-token",
+  "revoke-auth-tokens",
+  "set-auth-issuer-state",
   "sync-mcp-profiles"
 ];
 const COMMANDS: ReadonlyArray<CommandName> = [
@@ -370,6 +381,44 @@ async function main(): Promise<void> {
     }
   }
 
+  if (parsed.command === "auth-issuers") {
+    const container = buildServiceContainer(loadEnvironment());
+    const issuerControlStore = new SqliteAuthIssuerControlStore(
+      container.env.sqlitePath
+    );
+    const issuerLifecycleService = new AuthIssuerLifecycleService(
+      container.authPolicy,
+      issuerControlStore,
+      container.services.auditHistoryService
+    );
+    try {
+      const payload = await loadOptionalCommandPayload(parsed.options);
+      container.authPolicy.authorizeAdministrativeAction(
+        "view_auth_issuers",
+        buildAdministrativeActorContext(
+          "view_auth_issuers",
+          extractAdministrativeActor(payload)
+        )
+      );
+      writeJson(
+        {
+          ok: true,
+          ...issuerLifecycleService.listIssuerControls()
+        },
+        parsed.options.pretty
+      );
+      process.exitCode = 0;
+      return;
+    } catch (error) {
+      writeJson(mapCliError(error), parsed.options.pretty);
+      process.exitCode = 1;
+      return;
+    } finally {
+      issuerControlStore.close();
+      container.dispose();
+    }
+  }
+
   if (parsed.command === "auth-issued-tokens") {
     const container = buildServiceContainer(loadEnvironment());
     try {
@@ -466,6 +515,14 @@ async function main(): Promise<void> {
 
   if (parsed.command === "issue-auth-token") {
     const container = buildServiceContainer(loadEnvironment());
+    const issuerControlStore = new SqliteAuthIssuerControlStore(
+      container.env.sqlitePath
+    );
+    const issuerLifecycleService = new AuthIssuerLifecycleService(
+      container.authPolicy,
+      issuerControlStore,
+      container.services.auditHistoryService
+    );
     try {
       if (!container.env.auth.issuerSecret) {
         throw new Error(
@@ -481,6 +538,10 @@ async function main(): Promise<void> {
       container.authPolicy.authorizeAdministrativeAction(
         "issue_auth_token",
         administrativeActor
+      );
+      issuerLifecycleService.assertAdministrativeActionAllowed(
+        administrativeActor,
+        "issue_auth_token"
       );
       const request = validateIssueActorTokenControlRequest(
         payload
@@ -555,12 +616,21 @@ async function main(): Promise<void> {
       process.exitCode = 1;
       return;
     } finally {
+      issuerControlStore.close();
       container.dispose();
     }
   }
 
   if (parsed.command === "revoke-auth-token") {
     const container = buildServiceContainer(loadEnvironment());
+    const issuerControlStore = new SqliteAuthIssuerControlStore(
+      container.env.sqlitePath
+    );
+    const issuerLifecycleService = new AuthIssuerLifecycleService(
+      container.authPolicy,
+      issuerControlStore,
+      container.services.auditHistoryService
+    );
     try {
       if (!container.env.auth.issuedTokenRevocationPath) {
         throw new Error(
@@ -576,6 +646,10 @@ async function main(): Promise<void> {
       container.authPolicy.authorizeAdministrativeAction(
         "revoke_auth_token",
         administrativeActor
+      );
+      issuerLifecycleService.assertAdministrativeActionAllowed(
+        administrativeActor,
+        "revoke_auth_token"
       );
       const request = validateRevokeActorTokenControlRequest(
         payload
@@ -631,6 +705,114 @@ async function main(): Promise<void> {
       process.exitCode = 1;
       return;
     } finally {
+      issuerControlStore.close();
+      container.dispose();
+    }
+  }
+
+  if (parsed.command === "revoke-auth-tokens") {
+    const container = buildServiceContainer(loadEnvironment());
+    const issuerControlStore = new SqliteAuthIssuerControlStore(
+      container.env.sqlitePath
+    );
+    const issuerLifecycleService = new AuthIssuerLifecycleService(
+      container.authPolicy,
+      issuerControlStore,
+      container.services.auditHistoryService
+    );
+    try {
+      const payload = await loadCommandPayload(parsed.options);
+      const administrativeActor = buildAdministrativeActorContext(
+        "revoke_auth_tokens",
+        extractAdministrativeActor(payload)
+      );
+      container.authPolicy.authorizeAdministrativeAction(
+        "revoke_auth_tokens",
+        administrativeActor
+      );
+      issuerLifecycleService.assertAdministrativeActionAllowed(
+        administrativeActor,
+        "revoke_auth_tokens"
+      );
+      const request = validateRevokeIssuedActorTokensControlRequest(payload);
+      const revocationStore = request.dryRun
+        ? undefined
+        : await FileIssuedTokenRevocationStore.create(
+            requireIssuedTokenRevocationPath(
+              container.env.auth.issuedTokenRevocationPath
+            ),
+            container.authPolicy.getRevokedIssuedTokenIds()
+          );
+      const result = await executeBulkIssuedTokenRevocation({
+        request,
+        issuedTokenStore: container.ports.issuedTokenStore,
+        authPolicy: container.authPolicy,
+        administrativeActor,
+        auditHistoryService: container.services.auditHistoryService,
+        command: "revoke-auth-tokens",
+        revocationStore
+      });
+
+      writeJson(
+        {
+          ok: true,
+          ...result
+        },
+        parsed.options.pretty
+      );
+      process.exitCode = 0;
+      return;
+    } catch (error) {
+      writeJson(mapCliError(error), parsed.options.pretty);
+      process.exitCode = 1;
+      return;
+    } finally {
+      issuerControlStore.close();
+      container.dispose();
+    }
+  }
+
+  if (parsed.command === "set-auth-issuer-state") {
+    const container = buildServiceContainer(loadEnvironment());
+    const issuerControlStore = new SqliteAuthIssuerControlStore(
+      container.env.sqlitePath
+    );
+    const issuerLifecycleService = new AuthIssuerLifecycleService(
+      container.authPolicy,
+      issuerControlStore,
+      container.services.auditHistoryService
+    );
+    try {
+      const payload = await loadCommandPayload(parsed.options);
+      const administrativeActor = buildAdministrativeActorContext(
+        "manage_auth_issuers",
+        extractAdministrativeActor(payload)
+      );
+      container.authPolicy.authorizeAdministrativeAction(
+        "manage_auth_issuers",
+        administrativeActor
+      );
+      const request = validateSetAuthIssuerStateControlRequest(payload);
+      const issuer = await issuerLifecycleService.setIssuerState(
+        request,
+        administrativeActor
+      );
+
+      writeJson(
+        {
+          ok: true,
+          issuer
+        },
+        parsed.options.pretty
+      );
+      process.exitCode = 0;
+      return;
+    } catch (error) {
+      writeJson(mapCliError(error), parsed.options.pretty);
+      process.exitCode = 1;
+      return;
+    } finally {
+      issuerControlStore.close();
       container.dispose();
     }
   }
@@ -1012,6 +1194,7 @@ The root workspace pnpm cli script invokes this same CLI.
 
 Commands:
   version              Print the runtime release metadata used for this build
+  auth-issuers         List effective auth issuer controls for registered operators
   auth-status          Print the effective actor-registry and issued-token summary
   auth-issued-tokens   List recorded issued actor tokens and their lifecycle state
   auth-introspect-token  Inspect a static or issued actor token against the current auth policy
@@ -1026,6 +1209,8 @@ Commands:
   freshness-status     Print temporal-validity summary data and refresh candidates
   issue-auth-token     Mint a short-lived issued actor token from JSON input
   revoke-auth-token    Revoke a previously issued actor token through the local revocation store
+  revoke-auth-tokens   Revoke a bounded set of issued actor tokens through the local revocation store
+  set-auth-issuer-state  Override issuer controls for one registered operator
   execute-coding-task  Run a coding-domain task through the vendored safety-gated runtime
   list-agent-traces  List compact operational traces for one local-agent request
   show-tool-output  Read a full spilled local-agent tool output by output id
@@ -1054,6 +1239,7 @@ Commands:
 
 Notes:
   - version and --version do not require an input payload.
+  - auth-issuers accepts optional JSON input with actor.
   - auth-status has no required payload, but enforced auth mode requires operator or system actor context when you call the command.
   - auth-issued-tokens accepts optional JSON input with actor, actorId, asOf, includeRevoked, issuedByActorId, revokedByActorId, lifecycleStatus, and limit.
   - auth-introspect-token expects JSON input with token and optional asOf, expectedTransport, expectedCommand, or expectedAdministrativeAction.
@@ -1081,9 +1267,11 @@ Notes:
   - tools-package-plan accepts optional JSON input with ids (string array) and returns Docker compose run plans without executing tools.
   - issue-auth-token expects JSON input with actorId, actorRole, and optional source, allowedTransports, allowedCommands, allowedAdminActions, validFrom, validUntil, or ttlMinutes.
   - revoke-auth-token expects JSON input with tokenId or a valid issued token, and optional reason.
+  - revoke-auth-tokens expects JSON input with at least one selector filter from actorId, issuedByActorId, revokedByActorId, or lifecycleStatus, plus optional asOf, includeRevoked, limit, dryRun, and reason.
+  - set-auth-issuer-state expects JSON input with actorId, enabled, allowIssueAuthToken, allowRevokeAuthToken, and optional validFrom, validUntil, or reason.
   - Input payloads are JSON objects shaped like the existing service contracts.
   - Runtime command actor context is optional in the payload; the CLI injects command-safe defaults for those commands.
-  - In enforced auth mode, auth-status, auth-issued-tokens, auth-introspect-token, issue-auth-token, and revoke-auth-token require operator or system actor context in the JSON payload.
+  - In enforced auth mode, auth-issuers, auth-status, auth-issued-tokens, auth-introspect-token, issue-auth-token, revoke-auth-token, revoke-auth-tokens, and set-auth-issuer-state require operator or system actor context in the JSON payload.
   - execute-coding-task defaults repoRoot to the current working directory when omitted.
   - Output is always JSON so later HTTP and MCP adapters can mirror the same response shape.
 `.trim();
@@ -1231,4 +1419,15 @@ function resolveIssuedTokenIdForRevocation(
   }
 
   return inspection.claims.tokenId;
+}
+
+function requireIssuedTokenRevocationPath(filePath?: string): string {
+  const normalized = filePath?.trim();
+  if (!normalized) {
+    throw new Error(
+      "MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_PATH must be configured to revoke actor access tokens."
+    );
+  }
+
+  return normalized;
 }

@@ -28,9 +28,9 @@ For rollout readiness and the MCP adoption path, see [`go-live-gates.md`](./go-l
 
 If the goal is to make mimir the default MCP tool across all workspaces, the next backlog order is:
 
-1. close the remaining shared-rollout hardening under `BK-001`
-2. close the remaining freshness-governance work under `BK-007`
-3. keep hierarchical retrieval behind packet-diff-reviewed rollout gates under `BK-008`
+1. close the remaining freshness-governance work under `BK-007`
+2. keep hierarchical retrieval behind packet-diff-reviewed rollout gates under `BK-008`
+3. decide whether `RV-006` authority-state and namespace semantics should be promoted from ready guidance into enforced runtime policy
 
 The pilot and all-workspace go-live gates for this sequence are documented in [`go-live-gates.md`](./go-live-gates.md).
 
@@ -41,8 +41,7 @@ The highest-priority items from the earlier architectural review are now impleme
 The next implementation order now begins with the stricter read-path governance groundwork from [`read-path-alignment-rfc.md`](./read-path-alignment-rfc.md):
 
 1. define authority-state invariants and namespace semantics under `RV-006`
-2. close the remaining shared-rollout hardening under `BK-001`
-3. close the remaining freshness-governance work under `BK-007`
+2. close the remaining freshness-governance work under `BK-007`
 3. keep hierarchical retrieval behind packet-diff-reviewed rollout gates under `BK-008`
 
 ## Review-Driven Ready Work
@@ -124,7 +123,7 @@ The next implementation order now begins with the stricter read-path governance 
 
 | ID | Work Item | Why It Is Still Here | Status |
 | --- | --- | --- | --- |
-| BK-001 | Implement agent-scoped authentication and authorization | Actor-registry auth is now enforced across runtime commands, HTTP auth-control routes, and CLI auth-control commands, with file-backed registry loading, rotated credentials, validity windows, issuer-secret-backed issued tokens, persisted issued-token lifecycle storage and operator listing, issuance and revocation attribution in the issued-token ledger, queryable issued-token lifecycle filtering by issuer, revoker, and lifecycle state across CLI and HTTP, bounded audit-history events for token issue and revoke operations, filtered audit-history queries by actor, action type, and source, and issued-token revocation, but shared-rollout hardening still lacks a fuller central issuance lifecycle and a broader multi-operator lifecycle control plane | partial |
+| BK-001 | Implement agent-scoped authentication and authorization | Actor-registry auth is enforced across runtime commands, HTTP auth-control routes, and CLI auth-control commands, with file-backed registry loading, rotated credentials, validity windows, issuer-secret-backed issued tokens, persisted issued-token lifecycle storage and operator listing, centrally managed auth issuer lifecycle controls, multi-operator issuer state overrides, registry-bounded no-widening semantics for issuer controls, bounded bulk issued-token revocation across CLI and HTTP, issuance and revocation attribution in the issued-token ledger, queryable issued-token lifecycle filtering by issuer, revoker, and lifecycle state across CLI and HTTP, and bounded audit-history events for token issue, issuer-control changes, and revoke operations | done |
 | BK-002 | Wire a real paid escalation provider behind the reserved `paid_escalation` role | A real OpenAI-compatible paid reasoning provider is now bound to the reserved role and can enrich escalation output when configured | done |
 | BK-003 | Expose context-packet assembly directly through transports | First-class packet assembly is now exposed through CLI, HTTP, and MCP | done |
 | BK-004 | Align `docker/compose.local.yml` with the live Docker Model Runner plus Qwen stack | Compose now mirrors the local Docker Model Runner plus Qwen role bindings | done |
