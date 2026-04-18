@@ -31,6 +31,14 @@ export interface AppEnvironment {
   };
   roleBindings: Record<ModelRole, ModelRoleBinding>;
   toolRegistryDir: string;
+  toolboxManifestDir: string;
+  toolboxActiveProfile?: string;
+  toolboxClientId?: string;
+  toolboxSessionMode: "legacy-direct" | "toolbox-bootstrap" | "toolbox-activated";
+  toolboxSessionEnforcement: "off" | "audit" | "enforced";
+  toolboxLeaseIssuer: string;
+  toolboxLeaseAudience: string;
+  toolboxLeaseIssuerSecret?: string;
   codingRuntimePythonExecutable: string;
   codingRuntimePythonPath: string;
   codingRuntimeModule: string;

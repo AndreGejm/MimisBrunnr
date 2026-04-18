@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdir as fsMkdir, mkdtemp, rm, writeFile as fsWriteFile } from "node:fs/promises";
+import { mkdir as fsMkdir, mkdtemp, readFile as fsReadFile, rm, writeFile as fsWriteFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import * as application from "../../packages/application/dist/index.js";
 import {
   SqliteAuditLog,
@@ -34,6 +35,20 @@ test("default launcher compatibility includes old and shorthand aliases", () => 
   assert.ok(COMPATIBILITY_LAUNCHER_NAMES.includes("multiagentbrain"));
   assert.ok(COMPATIBILITY_LAUNCHER_NAMES.includes("multi-agent-brain"));
   assert.ok(COMPATIBILITY_LAUNCHER_NAMES.includes("mab"));
+});
+
+test("cleanup runner is tracked in canonical scripts and targets mimir", async () => {
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+  const cleanupScriptPath = path.join(repoRoot, "scripts", "run-mimisbrunnr-cleanup.ps1");
+  const script = await fsReadFile(cleanupScriptPath, "utf8");
+
+  assert.match(script, /launch-mimir-cli\.mjs/);
+  assert.match(script, /freshness-status/);
+  assert.match(script, /list-review-queue/);
+  assert.match(script, /F:\\Dev\\Mimisbrunnr/);
+  assert.doesNotMatch(script, /run-memory-librarian/);
+  assert.doesNotMatch(script, /launch-brain-cli\.mjs/);
+  assert.doesNotMatch(script, /Runs orchestrator-owned memory cleanup for MultiAgentBrain/i);
 });
 test("default access doctor reports reusable Docker tool assets", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "mimir-doctor-docker-tools-"));

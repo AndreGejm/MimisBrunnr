@@ -112,11 +112,17 @@ What to check:
 
 Helpful surfaces:
 
-- `corepack pnpm cli -- auth-status`
-- `corepack pnpm cli -- auth-issued-tokens`
-- `corepack pnpm cli -- auth-introspect-token --json ...`
+- `corepack pnpm cli -- auth-status --json '{ "actor": { ... } }'`
+- `corepack pnpm cli -- auth-issued-tokens --json '{ "actor": { ... }, "includeRevoked": true }'`
+- `corepack pnpm cli -- auth-issued-tokens --json '{ "actor": { ... }, "issuedByActorId": "operator-cli", "lifecycleStatus": "active", "includeRevoked": true }'`
+- `corepack pnpm cli -- query-history --json '{ "actor": { ... }, "actorId": "operator-cli", "actionType": "issue_auth_token", "limit": 20 }'`
+- `corepack pnpm cli -- auth-introspect-token --json '{ "actor": { ... }, ... }'`
 - `GET /v1/system/auth`
 - `POST /v1/system/auth/introspect-token`
+
+If you need to prove who minted or revoked a token, inspect `query-history` for `issue_auth_token` and `revoke_auth_token` entries. The history detail records `tokenId`, actor target metadata, and revocation reason, but not the raw token string.
+
+In enforced mode, CLI auth-control calls without operator or system actor context now fail with `401 unauthorized` instead of silently returning status.
 
 ## `draft_note` behaves differently with and without models
 

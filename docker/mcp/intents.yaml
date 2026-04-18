@@ -1,0 +1,122 @@
+intents:
+  core-dev:
+    displayName: Core Development
+    targetProfile: core-dev
+    trustClass: local-readwrite
+    requiresApproval: false
+    activationMode: session-switch
+    allowedCategories:
+      - repo-read
+      - repo-write
+      - local-docs
+      - internal-memory
+      - internal-memory-write
+    deniedCategories:
+      - github-write
+      - docker-write
+      - deployment
+    fallbackProfile: bootstrap
+  docs-research:
+    displayName: Docs Research
+    targetProfile: docs-research
+    trustClass: external-read
+    requiresApproval: false
+    activationMode: session-switch
+    allowedCategories:
+      - repo-read
+      - local-docs
+      - internal-memory
+      - docs-search
+      - web-search
+      - github-read
+    deniedCategories:
+      - github-write
+      - docker-write
+      - deployment
+    fallbackProfile: core-dev
+  runtime-observe:
+    displayName: Runtime Observe
+    targetProfile: runtime-observe
+    trustClass: ops-read
+    requiresApproval: false
+    activationMode: session-switch
+    allowedCategories:
+      - repo-read
+      - internal-memory
+      - logs-read
+      - metrics-read
+      - traces-read
+      - docker-read
+    deniedCategories:
+      - docker-write
+      - deployment
+    fallbackProfile: core-dev
+  runtime-admin:
+    displayName: Runtime Admin
+    targetProfile: runtime-admin
+    trustClass: ops-mutate
+    requiresApproval: true
+    activationMode: session-switch
+    allowedCategories:
+      - repo-read
+      - internal-memory
+      - logs-read
+      - metrics-read
+      - traces-read
+      - docker-read
+      - docker-write
+    deniedCategories:
+      - deployment
+    fallbackProfile: runtime-observe
+  heavy-rag:
+    displayName: Heavy RAG
+    targetProfile: heavy-rag
+    trustClass: local-read
+    requiresApproval: false
+    activationMode: session-switch
+    allowedCategories:
+      - internal-memory
+      - internal-memory-write
+      - model-inference
+    deniedCategories:
+      - docker-write
+      - deployment
+    fallbackProfile: core-dev
+  delivery-admin:
+    displayName: Delivery Admin
+    targetProfile: delivery-admin
+    trustClass: operator-only
+    requiresApproval: true
+    activationMode: session-switch
+    allowedCategories:
+      - repo-read
+      - github-write
+      - docker-write
+      - deployment
+    deniedCategories: []
+    fallbackProfile: runtime-admin
+  full:
+    displayName: Full Access
+    targetProfile: full
+    trustClass: operator-only
+    requiresApproval: true
+    activationMode: session-switch
+    allowedCategories:
+      - repo-read
+      - repo-write
+      - local-docs
+      - internal-memory
+      - internal-memory-write
+      - docs-search
+      - web-search
+      - github-read
+      - github-write
+      - logs-read
+      - metrics-read
+      - traces-read
+      - docker-read
+      - docker-write
+      - model-inference
+      - deployment
+    deniedCategories: []
+    fallbackProfile: delivery-admin

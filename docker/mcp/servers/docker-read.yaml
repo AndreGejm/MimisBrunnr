@@ -1,0 +1,14 @@
+server:
+  id: docker-read
+  displayName: Docker Read
+  source: peer
+  kind: peer
+  trustClass: ops-read
+  mutationLevel: read
+  tools:
+    - toolId: docker.inspect
+      displayName: Inspect Docker Runtime
+      category: docker-read
+      trustClass: ops-read
+      mutationLevel: read
+      semanticCapabilityId: docker.runtime.inspect

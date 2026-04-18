@@ -38,6 +38,8 @@ import {
   getRuntimeCommandHttpStatus,
   issueActorAccessToken,
   loadEnvironment,
+  recordIssuedAuthTokenAudit,
+  recordRevokedAuthTokenAudit,
   runRuntimeHealthChecks,
   validateListIssuedActorTokensControlRequest,
   validateRevokeActorTokenControlRequest,
@@ -256,15 +258,19 @@ async function handleRequest(
     sendJson(response, 200, {
       ok: true,
       issuedTokens: container.ports.issuedTokenStore.listIssuedTokens(query),
-      summary: container.ports.issuedTokenStore.getIssuedTokenSummary(query.asOf)
+      summary: container.ports.issuedTokenStore.getIssuedTokenSummary(query)
     });
     return;
   }
 
   if (url.pathname === "/v1/system/auth/issue-token") {
+    const administrativeActor = buildAdministrativeActorContext(
+      "issue_auth_token",
+      request.headers
+    );
     container.authPolicy.authorizeAdministrativeAction(
       "issue_auth_token",
-      buildAdministrativeActorContext("issue_auth_token", request.headers)
+      administrativeActor
     );
     if (!container.env.auth.issuerSecret) {
       sendJson(response, 422, {
@@ -300,9 +306,33 @@ async function handleRequest(
       },
       container.env.auth.issuerSecret
     );
+    const warnings: string[] = [];
     const inspection = container.authPolicy.inspectToken(issuedToken);
     if (inspection.tokenKind === "issued" && inspection.claims?.tokenId) {
-      container.ports.issuedTokenStore.recordIssuedToken(inspection.claims);
+      container.ports.issuedTokenStore.recordIssuedToken(inspection.claims, {
+        issuedBy: {
+          actorId: administrativeActor.actorId,
+          actorRole: administrativeActor.actorRole,
+          source: administrativeActor.source,
+          transport: administrativeActor.transport
+        }
+      });
+      warnings.push(
+        ...(await recordIssuedAuthTokenAudit({
+          auditHistoryService: container.services.auditHistoryService,
+          administrativeActor,
+          tokenId: inspection.claims.tokenId,
+          targetActorId: validated.actorId,
+          targetActorRole: validated.actorRole,
+          targetSource: validated.source,
+          command: "issue-token",
+          validFrom: validated.validFrom,
+          validUntil,
+          hasAllowedCommands: (validated.allowedCommands?.length ?? 0) > 0,
+          hasAllowedAdminActions: (validated.allowedAdminActions?.length ?? 0) > 0,
+          hasAllowedCorpora: (validated.allowedCorpora?.length ?? 0) > 0
+        })).warnings
+      );
     }
 
     sendJson(response, 200, {
@@ -312,7 +342,8 @@ async function handleRequest(
         ...validated,
         issuedAt,
         validUntil
-      }
+      },
+      ...(warnings.length > 0 ? { warnings } : {})
     });
     return;
   }
@@ -337,9 +368,13 @@ async function handleRequest(
   }
 
   if (url.pathname === "/v1/system/auth/revoke-token") {
+    const administrativeActor = buildAdministrativeActorContext(
+      "revoke_auth_token",
+      request.headers
+    );
     container.authPolicy.authorizeAdministrativeAction(
       "revoke_auth_token",
-      buildAdministrativeActorContext("revoke_auth_token", request.headers)
+      administrativeActor
     );
     if (!container.env.auth.issuedTokenRevocationPath) {
       sendJson(response, 422, {
@@ -367,8 +402,28 @@ async function handleRequest(
     container.authPolicy.revokeIssuedTokenId(tokenId);
     const ledgerRevocation = container.ports.issuedTokenStore.markTokenRevoked(
       tokenId,
-      validated.reason
+      {
+        reason: validated.reason,
+        revokedBy: {
+          actorId: administrativeActor.actorId,
+          actorRole: administrativeActor.actorRole,
+          source: administrativeActor.source,
+          transport: administrativeActor.transport
+        }
+      }
     );
+    const warnings = (
+      await recordRevokedAuthTokenAudit({
+        auditHistoryService: container.services.auditHistoryService,
+        administrativeActor,
+        tokenId,
+        command: "revoke-token",
+        reason: validated.reason,
+        alreadyRevoked: revocation.alreadyRevoked,
+        persisted: revocation.persisted,
+        recordedTokenFound: ledgerRevocation.found
+      })
+    ).warnings;
 
     sendJson(response, 200, {
       ok: true,
@@ -376,7 +431,8 @@ async function handleRequest(
       alreadyRevoked: revocation.alreadyRevoked,
       persisted: revocation.persisted,
       recordedTokenFound: ledgerRevocation.found,
-      reason: validated.reason
+      reason: validated.reason,
+      ...(warnings.length > 0 ? { warnings } : {})
     });
     return;
   }
@@ -537,12 +593,18 @@ function parseIssuedTokensQuery(searchParams: URLSearchParams): {
   actorId?: string;
   asOf?: string;
   includeRevoked?: boolean;
+  issuedByActorId?: string;
+  revokedByActorId?: string;
+  lifecycleStatus?: "active" | "future" | "expired" | "revoked";
   limit?: number;
 } {
   return validateListIssuedActorTokensControlRequest({
     actorId: searchParams.get("actorId") ?? undefined,
     asOf: searchParams.get("asOf") ?? undefined,
     includeRevoked: parseOptionalBooleanQuery(searchParams, "includeRevoked"),
+    issuedByActorId: searchParams.get("issuedByActorId") ?? undefined,
+    revokedByActorId: searchParams.get("revokedByActorId") ?? undefined,
+    lifecycleStatus: searchParams.get("lifecycleStatus") ?? undefined,
     limit: parseOptionalPositiveIntegerQuery(searchParams, "limit")
   });
 }

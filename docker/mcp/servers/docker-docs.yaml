@@ -1,0 +1,14 @@
+server:
+  id: docker-docs
+  displayName: Docker Docs
+  source: peer
+  kind: peer
+  trustClass: external-read
+  mutationLevel: read
+  tools:
+    - toolId: docker.docs.search
+      displayName: Search Docker Docs
+      category: docs-search
+      trustClass: external-read
+      mutationLevel: read
+      semanticCapabilityId: docs.search.docker

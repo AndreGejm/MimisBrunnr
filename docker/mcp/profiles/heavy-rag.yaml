@@ -1,0 +1,16 @@
+profile:
+  id: heavy-rag
+  displayName: Heavy RAG
+  sessionMode: toolbox-activated
+  includeServers:
+    - mimir-control
+    - mimir-core
+  allowedCategories:
+    - internal-memory
+    - internal-memory-write
+    - model-inference
+  deniedCategories:
+    - github-write
+    - docker-write
+    - deployment
+  fallbackProfile: core-dev

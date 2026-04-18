@@ -50,6 +50,9 @@ HTTP adapter over the shared runtime container.
 - injects actor defaults from body and `x-mimir-*` headers
 - delegates into the shared orchestrator or shared services
 - exposes liveness and readiness health reports
+- `GET /v1/system/auth/issued-tokens` accepts `actorId`, `issuedByActorId`, `revokedByActorId`, `lifecycleStatus`, `asOf`, `includeRevoked`, and `limit` as query parameters; the returned summary applies the same filters except for `limit`
+- `POST /v1/system/auth/issue-token` and `POST /v1/system/auth/revoke-token` also append `issue_auth_token` and `revoke_auth_token` audit events that become visible through `POST /v1/history/query`; those audit details record token ids and safe lifecycle metadata, not raw token strings
+- `POST /v1/history/query` accepts `actorId`, `actionType`, `source`, `noteId`, `since`, `until`, and `limit` so operators can isolate lifecycle events without scanning unrelated history
 - maps service/auth/validation failures to HTTP status codes
 
 ## Run

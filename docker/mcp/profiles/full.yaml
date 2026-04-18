@@ -1,0 +1,34 @@
+profile:
+  id: full
+  displayName: Full Access
+  sessionMode: toolbox-activated
+  includeServers:
+    - mimir-control
+    - mimir-core
+    - github-read
+    - github-write
+    - brave-search
+    - docker-docs
+    - microsoft-learn
+    - grafana-observe
+    - docker-read
+    - docker-admin
+  allowedCategories:
+    - repo-read
+    - repo-write
+    - local-docs
+    - internal-memory
+    - internal-memory-write
+    - docs-search
+    - web-search
+    - github-read
+    - github-write
+    - logs-read
+    - metrics-read
+    - traces-read
+    - docker-read
+    - docker-write
+    - model-inference
+    - deployment
+  deniedCategories: []
+  fallbackProfile: delivery-admin

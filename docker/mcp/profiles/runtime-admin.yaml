@@ -1,0 +1,21 @@
+profile:
+  id: runtime-admin
+  displayName: Runtime Admin
+  sessionMode: toolbox-activated
+  includeServers:
+    - mimir-control
+    - mimir-core
+    - grafana-observe
+    - docker-read
+    - docker-admin
+  allowedCategories:
+    - repo-read
+    - internal-memory
+    - logs-read
+    - metrics-read
+    - traces-read
+    - docker-read
+    - docker-write
+  deniedCategories:
+    - deployment
+  fallbackProfile: runtime-observe

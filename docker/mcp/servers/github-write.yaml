@@ -1,0 +1,20 @@
+server:
+  id: github-write
+  displayName: GitHub Write
+  source: peer
+  kind: peer
+  trustClass: external-readwrite
+  mutationLevel: write
+  tools:
+    - toolId: github.issue.comment
+      displayName: Comment On Issue
+      category: github-write
+      trustClass: external-readwrite
+      mutationLevel: write
+      semanticCapabilityId: github.issue.comment
+    - toolId: github.pull_request.review
+      displayName: Review Pull Request
+      category: github-write
+      trustClass: external-readwrite
+      mutationLevel: write
+      semanticCapabilityId: github.pull-request.review

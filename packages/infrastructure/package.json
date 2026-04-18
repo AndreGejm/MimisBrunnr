@@ -13,6 +13,7 @@
     "@mimir/application": "workspace:*",
     "@mimir/contracts": "workspace:*",
     "@mimir/domain": "workspace:*",
-    "@mimir/orchestration": "workspace:*"
+    "@mimir/orchestration": "workspace:*",
+    "yaml": "^2.8.1"
   }
 }

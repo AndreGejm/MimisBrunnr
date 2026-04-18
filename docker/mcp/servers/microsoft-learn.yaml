@@ -1,0 +1,14 @@
+server:
+  id: microsoft-learn
+  displayName: Microsoft Learn
+  source: peer
+  kind: peer
+  trustClass: external-read
+  mutationLevel: read
+  tools:
+    - toolId: microsoft.docs.search
+      displayName: Search Microsoft Learn
+      category: docs-search
+      trustClass: external-read
+      mutationLevel: read
+      semanticCapabilityId: docs.search.microsoft

@@ -18,7 +18,7 @@ This map is based on tracked repository content. It intentionally separates trac
 | `documentation/` | canonical docs plus planning/history docs |
 | `runtimes/` | vendored Python coding runtime |
 | `tests/` | end-to-end test suite |
-| `scripts/` | launcher wrappers, access installers, diagnostics, review GUI, and governed cleanup wrapper |
+| `scripts/` | launcher wrappers, access installers, installer backend, diagnostics, review GUI, and governed cleanup wrapper |
 
 ## Major subsystems
 
@@ -142,7 +142,10 @@ External source adapters are gatekeeper surfaces for user-owned files. The curre
 - declarative tool manifests: `docker/tool-registry/*.json`
 - manifest schema for reusable toolbox packaging: `docker/tool-registry.schema.json`
 - Docker Desktop profiles: `docker/compose.tools.yml`
+- toolbox policy manifests for future Docker toolbox sessions: `docker/mcp/**`
 - installer/doctor reusable asset preflight and standalone Docker tool manifest summaries: `scripts/lib/default-access.mjs`
+- Docker toolbox audit and runtime-plan scripts: `scripts/docker/audit-toolbox-assets.mjs`, `scripts/docker/sync-mcp-profiles.mjs`
+- Windows installer backend for environment detection, repo preparation, access diagnostics, toolbox asset audit, toolbox runtime preparation, Docker MCP Toolkit audit, Docker Toolkit apply-plan compatibility reporting, dry-run write planning, tracked access apply, and persisted installer state: `scripts/installers/windows/**`
 
 ### Internal process boundary
 

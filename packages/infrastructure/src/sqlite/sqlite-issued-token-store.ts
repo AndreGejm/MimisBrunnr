@@ -23,6 +23,20 @@ export interface MarkIssuedTokenRevokedResult {
   persisted: boolean;
 }
 
+export interface IssuedTokenRevocationActor {
+  actorId: string;
+  actorRole: ActorRole;
+  source?: string;
+  transport: TransportKind;
+}
+
+export interface IssuedTokenIssuanceActor {
+  actorId: string;
+  actorRole: ActorRole;
+  source?: string;
+  transport: TransportKind;
+}
+
 export interface IssuedTokenLifecycleRecord {
   tokenId: string;
   actorId: string;
@@ -33,10 +47,18 @@ export interface IssuedTokenLifecycleRecord {
   allowedAdminActions?: AdministrativeAction[];
   allowedCorpora?: string[];
   issuedAt: string;
+  issuedByActorId?: string;
+  issuedByActorRole?: ActorRole;
+  issuedBySource?: string;
+  issuedByTransport?: TransportKind;
   validFrom?: string;
   validUntil?: string;
   revokedAt?: string;
   revokedReason?: string;
+  revokedByActorId?: string;
+  revokedByActorRole?: ActorRole;
+  revokedBySource?: string;
+  revokedByTransport?: TransportKind;
   lifecycleStatus: "active" | "future" | "expired" | "revoked";
 }
 
@@ -44,6 +66,9 @@ export interface ListIssuedTokenOptions {
   asOf?: string;
   actorId?: string;
   includeRevoked?: boolean;
+  issuedByActorId?: string;
+  revokedByActorId?: string;
+  lifecycleStatus?: IssuedTokenLifecycleRecord["lifecycleStatus"];
   limit?: number;
 }
 
@@ -66,10 +91,18 @@ interface IssuedTokenRow {
   allowed_admin_actions_json: string | null;
   allowed_corpora_json: string | null;
   issued_at: string;
+  issued_by_actor_id: string | null;
+  issued_by_actor_role: ActorRole | null;
+  issued_by_source: string | null;
+  issued_by_transport: TransportKind | null;
   valid_from: string | null;
   valid_until: string | null;
   revoked_at: string | null;
   revoked_reason: string | null;
+  revoked_by_actor_id: string | null;
+  revoked_by_actor_role: ActorRole | null;
+  revoked_by_source: string | null;
+  revoked_by_transport: TransportKind | null;
 }
 
 export class SqliteIssuedTokenStore {
@@ -93,7 +126,10 @@ export class SqliteIssuedTokenStore {
   }
 
   recordIssuedToken(
-    claims: IssuedActorTokenClaims
+    claims: IssuedActorTokenClaims,
+    options: {
+      issuedBy?: IssuedTokenIssuanceActor;
+    } = {}
   ): RecordIssuedTokenResult {
     const tokenId = claims.tokenId?.trim();
     if (!tokenId) {
@@ -124,12 +160,16 @@ export class SqliteIssuedTokenStore {
             allowed_admin_actions_json,
             allowed_corpora_json,
             issued_at,
+            issued_by_actor_id,
+            issued_by_actor_role,
+            issued_by_source,
+            issued_by_transport,
             valid_from,
             valid_until,
             revoked_at,
             revoked_reason
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
         `
       )
       .run(
@@ -142,6 +182,10 @@ export class SqliteIssuedTokenStore {
         serializeJsonArray(claims.allowedAdminActions),
         serializeJsonArray(claims.allowedCorpora),
         claims.issuedAt,
+        options.issuedBy?.actorId ?? null,
+        options.issuedBy?.actorRole ?? null,
+        options.issuedBy?.source ?? null,
+        options.issuedBy?.transport ?? null,
         claims.validFrom ?? null,
         claims.validUntil ?? null
       );
@@ -155,13 +199,17 @@ export class SqliteIssuedTokenStore {
 
   markTokenRevoked(
     tokenId: string,
-    reason?: string,
-    revokedAt: string = new Date().toISOString()
+    options: {
+      reason?: string;
+      revokedAt?: string;
+      revokedBy?: IssuedTokenRevocationActor;
+    } = {}
   ): MarkIssuedTokenRevokedResult {
     const normalized = tokenId.trim();
     if (!normalized) {
       throw new Error("Issued token ID is required.");
     }
+    const revokedAt = options.revokedAt ?? new Date().toISOString();
 
     const existing = this.database
       .prepare(
@@ -191,11 +239,25 @@ export class SqliteIssuedTokenStore {
       .prepare(
         `
           UPDATE issued_actor_tokens
-          SET revoked_at = ?, revoked_reason = ?
+          SET
+            revoked_at = ?,
+            revoked_reason = ?,
+            revoked_by_actor_id = ?,
+            revoked_by_actor_role = ?,
+            revoked_by_source = ?,
+            revoked_by_transport = ?
           WHERE token_id = ?
         `
       )
-      .run(revokedAt, reason ?? null, normalized);
+      .run(
+        revokedAt,
+        options.reason ?? null,
+        options.revokedBy?.actorId ?? null,
+        options.revokedBy?.actorRole ?? null,
+        options.revokedBy?.source ?? null,
+        options.revokedBy?.transport ?? null,
+        normalized
+      );
 
     return {
       tokenId: normalized,
@@ -218,15 +280,27 @@ export class SqliteIssuedTokenStore {
       values.push(options.actorId.trim());
     }
 
-    if (!options.includeRevoked) {
+    if (options.issuedByActorId?.trim()) {
+      clauses.push("issued_by_actor_id = ?");
+      values.push(options.issuedByActorId.trim());
+    }
+
+    if (options.revokedByActorId?.trim()) {
+      clauses.push("revoked_by_actor_id = ?");
+      values.push(options.revokedByActorId.trim());
+    }
+
+    if (!options.includeRevoked && options.lifecycleStatus !== "revoked") {
       clauses.push("revoked_at IS NULL");
     }
 
     const whereClause = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-    const limitClause =
+    const limitValue =
       options.limit && Number.isInteger(options.limit) && options.limit > 0
-        ? ` LIMIT ${options.limit}`
-        : "";
+        ? options.limit
+        : undefined;
+    const applySqlLimit = limitValue !== undefined && options.lifecycleStatus === undefined;
+    const limitClause = applySqlLimit ? ` LIMIT ${limitValue}` : "";
 
     const rows = this.database
       .prepare(
@@ -241,10 +315,18 @@ export class SqliteIssuedTokenStore {
             allowed_admin_actions_json,
             allowed_corpora_json,
             issued_at,
+            issued_by_actor_id,
+            issued_by_actor_role,
+            issued_by_source,
+            issued_by_transport,
             valid_from,
             valid_until,
             revoked_at,
-            revoked_reason
+            revoked_reason,
+            revoked_by_actor_id,
+            revoked_by_actor_role,
+            revoked_by_source,
+            revoked_by_transport
           FROM issued_actor_tokens
           ${whereClause}
           ORDER BY issued_at DESC, token_id ASC
@@ -253,36 +335,37 @@ export class SqliteIssuedTokenStore {
       )
       .all(...values) as unknown as IssuedTokenRow[];
 
-    return rows.map((row) => mapIssuedTokenRow(row, evaluationTimeMs));
+    const records = rows
+      .map((row) => mapIssuedTokenRow(row, evaluationTimeMs))
+      .filter((record) =>
+        options.lifecycleStatus === undefined
+          ? true
+          : record.lifecycleStatus === options.lifecycleStatus
+      );
+
+    return applySqlLimit || limitValue === undefined
+      ? records
+      : records.slice(0, limitValue);
   }
 
   getIssuedTokenSummary(
-    asOf: string = new Date().toISOString()
+    options: string | ListIssuedTokenOptions = new Date().toISOString()
   ): IssuedTokenLifecycleSummary {
-    const evaluationTimeMs = normalizeEvaluationTime(asOf);
-    const rows = this.database
-      .prepare(
-        `
-          SELECT
-            token_id,
-            actor_id,
-            actor_role,
-            source,
-            allowed_transports_json,
-            allowed_commands_json,
-            allowed_admin_actions_json,
-            allowed_corpora_json,
-            issued_at,
-            valid_from,
-            valid_until,
-            revoked_at,
-            revoked_reason
-          FROM issued_actor_tokens
-        `
-      )
-      .all() as unknown as IssuedTokenRow[];
-
-    const records = rows.map((row) => mapIssuedTokenRow(row, evaluationTimeMs));
+    const listOptions =
+      typeof options === "string"
+        ? {
+            asOf: options,
+            includeRevoked: true
+          }
+        : {
+            ...options,
+            includeRevoked:
+              options.includeRevoked ??
+              (options.lifecycleStatus === "revoked"),
+            limit: undefined
+          };
+    const asOf = listOptions.asOf ?? new Date().toISOString();
+    const records = this.listIssuedTokens(listOptions);
 
     return {
       asOf,
@@ -306,10 +389,18 @@ export class SqliteIssuedTokenStore {
         allowed_admin_actions_json TEXT,
         allowed_corpora_json TEXT,
         issued_at TEXT NOT NULL,
+        issued_by_actor_id TEXT,
+        issued_by_actor_role TEXT,
+        issued_by_source TEXT,
+        issued_by_transport TEXT,
         valid_from TEXT,
         valid_until TEXT,
         revoked_at TEXT,
-        revoked_reason TEXT
+        revoked_reason TEXT,
+        revoked_by_actor_id TEXT,
+        revoked_by_actor_role TEXT,
+        revoked_by_source TEXT,
+        revoked_by_transport TEXT
       );
 
       CREATE INDEX IF NOT EXISTS idx_issued_actor_tokens_actor_id
@@ -318,6 +409,38 @@ export class SqliteIssuedTokenStore {
       CREATE INDEX IF NOT EXISTS idx_issued_actor_tokens_issued_at
       ON issued_actor_tokens (issued_at DESC);
     `);
+
+    const columns = new Set(
+      (
+        this.database
+          .prepare("PRAGMA table_info(issued_actor_tokens)")
+          .all() as Array<{ name: string }>
+      ).map((row) => row.name)
+    );
+
+    this.ensureIssuedActorTokensColumn(columns, "issued_by_actor_id", "TEXT");
+    this.ensureIssuedActorTokensColumn(columns, "issued_by_actor_role", "TEXT");
+    this.ensureIssuedActorTokensColumn(columns, "issued_by_source", "TEXT");
+    this.ensureIssuedActorTokensColumn(columns, "issued_by_transport", "TEXT");
+    this.ensureIssuedActorTokensColumn(columns, "revoked_by_actor_id", "TEXT");
+    this.ensureIssuedActorTokensColumn(columns, "revoked_by_actor_role", "TEXT");
+    this.ensureIssuedActorTokensColumn(columns, "revoked_by_source", "TEXT");
+    this.ensureIssuedActorTokensColumn(columns, "revoked_by_transport", "TEXT");
+  }
+
+  private ensureIssuedActorTokensColumn(
+    columns: Set<string>,
+    columnName: string,
+    definition: string
+  ): void {
+    if (columns.has(columnName)) {
+      return;
+    }
+
+    this.database.exec(
+      `ALTER TABLE issued_actor_tokens ADD COLUMN ${columnName} ${definition}`
+    );
+    columns.add(columnName);
   }
 }
 
@@ -356,10 +479,18 @@ function mapIssuedTokenRow(
     allowedAdminActions: parseJsonArray<AdministrativeAction>(row.allowed_admin_actions_json),
     allowedCorpora: parseJsonArray<string>(row.allowed_corpora_json),
     issuedAt: row.issued_at,
+    issuedByActorId: row.issued_by_actor_id ?? undefined,
+    issuedByActorRole: row.issued_by_actor_role ?? undefined,
+    issuedBySource: row.issued_by_source ?? undefined,
+    issuedByTransport: row.issued_by_transport ?? undefined,
     validFrom: row.valid_from ?? undefined,
     validUntil: row.valid_until ?? undefined,
     revokedAt: row.revoked_at ?? undefined,
     revokedReason: row.revoked_reason ?? undefined,
+    revokedByActorId: row.revoked_by_actor_id ?? undefined,
+    revokedByActorRole: row.revoked_by_actor_role ?? undefined,
+    revokedBySource: row.revoked_by_source ?? undefined,
+    revokedByTransport: row.revoked_by_transport ?? undefined,
     lifecycleStatus: deriveLifecycleStatus(row, evaluationTimeMs)
   };
 }

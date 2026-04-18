@@ -1,0 +1,44 @@
+server:
+  id: mimir-core
+  displayName: Mimir Core
+  source: owned
+  kind: semantic
+  trustClass: local-read
+  mutationLevel: read
+  tools:
+    - toolId: search_context
+      displayName: Search Context
+      category: internal-memory
+      trustClass: local-read
+      mutationLevel: read
+      semanticCapabilityId: mimir.context.search
+    - toolId: assemble_agent_context
+      displayName: Assemble Agent Context
+      category: internal-memory
+      trustClass: local-read
+      mutationLevel: read
+      semanticCapabilityId: mimir.context.assemble
+    - toolId: get_context_packet
+      displayName: Get Context Packet
+      category: internal-memory
+      trustClass: local-read
+      mutationLevel: read
+      semanticCapabilityId: mimir.context.packet
+    - toolId: fetch_decision_summary
+      displayName: Fetch Decision Summary
+      category: local-docs
+      trustClass: local-read
+      mutationLevel: read
+      semanticCapabilityId: mimir.decision.summary
+    - toolId: draft_note
+      displayName: Draft Note
+      category: internal-memory-write
+      trustClass: local-readwrite
+      mutationLevel: write
+      semanticCapabilityId: mimir.memory.draft
+    - toolId: create_session_archive
+      displayName: Create Session Archive
+      category: internal-memory-write
+      trustClass: local-readwrite
+      mutationLevel: write
+      semanticCapabilityId: mimir.memory.archive

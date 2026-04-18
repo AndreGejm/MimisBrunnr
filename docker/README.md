@@ -6,6 +6,7 @@ Tracked container assets for the local Mimir runtime live here.
 
 - `docker/mimir-api.Dockerfile`
 - `docker/mimir-mcp.Dockerfile`
+- `docker/mcp/*`
 - `docker/compose.local.yml`
 - `docker/compose.mcp-session.yml`
 - `docker/compose.tools.yml`
@@ -47,6 +48,29 @@ The registry intentionally separates tool access from mimisbrunnr authority:
 - tools that need durable memory must use governed Mimir commands such as `create-session-archive` or `draft-note`
 
 This slice defines the registry and Docker profiles only. It does not add a general-purpose `execute-tool` gateway.
+
+## Docker toolbox v1
+
+The repo now also contains an intent-driven Docker MCP toolbox surface under `docker/mcp`.
+
+Key rules:
+
+- manifests in `docker/mcp` are the source of truth
+- Docker runtime state is compiled from those manifests
+- agents discover toolboxes first through `mimir-control`
+- v1 activation is reconnect or fork into an approved profile, not hot tool injection
+
+Useful commands:
+
+```bash
+pnpm cli check-mcp-profiles --json "{}"
+pnpm cli list-toolboxes --json "{}"
+pnpm docker:mcp:sync
+pnpm docker:mcp:sync:json
+pnpm mcp:control
+```
+
+The operator runbook lives in [`documentation/operations/docker-toolbox-v1.md`](/F:/Dev/scripts/Mimir/mimir/documentation/operations/docker-toolbox-v1.md).
 
 ## Discover and validate configured AI tools
 

@@ -758,7 +758,10 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
         ae.detail_json
       FROM audit_entries ae
       WHERE
-        (:since IS NULL OR ae.occurred_at >= :since)
+        (:actorId IS NULL OR ae.actor_id = :actorId)
+        AND (:actionType IS NULL OR ae.action_type = :actionType)
+        AND (:source IS NULL OR ae.source = :source)
+        AND (:since IS NULL OR ae.occurred_at >= :since)
         AND (:until IS NULL OR ae.occurred_at <= :until)
         AND (
           :noteId IS NULL
@@ -772,7 +775,10 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
       ORDER BY ae.occurred_at DESC
       LIMIT :limit
     `).all({
+      actorId: request.actorId ?? null,
+      actionType: request.actionType ?? null,
       noteId: request.noteId ?? null,
+      source: request.source ?? null,
       since: request.since ?? null,
       until: request.until ?? null,
       limit

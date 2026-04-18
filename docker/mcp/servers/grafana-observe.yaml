@@ -1,0 +1,26 @@
+server:
+  id: grafana-observe
+  displayName: Grafana Observe
+  source: peer
+  kind: peer
+  trustClass: ops-read
+  mutationLevel: read
+  tools:
+    - toolId: grafana.logs.query
+      displayName: Query Logs
+      category: logs-read
+      trustClass: ops-read
+      mutationLevel: read
+      semanticCapabilityId: observe.logs.query
+    - toolId: grafana.metrics.query
+      displayName: Query Metrics
+      category: metrics-read
+      trustClass: ops-read
+      mutationLevel: read
+      semanticCapabilityId: observe.metrics.query
+    - toolId: grafana.traces.query
+      displayName: Query Traces
+      category: traces-read
+      trustClass: ops-read
+      mutationLevel: read
+      semanticCapabilityId: observe.traces.query

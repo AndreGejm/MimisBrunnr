@@ -99,8 +99,19 @@ test("mimir-mcp serves initialize, tools/list, review tools, context tools, and 
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "read_review_note"));
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "accept_note"));
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "reject_note"));
+  assert.ok(listResponse.result.tools.some((tool) => tool.name === "query_history"));
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "list_context_tree"));
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "read_context_node"));
+  const queryHistoryTool = listResponse.result.tools.find(
+    (tool) => tool.name === "query_history"
+  );
+  assert.ok(queryHistoryTool);
+  assert.deepEqual(
+    Object.keys(queryHistoryTool.inputSchema.properties).sort(),
+    ["actionType", "actor", "actorId", "limit", "noteId", "since", "source", "until"]
+  );
+  assert.ok(queryHistoryTool.inputSchema.properties.actionType.enum.includes("issue_auth_token"));
+  assert.ok(queryHistoryTool.inputSchema.properties.actionType.enum.includes("revoke_auth_token"));
   const listContextTreeTool = listResponse.result.tools.find(
     (tool) => tool.name === "list_context_tree"
   );

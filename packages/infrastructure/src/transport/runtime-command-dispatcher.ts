@@ -1,5 +1,6 @@
 import type {
   AcceptNoteRequest,
+  ActorContext,
   AssembleAgentContextRequest,
   AssembleContextPacketRequest,
   ListReviewQueueRequest,
@@ -148,6 +149,10 @@ export async function dispatchRuntimeCommand(
   request: JsonRecord,
   container: ServiceContainer
 ): Promise<unknown> {
+  const actor = request.actor as ActorContext | undefined;
+  if (actor) {
+    container.toolboxSessionPolicyEnforcer.authorize(command, actor);
+  }
   return RUNTIME_COMMAND_HANDLERS[command](request, container);
 }
 

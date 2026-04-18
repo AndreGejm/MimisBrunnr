@@ -293,6 +293,10 @@ function buildActorContext(
 ): ActorContext {
   const input = actor && typeof actor === "object" ? actor as Partial<ActorContext> : {};
   const now = new Date().toISOString();
+  const sessionPolicyToken =
+    input.sessionPolicyToken ??
+    process.env.MAB_TOOLBOX_SESSION_POLICY_TOKEN?.trim() ??
+    undefined;
 
   if (defaultSessionActor) {
     return {
@@ -303,7 +307,23 @@ function buildActorContext(
       requestId: input.requestId ?? randomUUID(),
       initiatedAt: input.initiatedAt ?? now,
       toolName: input.toolName ?? toolName,
-      authToken: defaultSessionActor.authToken
+      authToken: defaultSessionActor.authToken,
+      sessionPolicyToken,
+      toolboxSessionMode:
+        input.toolboxSessionMode ??
+        (process.env.MAB_TOOLBOX_ACTIVE_PROFILE
+          ? process.env.MAB_TOOLBOX_ACTIVE_PROFILE === "bootstrap"
+            ? "toolbox-bootstrap"
+            : "toolbox-activated"
+          : "legacy-direct"),
+      toolboxClientId:
+        input.toolboxClientId ??
+        process.env.MAB_TOOLBOX_CLIENT_ID?.trim() ??
+        undefined,
+      toolboxProfileId:
+        input.toolboxProfileId ??
+        process.env.MAB_TOOLBOX_ACTIVE_PROFILE?.trim() ??
+        undefined
     };
   }
 
@@ -315,7 +335,23 @@ function buildActorContext(
     requestId: input.requestId ?? randomUUID(),
     initiatedAt: input.initiatedAt ?? now,
     toolName: input.toolName ?? toolName,
-    authToken: input.authToken
+    authToken: input.authToken,
+    sessionPolicyToken,
+    toolboxSessionMode:
+      input.toolboxSessionMode ??
+      (process.env.MAB_TOOLBOX_ACTIVE_PROFILE
+        ? process.env.MAB_TOOLBOX_ACTIVE_PROFILE === "bootstrap"
+          ? "toolbox-bootstrap"
+          : "toolbox-activated"
+        : "legacy-direct"),
+    toolboxClientId:
+      input.toolboxClientId ??
+      process.env.MAB_TOOLBOX_CLIENT_ID?.trim() ??
+      undefined,
+    toolboxProfileId:
+      input.toolboxProfileId ??
+      process.env.MAB_TOOLBOX_ACTIVE_PROFILE?.trim() ??
+      undefined
   };
 }
 

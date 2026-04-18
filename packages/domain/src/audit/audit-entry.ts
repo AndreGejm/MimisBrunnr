@@ -1,18 +1,31 @@
 import type { ChunkId } from "../chunks/chunk-id.js";
 import type { NoteId } from "../notes/note-id.js";
 
-export type AuditActionType =
-  | "search_context"
-  | "get_context_packet"
-  | "retrieve_context"
-  | "draft_note"
-  | "create_refresh_draft"
-  | "validate_note"
-  | "promote_note"
-  | "query_history"
-  | "fetch_decision_summary"
-  | "inspect_gap"
-  | "execute_coding_task";
+export const AUDIT_ACTION_TYPES = [
+  "search_context",
+  "get_context_packet",
+  "retrieve_context",
+  "draft_note",
+  "create_refresh_draft",
+  "issue_auth_token",
+  "revoke_auth_token",
+  "validate_note",
+  "promote_note",
+  "query_history",
+  "fetch_decision_summary",
+  "inspect_gap",
+  "execute_coding_task",
+  "toolbox_discovery",
+  "toolbox_activation_approved",
+  "toolbox_activation_denied",
+  "toolbox_lease_issued",
+  "toolbox_lease_rejected",
+  "toolbox_reconnect_generated",
+  "toolbox_deactivated",
+  "toolbox_expired"
+] as const;
+
+export type AuditActionType = (typeof AUDIT_ACTION_TYPES)[number];
 
 export interface AuditEntry {
   auditEntryId: string;

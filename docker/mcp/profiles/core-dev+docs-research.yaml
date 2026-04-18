@@ -1,0 +1,29 @@
+profile:
+  id: core-dev+docs-research
+  displayName: Core Dev Plus Docs Research
+  sessionMode: toolbox-activated
+  baseProfiles:
+    - core-dev
+    - docs-research
+  compositeReason: repeated_workflow
+  includeServers:
+    - mimir-control
+    - mimir-core
+    - github-read
+    - brave-search
+    - docker-docs
+    - microsoft-learn
+  allowedCategories:
+    - repo-read
+    - repo-write
+    - local-docs
+    - internal-memory
+    - internal-memory-write
+    - docs-search
+    - web-search
+    - github-read
+  deniedCategories:
+    - github-write
+    - docker-write
+    - deployment
+  fallbackProfile: core-dev

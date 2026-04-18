@@ -2,6 +2,7 @@ import {
   RUNTIME_COMMAND_DEFINITIONS,
   type ActorRole
 } from "@mimir/contracts";
+import { AUDIT_ACTION_TYPES } from "@mimir/domain";
 
 export interface McpToolDefinition {
   name: string;
@@ -552,7 +553,13 @@ const UNORDERED_MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
       additionalProperties: true,
       properties: {
         actor: { type: "object" },
+        actorId: { type: "string" },
+        actionType: {
+          type: "string",
+          enum: [...AUDIT_ACTION_TYPES]
+        },
         noteId: { type: "string" },
+        source: { type: "string" },
         since: { type: "string" },
         until: { type: "string" },
         limit: { type: "number" }

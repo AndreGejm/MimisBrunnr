@@ -1,4 +1,5 @@
 import type { ActorRole } from "../common/actor-context.js";
+import type { RuntimeCommandToolboxPolicy } from "../toolbox/policy.contract.js";
 
 export type RuntimeCommandDomain = "mimisbrunnr" | "coding";
 
@@ -73,4 +74,142 @@ export function toRuntimeCommandName(commandName: string): RuntimeCommandName | 
 
 export function toCliCommandName(commandName: string): RuntimeCliCommandName | undefined {
   return getRuntimeCommandDefinition(commandName)?.cliName;
+}
+
+export const RUNTIME_COMMAND_TOOLBOX_POLICIES: Record<
+  RuntimeCommandName,
+  RuntimeCommandToolboxPolicy
+> = {
+  execute_coding_task: {
+    allOfCategories: ["repo-read", "repo-write"],
+    minimumTrustClass: "local-readwrite",
+    mutationLevel: "write"
+  },
+  list_agent_traces: {
+    allOfCategories: ["repo-read"],
+    minimumTrustClass: "local-read",
+    mutationLevel: "read"
+  },
+  show_tool_output: {
+    allOfCategories: ["repo-read"],
+    minimumTrustClass: "local-read",
+    mutationLevel: "read"
+  },
+  list_ai_tools: {
+    allOfCategories: ["repo-read"],
+    minimumTrustClass: "local-read",
+    mutationLevel: "read"
+  },
+  check_ai_tools: {
+    allOfCategories: ["repo-read"],
+    minimumTrustClass: "local-read",
+    mutationLevel: "read"
+  },
+  tools_package_plan: {
+    allOfCategories: ["repo-read"],
+    minimumTrustClass: "local-read",
+    mutationLevel: "read"
+  },
+  search_context: {
+    allOfCategories: ["internal-memory"],
+    minimumTrustClass: "local-read",
+    mutationLevel: "read"
+  },
+  search_session_archives: {
+    allOfCategories: ["internal-memory"],
+    minimumTrustClass: "local-read",
+    mutationLevel: "read"
+  },
+  assemble_agent_context: {
+    allOfCategories: ["internal-memory"],
+    minimumTrustClass: "local-read",
+    mutationLevel: "read"
+  },
+  list_context_tree: {
+    allOfCategories: ["internal-memory"],
+    minimumTrustClass: "local-read",
+    mutationLevel: "read"
+  },
+  read_context_node: {
+    allOfCategories: ["internal-memory"],
+    minimumTrustClass: "local-read",
+    mutationLevel: "read"
+  },
+  get_context_packet: {
+    allOfCategories: ["internal-memory"],
+    minimumTrustClass: "local-read",
+    mutationLevel: "read"
+  },
+  fetch_decision_summary: {
+    allOfCategories: ["local-docs"],
+    minimumTrustClass: "local-read",
+    mutationLevel: "read"
+  },
+  draft_note: {
+    allOfCategories: ["internal-memory-write"],
+    minimumTrustClass: "local-readwrite",
+    mutationLevel: "write"
+  },
+  list_review_queue: {
+    allOfCategories: ["internal-memory-write"],
+    minimumTrustClass: "local-readwrite",
+    mutationLevel: "write"
+  },
+  read_review_note: {
+    allOfCategories: ["internal-memory-write"],
+    minimumTrustClass: "local-readwrite",
+    mutationLevel: "write"
+  },
+  accept_note: {
+    allOfCategories: ["internal-memory-write"],
+    minimumTrustClass: "local-readwrite",
+    mutationLevel: "write"
+  },
+  reject_note: {
+    allOfCategories: ["internal-memory-write"],
+    minimumTrustClass: "local-readwrite",
+    mutationLevel: "write"
+  },
+  create_refresh_draft: {
+    allOfCategories: ["internal-memory-write"],
+    minimumTrustClass: "local-readwrite",
+    mutationLevel: "write"
+  },
+  create_refresh_drafts: {
+    allOfCategories: ["internal-memory-write"],
+    minimumTrustClass: "local-readwrite",
+    mutationLevel: "write"
+  },
+  validate_note: {
+    allOfCategories: ["internal-memory-write"],
+    minimumTrustClass: "local-readwrite",
+    mutationLevel: "write"
+  },
+  promote_note: {
+    allOfCategories: ["internal-memory-write"],
+    minimumTrustClass: "local-readwrite",
+    mutationLevel: "write"
+  },
+  import_resource: {
+    allOfCategories: ["internal-memory-write"],
+    minimumTrustClass: "local-readwrite",
+    mutationLevel: "write"
+  },
+  query_history: {
+    allOfCategories: ["internal-memory"],
+    minimumTrustClass: "local-read",
+    mutationLevel: "read"
+  },
+  create_session_archive: {
+    allOfCategories: ["internal-memory-write"],
+    minimumTrustClass: "local-readwrite",
+    mutationLevel: "write"
+  }
+};
+
+export function getRuntimeCommandToolboxPolicy(
+  commandName: RuntimeCommandName | string
+): RuntimeCommandToolboxPolicy | undefined {
+  const normalized = toRuntimeCommandName(commandName);
+  return normalized ? RUNTIME_COMMAND_TOOLBOX_POLICIES[normalized] : undefined;
 }

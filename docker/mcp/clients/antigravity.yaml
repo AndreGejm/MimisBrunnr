@@ -1,0 +1,6 @@
+client:
+  id: antigravity
+  displayName: Antigravity
+  handoffStrategy: manual-env-reconnect
+  handoffPresetRef: antigravity.toolbox
+  suppressSemanticCapabilities: []

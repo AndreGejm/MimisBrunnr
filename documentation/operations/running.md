@@ -22,7 +22,7 @@ The API listens on `MAB_API_HOST:MAB_API_PORT` and prints the bound address on s
 
 ```bash
 corepack pnpm cli -- version
-corepack pnpm cli -- auth-status
+corepack pnpm cli -- auth-status --json '{"actor":{"actorId":"operator-cli","actorRole":"operator","source":"mimir-cli-admin","authToken":"<token>"}}'
 ```
 
 Entrypoint file:
@@ -158,6 +158,12 @@ Operator/admin surfaces reachable through the HTTP adapter:
 - `GET /v1/system/version`
 
 The CLI exposes the same categories through commands such as `auth-status`, `auth-issued-tokens`, `issue-auth-token`, `auth-introspect-token`, `revoke-auth-token`, and `freshness-status`.
+
+When `MAB_AUTH_MODE=enforced`, the CLI auth-control commands also require an operator or system actor in the JSON payload. Only `version` stays payload-free in every mode.
+
+`auth-issued-tokens` and `GET /v1/system/auth/issued-tokens` support operator-facing lifecycle filters for `actorId`, `issuedByActorId`, `revokedByActorId`, `lifecycleStatus`, `asOf`, `includeRevoked`, and `limit`.
+
+`issue-auth-token` / `POST /v1/system/auth/issue-token` and `revoke-auth-token` / `POST /v1/system/auth/revoke-token` also append bounded lifecycle audit entries that can be inspected through `query-history` or `POST /v1/history/query`. Those records keep `tokenId` and lifecycle metadata only; raw issued token strings are not written to audit history.
 
 ## Storage locations
 

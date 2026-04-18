@@ -130,24 +130,14 @@ test("mimir-cli exposes auth registry status for operators", async () => {
     MAB_AUTH_MODE: "enforced",
     MAB_AUTH_ISSUER_SECRET: "cli-issuer-secret",
     MAB_AUTH_ACTOR_REGISTRY_JSON: JSON.stringify([
-      {
-        actorId: "operator-cli",
-        actorRole: "operator",
-        source: "mimir-cli",
-        allowedTransports: ["cli"],
-        allowedCommands: ["query_history"],
-        authTokens: [
-          {
-            token: "current-operator-token",
-            validUntil: new Date(Date.now() + 3_600_000).toISOString()
-          }
-        ]
-      }
+      buildCliAdminRegistryEntry(["view_auth_status"], {
+        allowedCommands: ["query_history"]
+      })
     ])
   });
   const result = await runNodeCommand(
     path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
-    ["auth-status"],
+    ["auth-status", "--json", JSON.stringify({ actor: buildCliAdminActor() })],
     env
   );
 
@@ -162,12 +152,115 @@ test("mimir-cli exposes auth registry status for operators", async () => {
   await rm(root, { recursive: true, force: true });
 });
 
+test("mimir-cli rejects unauthenticated auth admin commands when auth is enforced", async (t) => {
+  const { issueActorAccessToken } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "packages", "infrastructure", "dist", "index.js")
+    ).href
+  );
+
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-cli-auth-admin-"));
+  const revocationPath = path.join(root, "config", "revoked-issued-token-ids.json");
+  const env = cliEnvironment(root, {
+    MAB_AUTH_MODE: "enforced",
+    MAB_AUTH_ISSUER_SECRET: "cli-admin-secret",
+    MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_PATH: revocationPath,
+    MAB_AUTH_ACTOR_REGISTRY_JSON: JSON.stringify([
+      buildCliAdminRegistryEntry([
+        "view_auth_status",
+        "view_issued_tokens",
+        "inspect_auth_token",
+        "issue_auth_token",
+        "revoke_auth_token"
+      ])
+    ])
+  });
+  const issuedToken = issueActorAccessToken(
+    {
+      actorId: "validate-note-http",
+      actorRole: "orchestrator",
+      source: "mimir-api",
+      allowedTransports: ["http"],
+      allowedCommands: ["validate_note"],
+      validUntil: new Date(Date.now() + 3_600_000).toISOString(),
+      issuedAt: new Date().toISOString()
+    },
+    "cli-admin-secret"
+  );
+
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  for (const scenario of [
+    {
+      name: "auth-status",
+      args: ["auth-status"]
+    },
+    {
+      name: "auth-issued-tokens",
+      args: ["auth-issued-tokens", "--json", JSON.stringify({ includeRevoked: true })]
+    },
+    {
+      name: "auth-introspect-token",
+      args: [
+        "auth-introspect-token",
+        "--json",
+        JSON.stringify({
+          token: issuedToken,
+          expectedTransport: "http",
+          expectedCommand: "validate_note"
+        })
+      ]
+    },
+    {
+      name: "issue-auth-token",
+      args: [
+        "issue-auth-token",
+        "--json",
+        JSON.stringify({
+          actorId: "next-issued-actor",
+          actorRole: "operator",
+          source: "mimir-cli",
+          ttlMinutes: 60
+        })
+      ]
+    },
+    {
+      name: "revoke-auth-token",
+      args: [
+        "revoke-auth-token",
+        "--json",
+        JSON.stringify({
+          token: issuedToken,
+          reason: "test revocation"
+        })
+      ]
+    }
+  ]) {
+    const result = await runNodeCommand(
+      path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+      scenario.args,
+      env
+    );
+
+    assert.equal(result.exitCode, 1, `${scenario.name} should fail without operator auth`);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error.code, "unauthorized");
+  }
+});
+
 test("mimir-cli lists recorded issued actor tokens through the operator control surface", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "mimir-cli-issued-tokens-"));
-  const env = {
-    ...cliEnvironment(root),
-    MAB_AUTH_ISSUER_SECRET: "cli-issued-secret"
-  };
+  const env = cliEnvironment(root, {
+    MAB_AUTH_MODE: "enforced",
+    MAB_AUTH_ISSUER_SECRET: "cli-issued-secret",
+    MAB_AUTH_ISSUED_TOKEN_REQUIRE_REGISTRY_MATCH: "false",
+    MAB_AUTH_ACTOR_REGISTRY_JSON: JSON.stringify([
+      buildCliAdminRegistryEntry(["issue_auth_token", "view_issued_tokens"])
+    ])
+  });
 
   t.after(async () => {
     await rm(root, { recursive: true, force: true });
@@ -179,6 +272,7 @@ test("mimir-cli lists recorded issued actor tokens through the operator control 
       "issue-auth-token",
       "--json",
       JSON.stringify({
+        actor: buildCliAdminActor(),
         actorId: "cli-issued-actor",
         actorRole: "operator",
         source: "mimir-cli",
@@ -196,6 +290,7 @@ test("mimir-cli lists recorded issued actor tokens through the operator control 
       "auth-issued-tokens",
       "--json",
       JSON.stringify({
+        actor: buildCliAdminActor(),
         includeRevoked: true
       })
     ],
@@ -209,14 +304,172 @@ test("mimir-cli lists recorded issued actor tokens through the operator control 
   assert.equal(payload.issuedTokens.length, 1);
   assert.equal(payload.issuedTokens[0].actorId, "cli-issued-actor");
   assert.equal(payload.issuedTokens[0].lifecycleStatus, "active");
+  assert.equal(payload.issuedTokens[0].issuedByActorId, "operator-cli");
+  assert.equal(payload.issuedTokens[0].issuedByActorRole, "operator");
+  assert.equal(payload.issuedTokens[0].issuedBySource, "mimir-cli-admin");
+  assert.equal(payload.issuedTokens[0].issuedByTransport, "cli");
 });
 
-test("mimir-cli can introspect issued actor tokens against the current auth policy", async () => {
+test("mimir-cli filters issued token listings by issuer and lifecycle state", async (t) => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "mimir-cli-issued-tokens-filtered-")
+  );
+  const securityAdmin = buildCliAdminActor({
+    actorId: "security-cli",
+    source: "mimir-security-admin",
+    authToken: "security-operator-token"
+  });
+  const env = cliEnvironment(root, {
+    MAB_AUTH_MODE: "enforced",
+    MAB_AUTH_ISSUER_SECRET: "cli-issued-secret",
+    MAB_AUTH_ACTOR_REGISTRY_JSON: JSON.stringify([
+      buildCliAdminRegistryEntry([
+        "issue_auth_token",
+        "view_issued_tokens"
+      ]),
+      buildCliAdminRegistryEntry(
+        ["issue_auth_token", "view_issued_tokens"],
+        {
+          actorId: "security-cli",
+          source: "mimir-security-admin",
+          authTokens: [
+            {
+              token: "security-operator-token",
+              validUntil: new Date(Date.now() + 3_600_000).toISOString()
+            }
+          ]
+        }
+      ),
+      {
+        actorId: "cli-active-actor",
+        actorRole: "operator",
+        source: "mimir-cli",
+        allowedTransports: ["cli"]
+      },
+      {
+        actorId: "cli-future-actor",
+        actorRole: "operator",
+        source: "mimir-cli",
+        allowedTransports: ["cli"]
+      }
+    ])
+  });
+
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const activeIssueResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    [
+      "issue-auth-token",
+      "--json",
+      JSON.stringify({
+        actor: buildCliAdminActor(),
+        actorId: "cli-active-actor",
+        actorRole: "operator",
+        source: "mimir-cli",
+        ttlMinutes: 60
+      })
+    ],
+    env
+  );
+
+  assert.equal(activeIssueResult.exitCode, 0, activeIssueResult.stderr);
+
+  const revokedIssueResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    [
+      "issue-auth-token",
+      "--json",
+      JSON.stringify({
+        actor: securityAdmin,
+        actorId: "cli-future-actor",
+        actorRole: "operator",
+        source: "mimir-cli",
+        validFrom: addDaysIso(currentDateIso(), 1),
+        validUntil: addDaysIso(currentDateIso(), 2)
+      })
+    ],
+    env
+  );
+
+  assert.equal(revokedIssueResult.exitCode, 0, revokedIssueResult.stderr);
+
+  const activeListResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    [
+      "auth-issued-tokens",
+      "--json",
+      JSON.stringify({
+        actor: buildCliAdminActor(),
+        includeRevoked: true,
+        issuedByActorId: "operator-cli",
+        lifecycleStatus: "active"
+      })
+    ],
+    env
+  );
+
+  assert.equal(activeListResult.exitCode, 0, activeListResult.stderr);
+  const activeListPayload = JSON.parse(activeListResult.stdout);
+  assert.equal(activeListPayload.ok, true);
+  assert.deepEqual(
+    activeListPayload.issuedTokens.map((record) => record.actorId),
+    ["cli-active-actor"]
+  );
+
+  const futureListResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    [
+      "auth-issued-tokens",
+      "--json",
+      JSON.stringify({
+        actor: buildCliAdminActor(),
+        includeRevoked: true,
+        issuedByActorId: "security-cli",
+        lifecycleStatus: "future"
+      })
+    ],
+    env
+  );
+
+  assert.equal(futureListResult.exitCode, 0, futureListResult.stderr);
+  const futureListPayload = JSON.parse(futureListResult.stdout);
+  assert.equal(futureListPayload.ok, true);
+  assert.deepEqual(
+    futureListPayload.issuedTokens.map((record) => record.actorId),
+    ["cli-future-actor"]
+  );
+  assert.equal(futureListPayload.issuedTokens[0].issuedByActorId, "security-cli");
+  assert.equal(futureListPayload.issuedTokens[0].lifecycleStatus, "future");
+});
+
+test("mimir-cli can introspect issued actor tokens against the current auth policy", async (t) => {
   const { issueActorAccessToken } = await import(
     pathToFileURL(
       path.join(process.cwd(), "packages", "infrastructure", "dist", "index.js")
     ).href
   );
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-cli-introspect-token-"));
+  const env = cliEnvironment(root, {
+    MAB_AUTH_MODE: "enforced",
+    MAB_AUTH_ISSUER_SECRET: "cli-issuer-secret",
+    MAB_AUTH_ACTOR_REGISTRY_JSON: JSON.stringify([
+      buildCliAdminRegistryEntry(["inspect_auth_token"]),
+      {
+        actorId: "validate-note-http",
+        actorRole: "orchestrator",
+        source: "mimir-api",
+        allowedTransports: ["http"],
+        allowedCommands: ["validate_note"]
+      }
+    ])
+  });
+
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
 
   const issuedToken = issueActorAccessToken(
     {
@@ -237,25 +490,13 @@ test("mimir-cli can introspect issued actor tokens against the current auth poli
       "auth-introspect-token",
       "--json",
       JSON.stringify({
+        actor: buildCliAdminActor(),
         token: issuedToken,
         expectedTransport: "http",
         expectedCommand: "validate_note"
       })
     ],
-    {
-      ...process.env,
-      MAB_AUTH_MODE: "enforced",
-      MAB_AUTH_ISSUER_SECRET: "cli-issuer-secret",
-      MAB_AUTH_ACTOR_REGISTRY_JSON: JSON.stringify([
-        {
-          actorId: "validate-note-http",
-          actorRole: "orchestrator",
-          source: "mimir-api",
-          allowedTransports: ["http"],
-          allowedCommands: ["validate_note"]
-        }
-      ])
-    }
+    env
   );
 
   assert.equal(result.exitCode, 0, result.stderr);
@@ -479,30 +720,50 @@ test("mimir-cli can mint issued actor access tokens when the issuer secret is co
 });
 
 test("mimir-cli can revoke issued actor tokens through the file-backed revocation store", async (t) => {
-  const { issueActorAccessToken } = await import(
-    pathToFileURL(
-      path.join(process.cwd(), "packages", "infrastructure", "dist", "index.js")
-    ).href
-  );
-
   const root = await mkdtemp(path.join(os.tmpdir(), "mimir-cli-revoke-token-"));
   const revocationPath = path.join(root, "config", "revoked-issued-token-ids.json");
-  const issuedToken = issueActorAccessToken(
-    {
-      actorId: "validate-note-http",
-      actorRole: "orchestrator",
-      source: "mimir-api",
-      allowedTransports: ["http"],
-      allowedCommands: ["validate_note"],
-      validUntil: new Date(Date.now() + 3_600_000).toISOString(),
-      issuedAt: new Date().toISOString()
-    },
-    "cli-issuer-secret"
-  );
+  const authEnv = cliEnvironment(root, {
+    MAB_AUTH_MODE: "enforced",
+    MAB_AUTH_ISSUER_SECRET: "cli-issuer-secret",
+    MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_PATH: revocationPath,
+    MAB_AUTH_ACTOR_REGISTRY_JSON: JSON.stringify([
+      buildCliAdminRegistryEntry([
+        "issue_auth_token",
+        "revoke_auth_token",
+        "inspect_auth_token",
+        "view_issued_tokens"
+      ], {
+        allowedCommands: ["query_history"]
+      })
+    ])
+  });
 
   t.after(async () => {
     await rm(root, { recursive: true, force: true });
   });
+
+  const issueResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    [
+      "issue-auth-token",
+      "--json",
+      JSON.stringify({
+        actor: buildCliAdminActor(),
+        actorId: "validate-note-http",
+        actorRole: "orchestrator",
+        source: "mimir-api",
+        allowedTransports: ["http"],
+        allowedCommands: ["validate_note"],
+        ttlMinutes: 60
+      })
+    ],
+    authEnv
+  );
+
+  assert.equal(issueResult.exitCode, 0, issueResult.stderr);
+  const issuePayload = JSON.parse(issueResult.stdout);
+  assert.equal(issuePayload.ok, true);
+  const issuedToken = issuePayload.issuedToken;
 
   const revokeResult = await runNodeCommand(
     path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
@@ -510,15 +771,12 @@ test("mimir-cli can revoke issued actor tokens through the file-backed revocatio
       "revoke-auth-token",
       "--json",
       JSON.stringify({
+        actor: buildCliAdminActor(),
         token: issuedToken,
         reason: "test revocation"
       })
     ],
-    {
-      ...process.env,
-      MAB_AUTH_ISSUER_SECRET: "cli-issuer-secret",
-      MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_PATH: revocationPath
-    }
+    authEnv
   );
 
   assert.equal(revokeResult.exitCode, 0, revokeResult.stderr);
@@ -527,22 +785,105 @@ test("mimir-cli can revoke issued actor tokens through the file-backed revocatio
   assert.equal(typeof revokePayload.revokedTokenId, "string");
   assert.equal(revokePayload.persisted, true);
 
+  const issuedTokensResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    [
+      "auth-issued-tokens",
+      "--json",
+      JSON.stringify({
+        actor: buildCliAdminActor(),
+        includeRevoked: true
+      })
+    ],
+    authEnv
+  );
+
+  assert.equal(issuedTokensResult.exitCode, 0, issuedTokensResult.stderr);
+  const issuedTokensPayload = JSON.parse(issuedTokensResult.stdout);
+  assert.equal(issuedTokensPayload.ok, true);
+  assert.equal(issuedTokensPayload.summary.total, 1);
+  assert.equal(issuedTokensPayload.issuedTokens.length, 1);
+  assert.equal(issuedTokensPayload.issuedTokens[0].lifecycleStatus, "revoked");
+  assert.equal(issuedTokensPayload.issuedTokens[0].revokedReason, "test revocation");
+  assert.equal(issuedTokensPayload.issuedTokens[0].revokedByActorId, "operator-cli");
+  assert.equal(issuedTokensPayload.issuedTokens[0].revokedByActorRole, "operator");
+  assert.equal(issuedTokensPayload.issuedTokens[0].revokedBySource, "mimir-cli-admin");
+  assert.equal(issuedTokensPayload.issuedTokens[0].revokedByTransport, "cli");
+
+  const historyResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    [
+      "query-history",
+      "--json",
+      JSON.stringify({
+        actor: buildCliAdminActor(),
+        actorId: "operator-cli",
+        actionType: "issue_auth_token",
+        limit: 20
+      })
+    ],
+    authEnv
+  );
+
+  assert.equal(historyResult.exitCode, 0, historyResult.stderr);
+  const historyPayload = JSON.parse(historyResult.stdout);
+  assert.equal(historyPayload.ok, true);
+  assert.equal(historyPayload.data.entries.length, 1);
+  const issueAudit = historyPayload.data.entries[0];
+  assert.equal(issueAudit.actorId, "operator-cli");
+  assert.equal(issueAudit.actionType, "issue_auth_token");
+  assert.equal(issueAudit.detail.tokenId, revokePayload.revokedTokenId);
+  assert.equal(issueAudit.detail.targetActorId, "validate-note-http");
+  assert.equal(issueAudit.detail.targetActorRole, "orchestrator");
+  assert.equal(issueAudit.detail.targetSource, "mimir-api");
+  assert.equal(issueAudit.detail.transport, "cli");
+  assert.equal(issueAudit.detail.command, "issue-auth-token");
+  assert.equal(issueAudit.detail.hasAllowedCommands, true);
+  assert.equal(issueAudit.detail.hasAllowedAdminActions, false);
+  assert.equal(issueAudit.detail.hasAllowedCorpora, false);
+
+  const revokeHistoryResult = await runNodeCommand(
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    [
+      "query-history",
+      "--json",
+      JSON.stringify({
+        actor: buildCliAdminActor(),
+        actorId: "operator-cli",
+        actionType: "revoke_auth_token",
+        limit: 20
+      })
+    ],
+    authEnv
+  );
+
+  assert.equal(revokeHistoryResult.exitCode, 0, revokeHistoryResult.stderr);
+  const revokeHistoryPayload = JSON.parse(revokeHistoryResult.stdout);
+  assert.equal(revokeHistoryPayload.ok, true);
+  assert.equal(revokeHistoryPayload.data.entries.length, 1);
+  const revokeAudit = revokeHistoryPayload.data.entries[0];
+  assert.equal(revokeAudit.actorId, "operator-cli");
+  assert.equal(revokeAudit.actionType, "revoke_auth_token");
+  assert.equal(revokeAudit.detail.tokenId, revokePayload.revokedTokenId);
+  assert.equal(revokeAudit.detail.reason, "test revocation");
+  assert.equal(revokeAudit.detail.transport, "cli");
+  assert.equal(revokeAudit.detail.command, "revoke-auth-token");
+  assert.equal(revokeAudit.detail.recordedTokenFound, true);
+  assert.equal(revokeAudit.detail.alreadyRevoked, false);
+
   const introspectResult = await runNodeCommand(
     path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
     [
       "auth-introspect-token",
       "--json",
       JSON.stringify({
+        actor: buildCliAdminActor(),
         token: issuedToken,
         expectedTransport: "http",
         expectedCommand: "validate_note"
       })
     ],
-    {
-      ...process.env,
-      MAB_AUTH_ISSUER_SECRET: "cli-issuer-secret",
-      MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_PATH: revocationPath
-    }
+    authEnv
   );
 
   assert.equal(introspectResult.exitCode, 0, introspectResult.stderr);
@@ -1458,6 +1799,179 @@ test("mimir-api can issue short-lived actor tokens through the protected auth ro
   assert.equal(issuedTokensPayload.issuedTokens.length, 1);
   assert.equal(issuedTokensPayload.issuedTokens[0].actorId, "validate-note-http");
   assert.equal(issuedTokensPayload.issuedTokens[0].lifecycleStatus, "active");
+  assert.equal(issuedTokensPayload.issuedTokens[0].issuedByActorId, "operator-http");
+  assert.equal(issuedTokensPayload.issuedTokens[0].issuedByActorRole, "operator");
+  assert.equal(issuedTokensPayload.issuedTokens[0].issuedBySource, "mimir-api-admin");
+  assert.equal(issuedTokensPayload.issuedTokens[0].issuedByTransport, "http");
+});
+
+test("mimir-api filters issued token listings by issuer revoker and lifecycle state", async (t) => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "mimir-api-issued-token-filters-")
+  );
+  const revocationPath = path.join(root, "config", "revoked-issued-token-ids.json");
+  const { createMimirApiServer } = await import(
+    pathToFileURL(
+      path.join(process.cwd(), "apps", "mimir-api", "dist", "server.js")
+    ).href
+  );
+
+  const api = createMimirApiServer({
+    nodeEnv: "test",
+    vaultRoot: path.join(root, "vault", "canonical"),
+    stagingRoot: path.join(root, "vault", "staging"),
+    sqlitePath: path.join(root, "state", "mimisbrunnr.sqlite"),
+    qdrantUrl: "http://127.0.0.1:6333",
+    qdrantCollection: `mimisbrunnr_chunks_${randomUUID().slice(0, 8)}`,
+    embeddingProvider: "hash",
+    reasoningProvider: "heuristic",
+    draftingProvider: "disabled",
+    rerankerProvider: "local",
+    apiHost: "127.0.0.1",
+    apiPort: 0,
+    logLevel: "error",
+    auth: {
+      mode: "enforced",
+      actorRegistry: [
+        {
+          actorId: "operator-http",
+          actorRole: "operator",
+          authToken: "operator-http-secret",
+          source: "mimir-api-admin",
+          allowedTransports: ["http"],
+          allowedCommands: ["query_history"],
+          allowedAdminActions: [
+            "issue_auth_token",
+            "revoke_auth_token",
+            "view_issued_tokens"
+          ]
+        },
+        {
+          actorId: "security-http",
+          actorRole: "operator",
+          authToken: "security-http-secret",
+          source: "mimir-security-admin",
+          allowedTransports: ["http"],
+          allowedAdminActions: [
+            "issue_auth_token",
+            "revoke_auth_token",
+            "view_issued_tokens"
+          ]
+        }
+      ],
+      issuerSecret: "api-issuer-secret",
+      issuedTokenRequireRegistryMatch: false,
+      issuedTokenRevocationPath: revocationPath,
+      revokedIssuedTokenIds: []
+    }
+  });
+
+  t.after(async () => {
+    await api.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await api.listen();
+  const baseUrl = apiBaseUrl(api);
+
+  const activeIssueResponse = await fetch(`${baseUrl}/v1/system/auth/issue-token`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mimir-actor-id": "operator-http",
+      "x-mimir-actor-role": "operator",
+      "x-mimir-source": "mimir-api-admin",
+      "x-mimir-actor-token": "operator-http-secret"
+    },
+    body: JSON.stringify({
+      actorId: "api-active-actor",
+      actorRole: "operator",
+      source: "mimir-api",
+      ttlMinutes: 60
+    })
+  });
+
+  assert.equal(activeIssueResponse.status, 200);
+
+  const revokedIssueResponse = await fetch(`${baseUrl}/v1/system/auth/issue-token`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mimir-actor-id": "security-http",
+      "x-mimir-actor-role": "operator",
+      "x-mimir-source": "mimir-security-admin",
+      "x-mimir-actor-token": "security-http-secret"
+    },
+    body: JSON.stringify({
+      actorId: "api-revoked-actor",
+      actorRole: "operator",
+      source: "mimir-api",
+      ttlMinutes: 60
+    })
+  });
+
+  assert.equal(revokedIssueResponse.status, 200);
+  const revokedIssuePayload = await revokedIssueResponse.json();
+
+  const revokeResponse = await fetch(`${baseUrl}/v1/system/auth/revoke-token`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mimir-actor-id": "security-http",
+      "x-mimir-actor-role": "operator",
+      "x-mimir-source": "mimir-security-admin",
+      "x-mimir-actor-token": "security-http-secret"
+    },
+    body: JSON.stringify({
+      token: revokedIssuePayload.issuedToken,
+      reason: "security rotation"
+    })
+  });
+
+  assert.equal(revokeResponse.status, 200);
+
+  const activeListResponse = await fetch(
+    `${baseUrl}/v1/system/auth/issued-tokens?includeRevoked=true&issuedByActorId=operator-http&lifecycleStatus=active`,
+    {
+      headers: {
+        "x-mimir-actor-id": "operator-http",
+        "x-mimir-actor-role": "operator",
+        "x-mimir-source": "mimir-api-admin",
+        "x-mimir-actor-token": "operator-http-secret"
+      }
+    }
+  );
+
+  assert.equal(activeListResponse.status, 200);
+  const activeListPayload = await activeListResponse.json();
+  assert.equal(activeListPayload.ok, true);
+  assert.deepEqual(
+    activeListPayload.issuedTokens.map((record) => record.actorId),
+    ["api-active-actor"]
+  );
+
+  const revokedListResponse = await fetch(
+    `${baseUrl}/v1/system/auth/issued-tokens?includeRevoked=true&issuedByActorId=security-http&revokedByActorId=security-http&lifecycleStatus=revoked`,
+    {
+      headers: {
+        "x-mimir-actor-id": "operator-http",
+        "x-mimir-actor-role": "operator",
+        "x-mimir-source": "mimir-api-admin",
+        "x-mimir-actor-token": "operator-http-secret"
+      }
+    }
+  );
+
+  assert.equal(revokedListResponse.status, 200);
+  const revokedListPayload = await revokedListResponse.json();
+  assert.equal(revokedListPayload.ok, true);
+  assert.deepEqual(
+    revokedListPayload.issuedTokens.map((record) => record.actorId),
+    ["api-revoked-actor"]
+  );
+  assert.equal(revokedListPayload.issuedTokens[0].issuedByActorId, "security-http");
+  assert.equal(revokedListPayload.issuedTokens[0].revokedByActorId, "security-http");
+  assert.equal(revokedListPayload.issuedTokens[0].lifecycleStatus, "revoked");
 });
 
 test("mimir-api can introspect actor tokens through the protected auth route", async (t) => {
@@ -1571,12 +2085,6 @@ test("mimir-api revokes issued actor tokens and rejects them immediately afterwa
       path.join(process.cwd(), "apps", "mimir-api", "dist", "server.js")
     ).href
   );
-  const { issueActorAccessToken } = await import(
-    pathToFileURL(
-      path.join(process.cwd(), "packages", "infrastructure", "dist", "index.js")
-    ).href
-  );
-
   const issuerSecret = "api-revoke-secret";
   const api = createMimirApiServer({
     nodeEnv: "test",
@@ -1602,7 +2110,11 @@ test("mimir-api revokes issued actor tokens and rejects them immediately afterwa
           authToken: "operator-http-secret",
           source: "mimir-api-admin",
           allowedTransports: ["http"],
-          allowedAdminActions: ["revoke_auth_token"]
+          allowedAdminActions: [
+            "issue_auth_token",
+            "revoke_auth_token",
+            "view_issued_tokens"
+          ]
         },
         {
           actorId: "validate-note-http",
@@ -1627,18 +2139,29 @@ test("mimir-api revokes issued actor tokens and rejects them immediately afterwa
   await api.listen();
   const baseUrl = apiBaseUrl(api);
 
-  const issuedToken = issueActorAccessToken(
-    {
+  const issueResponse = await fetch(`${baseUrl}/v1/system/auth/issue-token`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mimir-actor-id": "operator-http",
+      "x-mimir-actor-role": "operator",
+      "x-mimir-source": "mimir-api-admin",
+      "x-mimir-actor-token": "operator-http-secret"
+    },
+    body: JSON.stringify({
       actorId: "validate-note-http",
       actorRole: "orchestrator",
       source: "mimir-api",
       allowedTransports: ["http"],
       allowedCommands: ["validate_note"],
-      validUntil: new Date(Date.now() + 3_600_000).toISOString(),
-      issuedAt: new Date().toISOString()
-    },
-    issuerSecret
-  );
+      ttlMinutes: 60
+    })
+  });
+
+  assert.equal(issueResponse.status, 200);
+  const issuePayload = await issueResponse.json();
+  assert.equal(issuePayload.ok, true);
+  const issuedToken = issuePayload.issuedToken;
 
   const revokeResponse = await fetch(`${baseUrl}/v1/system/auth/revoke-token`, {
     method: "POST",
@@ -1660,6 +2183,105 @@ test("mimir-api revokes issued actor tokens and rejects them immediately afterwa
   assert.equal(revokePayload.ok, true);
   assert.equal(typeof revokePayload.revokedTokenId, "string");
   assert.equal(revokePayload.persisted, true);
+
+  const issuedTokensResponse = await fetch(
+    `${baseUrl}/v1/system/auth/issued-tokens?includeRevoked=true`,
+    {
+      headers: {
+        "x-mimir-actor-id": "operator-http",
+        "x-mimir-actor-role": "operator",
+        "x-mimir-source": "mimir-api-admin",
+        "x-mimir-actor-token": "operator-http-secret"
+      }
+    }
+  );
+
+  assert.equal(issuedTokensResponse.status, 200);
+  const issuedTokensPayload = await issuedTokensResponse.json();
+  assert.equal(issuedTokensPayload.ok, true);
+  assert.equal(issuedTokensPayload.summary.total, 1);
+  assert.equal(issuedTokensPayload.issuedTokens.length, 1);
+  assert.equal(issuedTokensPayload.issuedTokens[0].lifecycleStatus, "revoked");
+  assert.equal(issuedTokensPayload.issuedTokens[0].revokedReason, "compromised");
+  assert.equal(issuedTokensPayload.issuedTokens[0].revokedByActorId, "operator-http");
+  assert.equal(issuedTokensPayload.issuedTokens[0].revokedByActorRole, "operator");
+  assert.equal(issuedTokensPayload.issuedTokens[0].revokedBySource, "mimir-api-admin");
+  assert.equal(issuedTokensPayload.issuedTokens[0].revokedByTransport, "http");
+
+  const historyResponse = await fetch(`${baseUrl}/v1/history/query`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mimir-actor-id": "operator-http",
+      "x-mimir-actor-role": "operator",
+      "x-mimir-source": "mimir-api-admin",
+      "x-mimir-actor-token": "operator-http-secret"
+    },
+    body: JSON.stringify({
+      actor: {
+        actorId: "operator-http",
+        actorRole: "operator",
+        source: "mimir-api-admin",
+        authToken: "operator-http-secret"
+      },
+      actorId: "operator-http",
+      actionType: "issue_auth_token",
+      limit: 20
+    })
+  });
+
+  assert.equal(historyResponse.status, 200);
+  const historyPayload = await historyResponse.json();
+  assert.equal(historyPayload.ok, true);
+  assert.equal(historyPayload.data.entries.length, 1);
+  const issueAudit = historyPayload.data.entries[0];
+  assert.equal(issueAudit.actorId, "operator-http");
+  assert.equal(issueAudit.actionType, "issue_auth_token");
+  assert.equal(issueAudit.detail.tokenId, revokePayload.revokedTokenId);
+  assert.equal(issueAudit.detail.targetActorId, "validate-note-http");
+  assert.equal(issueAudit.detail.targetActorRole, "orchestrator");
+  assert.equal(issueAudit.detail.targetSource, "mimir-api");
+  assert.equal(issueAudit.detail.transport, "http");
+  assert.equal(issueAudit.detail.command, "issue-token");
+  assert.equal(issueAudit.detail.hasAllowedCommands, true);
+  assert.equal(issueAudit.detail.hasAllowedAdminActions, false);
+  assert.equal(issueAudit.detail.hasAllowedCorpora, false);
+
+  const revokeHistoryResponse = await fetch(`${baseUrl}/v1/history/query`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mimir-actor-id": "operator-http",
+      "x-mimir-actor-role": "operator",
+      "x-mimir-source": "mimir-api-admin",
+      "x-mimir-actor-token": "operator-http-secret"
+    },
+    body: JSON.stringify({
+      actor: {
+        actorId: "operator-http",
+        actorRole: "operator",
+        source: "mimir-api-admin",
+        authToken: "operator-http-secret"
+      },
+      actorId: "operator-http",
+      actionType: "revoke_auth_token",
+      limit: 20
+    })
+  });
+
+  assert.equal(revokeHistoryResponse.status, 200);
+  const revokeHistoryPayload = await revokeHistoryResponse.json();
+  assert.equal(revokeHistoryPayload.ok, true);
+  assert.equal(revokeHistoryPayload.data.entries.length, 1);
+  const revokeAudit = revokeHistoryPayload.data.entries[0];
+  assert.equal(revokeAudit.actorId, "operator-http");
+  assert.equal(revokeAudit.actionType, "revoke_auth_token");
+  assert.equal(revokeAudit.detail.tokenId, revokePayload.revokedTokenId);
+  assert.equal(revokeAudit.detail.reason, "compromised");
+  assert.equal(revokeAudit.detail.transport, "http");
+  assert.equal(revokeAudit.detail.command, "revoke-token");
+  assert.equal(revokeAudit.detail.recordedTokenFound, true);
+  assert.equal(revokeAudit.detail.alreadyRevoked, false);
 
   const validateResponse = await fetch(`${baseUrl}/v1/notes/validate`, {
     method: "POST",
@@ -2562,6 +3184,33 @@ function cliEnvironment(root, overrides = {}) {
     MAB_DRAFTING_PROVIDER: "disabled",
     MAB_RERANKER_PROVIDER: "local",
     MAB_LOG_LEVEL: "error",
+    ...overrides
+  };
+}
+
+function buildCliAdminActor(overrides = {}) {
+  return {
+    actorId: "operator-cli",
+    actorRole: "operator",
+    source: "mimir-cli-admin",
+    authToken: "current-operator-token",
+    ...overrides
+  };
+}
+
+function buildCliAdminRegistryEntry(allowedAdminActions, overrides = {}) {
+  return {
+    actorId: "operator-cli",
+    actorRole: "operator",
+    source: "mimir-cli-admin",
+    allowedTransports: ["cli"],
+    allowedAdminActions,
+    authTokens: [
+      {
+        token: "current-operator-token",
+        validUntil: new Date(Date.now() + 3_600_000).toISOString()
+      }
+    ],
     ...overrides
   };
 }

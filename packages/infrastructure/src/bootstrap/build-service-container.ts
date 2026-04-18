@@ -59,6 +59,10 @@ import {
 import { PythonCodingControllerBridge } from "../coding/python-coding-controller-bridge.js";
 import { buildDefaultExternalSourceRegistry } from "../external-sources/external-source-registry.js";
 import { FileSystemToolRegistry } from "../tools/tool-registry.js";
+import {
+  ToolboxSessionPolicyEnforcer
+} from "../toolbox/session-lease.js";
+import { compileToolboxPolicyFromDirectory } from "../toolbox/policy-compiler.js";
 import { loadEnvironment, normalizeEnvironment, type AppEnvironment } from "../config/env.js";
 import { SqliteFtsIndex } from "../fts/sqlite-fts-index.js";
 import { buildDefaultProviderFactoryRegistry } from "../providers/provider-factory-registry.js";
@@ -71,6 +75,7 @@ import { SqliteLocalAgentTraceStore } from "../sqlite/sqlite-local-agent-trace-s
 import { SqliteMetadataControlStore } from "../sqlite/sqlite-metadata-control-store.js";
 import { SqliteRevocationStore } from "../sqlite/sqlite-revocation-store.js";
 import { SqliteSessionArchiveStore } from "../sqlite/sqlite-session-archive-store.js";
+import { SqliteToolboxSessionLeaseStore } from "../sqlite/sqlite-toolbox-session-lease-store.js";
 import { SqliteToolOutputStore } from "../sqlite/sqlite-tool-output-store.js";
 import { QdrantVectorIndex } from "../vector/qdrant-vector-index.js";
 import { FileSystemCanonicalNoteRepository } from "../vault/file-system-canonical-note-repository.js";
@@ -120,6 +125,7 @@ export interface ServiceRegistry {
 export interface ServiceContainer {
   env: AppEnvironment;
   authPolicy: ActorAuthorizationPolicy;
+  toolboxSessionPolicyEnforcer: ToolboxSessionPolicyEnforcer;
   ports: ServicePortRegistry;
   services: ServiceRegistry;
   orchestrator: MimirOrchestrator;
@@ -138,6 +144,7 @@ export function buildServiceContainer(
   const revocationStore = new SqliteRevocationStore(env.sqlitePath);
   const auditLog = new SqliteAuditLog(env.sqlitePath);
   const localAgentTraceStore = new SqliteLocalAgentTraceStore(env.sqlitePath);
+  const toolboxSessionLeaseStore = new SqliteToolboxSessionLeaseStore(env.sqlitePath);
   const toolOutputStore = new SqliteToolOutputStore(
     env.sqlitePath,
     path.join(path.dirname(path.resolve(env.sqlitePath)), "tool-output")
@@ -289,6 +296,20 @@ export function buildServiceContainer(
     revokedIssuedTokenIds: env.auth.revokedIssuedTokenIds,
     isTokenRevoked: (tokenId) => revocationStore.isTokenRevoked(tokenId)
   });
+  const toolboxPolicy =
+    env.toolboxManifestDir && env.toolboxSessionEnforcement !== "off"
+      ? compileToolboxPolicyFromDirectory(env.toolboxManifestDir)
+      : undefined;
+  const toolboxSessionPolicyEnforcer = new ToolboxSessionPolicyEnforcer({
+    policy: toolboxPolicy,
+    activeProfileId: env.toolboxActiveProfile,
+    clientId: env.toolboxClientId,
+    enforcementMode: env.toolboxSessionEnforcement,
+    issuer: env.toolboxLeaseIssuer,
+    audience: env.toolboxLeaseAudience,
+    issuerSecret: env.toolboxLeaseIssuerSecret,
+    leaseStore: toolboxSessionLeaseStore
+  });
 
   const mimisbrunnrController = new MimisbrunnrDomainController(
     new MimisbrunnrRetrievalController(
@@ -339,6 +360,7 @@ export function buildServiceContainer(
   return {
     env,
     authPolicy,
+    toolboxSessionPolicyEnforcer,
     ports: {
       canonicalNoteRepository,
       stagingNoteRepository,
@@ -383,6 +405,7 @@ export function buildServiceContainer(
       closeIfSupported(lexicalIndex);
       closeIfSupported(auditLog);
       closeIfSupported(localAgentTraceStore);
+      closeIfSupported(toolboxSessionLeaseStore);
       closeIfSupported(toolOutputStore);
       closeIfSupported(metadataControlStore);
       closeIfSupported(sessionArchiveStore);

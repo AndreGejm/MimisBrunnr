@@ -1,0 +1,65 @@
+categories:
+  repo-read:
+    description: Read-only repository and workspace inspection
+    trustClass: local-read
+    mutationLevel: read
+  repo-write:
+    description: Repository and workspace mutation
+    trustClass: local-readwrite
+    mutationLevel: write
+  local-docs:
+    description: Local documentation and codebase guidance
+    trustClass: local-read
+    mutationLevel: read
+  internal-memory:
+    description: Governed internal memory retrieval
+    trustClass: local-read
+    mutationLevel: read
+  internal-memory-write:
+    description: Governed internal memory mutation
+    trustClass: local-readwrite
+    mutationLevel: write
+  docs-search:
+    description: External documentation lookup
+    trustClass: external-read
+    mutationLevel: read
+  web-search:
+    description: Broad web search
+    trustClass: external-read
+    mutationLevel: read
+  github-read:
+    description: GitHub read-only access
+    trustClass: external-read
+    mutationLevel: read
+  github-write:
+    description: GitHub mutation access
+    trustClass: external-readwrite
+    mutationLevel: write
+  logs-read:
+    description: Read operational logs
+    trustClass: ops-read
+    mutationLevel: read
+  metrics-read:
+    description: Read operational metrics
+    trustClass: ops-read
+    mutationLevel: read
+  traces-read:
+    description: Read traces
+    trustClass: ops-read
+    mutationLevel: read
+  docker-read:
+    description: Inspect Docker runtime state
+    trustClass: ops-read
+    mutationLevel: read
+  docker-write:
+    description: Mutate Docker runtime state
+    trustClass: ops-mutate
+    mutationLevel: admin
+  model-inference:
+    description: Model orchestration and retrieval execution
+    trustClass: local-read
+    mutationLevel: read
+  deployment:
+    description: External delivery and publish actions
+    trustClass: operator-only
+    mutationLevel: admin

@@ -17,4 +17,8 @@ export interface ActorContext {
   toolName?: string;
   authToken?: string;
   allowedCorpora?: string[];
+  sessionPolicyToken?: string;
+  toolboxSessionMode?: "legacy-direct" | "toolbox-bootstrap" | "toolbox-activated";
+  toolboxClientId?: string;
+  toolboxProfileId?: string;
 }

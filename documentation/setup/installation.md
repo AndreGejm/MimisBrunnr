@@ -28,8 +28,84 @@ corepack pnpm build
 
 There is no one-shot bootstrap script; the root package scripts are the supported installation/build entrypoints. The tracked `scripts/` helpers install launcher aliases, configure Codex MCP access, run diagnostics, and provide review/cleanup wrappers.
 
+An experimental Windows installer backend now exists under `scripts/installers/windows/`, but it is currently a headless preparatory surface for environment detection, clean-repo preparation, access auditing, dry-run write planning, tracked access apply, and persisted installer state. It is not yet the full guided bootstrap flow. See [`windows-installer.md`](./windows-installer.md).
+
 If `corepack enable` cannot install a global `pnpm` shim, run every workspace
 command as `corepack pnpm ...` directly.
+
+## Experimental Windows installer backend
+
+Current Windows-only backend commands:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
+  -Operation detect-environment `
+  -Json
+
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
+  -Operation audit-install-surface `
+  -Json
+
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
+  -Operation prepare-repo-workspace `
+  -Json
+
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
+  -Operation audit-toolbox-assets `
+  -Json
+
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
+  -Operation prepare-toolbox-runtime `
+  -Json
+
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
+  -Operation audit-docker-mcp-toolkit `
+  -Json
+
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
+  -Operation plan-docker-mcp-toolkit-apply `
+  -Json
+
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
+  -Operation plan-client-access `
+  -Json
+
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
+  -Operation apply-client-access `
+  -Json
+
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
+  -Operation show-state `
+  -Json
+```
+
+What this backend does today:
+
+- reports machine/runtime prerequisites in a stable format
+- prepares a clean local repo checkout through guarded `corepack pnpm install --frozen-lockfile` and `corepack pnpm build`
+- normalizes `doctor-default-access.mjs` into a stable result envelope
+- validates tracked `docker/mcp` toolbox assets through the real compiler and
+  Docker runtime-plan path
+- writes a compiled toolbox runtime artifact for later Docker apply work
+- inspects the live Docker MCP Toolkit state through `docker mcp`
+- prepares a reviewed Docker Toolkit apply plan and blocks honestly when the
+  installed Toolkit surface is incompatible with the compiled commands
+- exposes a dry-run write plan for launcher, client-config, and install-manifest mutations
+- executes the tracked default-access installer and reports resulting health plus created backups
+- resolves client configuration through a generic client definition layer
+- persists installer state under `%LOCALAPPDATA%\Mimir\installer` by default
+- exposes Docker tool registry and `compose.tools.yml` status through the same report
+
+What it does not do yet:
+
+- clone or update the repo
+- prepare dirty repos automatically
+- apply Docker/runtime assets
+- mutate Docker Toolkit state
+- provide a GUI flow
+
+Current client support is still limited to Codex, but the backend contract no
+longer hard-codes Codex-specific configuration logic in the entrypoint itself.
 
 ## Choose a configuration profile
 
@@ -112,7 +188,7 @@ python3 -m pytest runtimes/local_experts/tests/test_safety_gate.py -v # macOS/Li
 - no `.env` loader
 - no global launcher aliases unless you explicitly run `node scripts/install-mimir-launchers.mjs` or `node scripts/install-default-access.mjs`
 - no tracked migration runner
-- no one-shot local dev bootstrap script; tracked `scripts/` helpers are scoped operator utilities
+- no one-shot local dev bootstrap script; tracked `scripts/` helpers and the current Windows installer backend are scoped operator utilities rather than a full bootstrap system
 
 ## Evidence status
 

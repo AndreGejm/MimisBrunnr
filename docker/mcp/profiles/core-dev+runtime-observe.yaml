@@ -1,0 +1,28 @@
+profile:
+  id: core-dev+runtime-observe
+  displayName: Core Dev Plus Runtime Observe
+  sessionMode: toolbox-activated
+  baseProfiles:
+    - core-dev
+    - runtime-observe
+  compositeReason: repeated_workflow
+  includeServers:
+    - mimir-control
+    - mimir-core
+    - grafana-observe
+    - docker-read
+  allowedCategories:
+    - repo-read
+    - repo-write
+    - local-docs
+    - internal-memory
+    - internal-memory-write
+    - logs-read
+    - metrics-read
+    - traces-read
+    - docker-read
+  deniedCategories:
+    - github-write
+    - docker-write
+    - deployment
+  fallbackProfile: runtime-observe

@@ -1,0 +1,8 @@
+client:
+  id: codex
+  displayName: Codex
+  handoffStrategy: env-reconnect
+  handoffPresetRef: codex.toolbox
+  suppressSemanticCapabilities:
+    - github.search
+    - github.pull-request.read

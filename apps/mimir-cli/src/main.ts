@@ -13,14 +13,21 @@ import type {
   ActorRole,
   TransportKind
 } from "@mimir/contracts";
+import type { AdministrativeAction } from "@mimir/orchestration";
 import {
   ActorAuthorizationError,
   ActorAuthorizationPolicy,
+  buildMimirControlSurface,
   buildServiceContainer,
+  compileDockerMcpRuntimePlan,
+  compileToolboxPolicyFromDirectory,
   dispatchRuntimeCommand,
   FileIssuedTokenRevocationStore,
   issueActorAccessToken,
   loadEnvironment,
+  recordIssuedAuthTokenAudit,
+  recordRevokedAuthTokenAudit,
+  SqliteToolboxSessionLeaseStore,
   validateListIssuedActorTokensControlRequest,
   validateInspectActorTokenControlRequest,
   validateIssueActorTokenControlRequest,
@@ -34,9 +41,17 @@ type SystemCommandName =
   | "auth-status"
   | "auth-issued-tokens"
   | "auth-introspect-token"
+  | "check-mcp-profiles"
+  | "deactivate-toolbox"
+  | "describe-toolbox"
   | "freshness-status"
   | "issue-auth-token"
-  | "revoke-auth-token";
+  | "list-active-toolbox"
+  | "list-active-tools"
+  | "list-toolboxes"
+  | "request-toolbox-activation"
+  | "revoke-auth-token"
+  | "sync-mcp-profiles";
 
 type CommandName = SystemCommandName | RuntimeCliCommandName;
 type JsonRecord = Record<string, unknown>;
@@ -58,9 +73,17 @@ const SYSTEM_COMMANDS: ReadonlyArray<SystemCommandName> = [
   "auth-status",
   "auth-issued-tokens",
   "auth-introspect-token",
+  "check-mcp-profiles",
+  "deactivate-toolbox",
+  "describe-toolbox",
   "freshness-status",
   "issue-auth-token",
-  "revoke-auth-token"
+  "list-active-toolbox",
+  "list-active-tools",
+  "list-toolboxes",
+  "request-toolbox-activation",
+  "revoke-auth-token",
+  "sync-mcp-profiles"
 ];
 const COMMANDS: ReadonlyArray<CommandName> = [
   ...SYSTEM_COMMANDS,
@@ -133,9 +156,201 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (parsed.command === "check-mcp-profiles") {
+    try {
+      const env = loadEnvironment();
+      const payload = await loadOptionalCommandPayload(parsed.options);
+      const manifestDirectory = resolveCliToolboxManifestDirectory(
+        payload,
+        env.toolboxManifestDir
+      );
+      const policy = compileToolboxPolicyFromDirectory(manifestDirectory);
+      writeJson(
+        {
+          ok: true,
+          manifestDirectory,
+          manifestRevision: policy.manifestRevision,
+          profiles: Object.keys(policy.profiles).sort(),
+          servers: Object.keys(policy.servers).sort(),
+          intents: Object.keys(policy.intents).sort(),
+          clients: Object.keys(policy.clients).sort()
+        },
+        parsed.options.pretty
+      );
+      process.exitCode = 0;
+      return;
+    } catch (error) {
+      writeJson(mapCliError(error), parsed.options.pretty);
+      process.exitCode = 1;
+      return;
+    }
+  }
+
+  if (parsed.command === "sync-mcp-profiles") {
+    try {
+      const env = loadEnvironment();
+      const payload = await loadOptionalCommandPayload(parsed.options);
+      const manifestDirectory = resolveCliToolboxManifestDirectory(
+        payload,
+        env.toolboxManifestDir
+      );
+      const policy = compileToolboxPolicyFromDirectory(manifestDirectory);
+      const generatedAt =
+        optionalCliString(payload.generatedAt, "generatedAt")
+        ?? new Date().toISOString();
+      const plan = compileDockerMcpRuntimePlan(policy, { generatedAt });
+      writeJson(
+        {
+          ok: true,
+          dryRun: true,
+          manifestDirectory,
+          plan
+        },
+        parsed.options.pretty
+      );
+      process.exitCode = 0;
+      return;
+    } catch (error) {
+      writeJson(mapCliError(error), parsed.options.pretty);
+      process.exitCode = 1;
+      return;
+    }
+  }
+
+  if (
+    parsed.command === "list-toolboxes" ||
+    parsed.command === "describe-toolbox" ||
+    parsed.command === "request-toolbox-activation" ||
+    parsed.command === "list-active-toolbox" ||
+    parsed.command === "list-active-tools" ||
+    parsed.command === "deactivate-toolbox"
+  ) {
+    const env = loadEnvironment();
+    const payload =
+      parsed.command === "describe-toolbox" ||
+      parsed.command === "request-toolbox-activation" ||
+      parsed.command === "deactivate-toolbox"
+        ? await loadCommandPayload(parsed.options)
+        : await loadOptionalCommandPayload(parsed.options);
+    const { controlSurface, dispose, manifestDirectory, activeProfileId, clientId } =
+      buildCliToolboxControlSurface(payload, env);
+    try {
+      if (parsed.command === "list-toolboxes") {
+        writeJson(
+          {
+            ok: true,
+            manifestDirectory,
+            ...(await controlSurface.listToolboxes())
+          },
+          parsed.options.pretty
+        );
+        process.exitCode = 0;
+        return;
+      }
+
+      if (parsed.command === "describe-toolbox") {
+        writeJson(
+          {
+            ok: true,
+            manifestDirectory,
+            clientId,
+            ...(await controlSurface.describeToolbox(
+              requireCliString(payload.toolboxId, "toolboxId")
+            ))
+          },
+          parsed.options.pretty
+        );
+        process.exitCode = 0;
+        return;
+      }
+
+      if (parsed.command === "request-toolbox-activation") {
+        writeJson(
+          {
+            ok: true,
+            manifestDirectory,
+            activeProfileId,
+            activation: await controlSurface.requestToolboxActivation({
+              requestedToolbox: optionalCliString(
+                payload.requestedToolbox,
+                "requestedToolbox"
+              ),
+              requiredCategories: optionalCliStringArray(
+                payload.requiredCategories,
+                "requiredCategories"
+              ),
+              taskSummary: optionalCliString(payload.taskSummary, "taskSummary"),
+              clientId: optionalCliString(payload.clientId, "clientId")
+            })
+          },
+          parsed.options.pretty
+        );
+        process.exitCode = 0;
+        return;
+      }
+
+      if (parsed.command === "list-active-toolbox") {
+        writeJson(
+          {
+            ok: true,
+            manifestDirectory,
+            activeProfileId,
+            clientId,
+            ...(await controlSurface.listActiveToolbox())
+          },
+          parsed.options.pretty
+        );
+        process.exitCode = 0;
+        return;
+      }
+
+      if (parsed.command === "list-active-tools") {
+        writeJson(
+          {
+            ok: true,
+            manifestDirectory,
+            activeProfileId,
+            ...(await controlSurface.listActiveTools())
+          },
+          parsed.options.pretty
+        );
+        process.exitCode = 0;
+        return;
+      }
+
+      writeJson(
+        {
+          ok: true,
+          manifestDirectory,
+          activeProfileId,
+          ...(await controlSurface.deactivateToolbox(
+            optionalCliString(payload.leaseToken, "leaseToken")
+          ))
+        },
+        parsed.options.pretty
+      );
+      process.exitCode = 0;
+      return;
+    } catch (error) {
+      writeJson(mapCliError(error), parsed.options.pretty);
+      process.exitCode = 1;
+      return;
+    } finally {
+      dispose();
+    }
+  }
+
   if (parsed.command === "auth-status") {
     const container = buildServiceContainer(loadEnvironment());
     try {
+      const payload = await loadOptionalCommandPayload(parsed.options);
+      container.authPolicy.authorizeAdministrativeAction(
+        "view_auth_status",
+        buildAdministrativeActorContext(
+          "view_auth_status",
+          extractAdministrativeActor(payload)
+        )
+      );
       writeJson(
         {
           ok: true,
@@ -146,6 +361,10 @@ async function main(): Promise<void> {
       );
       process.exitCode = 0;
       return;
+    } catch (error) {
+      writeJson(mapCliError(error), parsed.options.pretty);
+      process.exitCode = 1;
+      return;
     } finally {
       container.dispose();
     }
@@ -154,18 +373,30 @@ async function main(): Promise<void> {
   if (parsed.command === "auth-issued-tokens") {
     const container = buildServiceContainer(loadEnvironment());
     try {
+      const payload = await loadOptionalCommandPayload(parsed.options);
+      container.authPolicy.authorizeAdministrativeAction(
+        "view_issued_tokens",
+        buildAdministrativeActorContext(
+          "view_issued_tokens",
+          extractAdministrativeActor(payload)
+        )
+      );
       const request = validateListIssuedActorTokensControlRequest(
-        await loadOptionalCommandPayload(parsed.options)
+        payload
       );
       writeJson(
         {
           ok: true,
           issuedTokens: container.ports.issuedTokenStore.listIssuedTokens(request),
-          summary: container.ports.issuedTokenStore.getIssuedTokenSummary(request.asOf)
+          summary: container.ports.issuedTokenStore.getIssuedTokenSummary(request)
         },
         parsed.options.pretty
       );
       process.exitCode = 0;
+      return;
+    } catch (error) {
+      writeJson(mapCliError(error), parsed.options.pretty);
+      process.exitCode = 1;
       return;
     } finally {
       container.dispose();
@@ -173,32 +404,38 @@ async function main(): Promise<void> {
   }
 
   if (parsed.command === "auth-introspect-token") {
-    const env = loadEnvironment();
-    const policy = new ActorAuthorizationPolicy({
-      mode: env.auth.mode,
-      allowAnonymousInternal: env.auth.allowAnonymousInternal,
-      registry: env.auth.actorRegistry,
-      issuerSecret: env.auth.issuerSecret,
-      issuedTokenRequireRegistryMatch: env.auth.issuedTokenRequireRegistryMatch,
-      revokedIssuedTokenIds: env.auth.revokedIssuedTokenIds
-    });
-    const request = validateInspectActorTokenControlRequest(
-      await loadCommandPayload(parsed.options)
-    );
-    writeJson(
-      {
-        ok: true,
-        inspection: policy.inspectToken(request.token, {
-          asOf: request.asOf,
-          expectedTransport: request.expectedTransport,
-          expectedCommand: request.expectedCommand,
-          expectedAdministrativeAction: request.expectedAdministrativeAction
-        })
-      },
-      parsed.options.pretty
-    );
-    process.exitCode = 0;
-    return;
+    const container = buildServiceContainer(loadEnvironment());
+    try {
+      const payload = await loadCommandPayload(parsed.options);
+      container.authPolicy.authorizeAdministrativeAction(
+        "inspect_auth_token",
+        buildAdministrativeActorContext(
+          "inspect_auth_token",
+          extractAdministrativeActor(payload)
+        )
+      );
+      const request = validateInspectActorTokenControlRequest(payload);
+      writeJson(
+        {
+          ok: true,
+          inspection: container.authPolicy.inspectToken(request.token, {
+            asOf: request.asOf,
+            expectedTransport: request.expectedTransport,
+            expectedCommand: request.expectedCommand,
+            expectedAdministrativeAction: request.expectedAdministrativeAction
+          })
+        },
+        parsed.options.pretty
+      );
+      process.exitCode = 0;
+      return;
+    } catch (error) {
+      writeJson(mapCliError(error), parsed.options.pretty);
+      process.exitCode = 1;
+      return;
+    } finally {
+      container.dispose();
+    }
   }
 
   if (parsed.command === "freshness-status") {
@@ -218,6 +455,10 @@ async function main(): Promise<void> {
       );
       process.exitCode = 0;
       return;
+    } catch (error) {
+      writeJson(mapCliError(error), parsed.options.pretty);
+      process.exitCode = 1;
+      return;
     } finally {
       container.dispose();
     }
@@ -232,8 +473,17 @@ async function main(): Promise<void> {
         );
       }
 
+      const payload = await loadCommandPayload(parsed.options);
+      const administrativeActor = buildAdministrativeActorContext(
+        "issue_auth_token",
+        extractAdministrativeActor(payload)
+      );
+      container.authPolicy.authorizeAdministrativeAction(
+        "issue_auth_token",
+        administrativeActor
+      );
       const request = validateIssueActorTokenControlRequest(
-        await loadCommandPayload(parsed.options)
+        payload
       );
       const issuedAt = new Date().toISOString();
       const validUntil =
@@ -256,9 +506,33 @@ async function main(): Promise<void> {
         },
         container.env.auth.issuerSecret
       );
+      const warnings: string[] = [];
       const inspection = container.authPolicy.inspectToken(issuedToken);
       if (inspection.tokenKind === "issued" && inspection.claims?.tokenId) {
-        container.ports.issuedTokenStore.recordIssuedToken(inspection.claims);
+        container.ports.issuedTokenStore.recordIssuedToken(inspection.claims, {
+          issuedBy: {
+            actorId: administrativeActor.actorId,
+            actorRole: administrativeActor.actorRole,
+            source: administrativeActor.source,
+            transport: administrativeActor.transport
+          }
+        });
+        warnings.push(
+          ...(await recordIssuedAuthTokenAudit({
+            auditHistoryService: container.services.auditHistoryService,
+            administrativeActor,
+            tokenId: inspection.claims.tokenId,
+            targetActorId: request.actorId,
+            targetActorRole: request.actorRole,
+            targetSource: request.source,
+            command: "issue-auth-token",
+            validFrom: request.validFrom,
+            validUntil,
+            hasAllowedCommands: (request.allowedCommands?.length ?? 0) > 0,
+            hasAllowedAdminActions: (request.allowedAdminActions?.length ?? 0) > 0,
+            hasAllowedCorpora: (request.allowedCorpora?.length ?? 0) > 0
+          })).warnings
+        );
       }
 
       writeJson(
@@ -269,11 +543,16 @@ async function main(): Promise<void> {
             ...request,
             issuedAt,
             validUntil
-          }
+          },
+          ...(warnings.length > 0 ? { warnings } : {})
         },
         parsed.options.pretty
       );
       process.exitCode = 0;
+      return;
+    } catch (error) {
+      writeJson(mapCliError(error), parsed.options.pretty);
+      process.exitCode = 1;
       return;
     } finally {
       container.dispose();
@@ -289,8 +568,17 @@ async function main(): Promise<void> {
         );
       }
 
+      const payload = await loadCommandPayload(parsed.options);
+      const administrativeActor = buildAdministrativeActorContext(
+        "revoke_auth_token",
+        extractAdministrativeActor(payload)
+      );
+      container.authPolicy.authorizeAdministrativeAction(
+        "revoke_auth_token",
+        administrativeActor
+      );
       const request = validateRevokeActorTokenControlRequest(
-        await loadCommandPayload(parsed.options)
+        payload
       );
       const revocationStore = await FileIssuedTokenRevocationStore.create(
         container.env.auth.issuedTokenRevocationPath,
@@ -301,8 +589,28 @@ async function main(): Promise<void> {
       container.authPolicy.revokeIssuedTokenId(tokenId);
       const ledgerRevocation = container.ports.issuedTokenStore.markTokenRevoked(
         tokenId,
-        request.reason
+        {
+          reason: request.reason,
+          revokedBy: {
+            actorId: administrativeActor.actorId,
+            actorRole: administrativeActor.actorRole,
+            source: administrativeActor.source,
+            transport: administrativeActor.transport
+          }
+        }
       );
+      const warnings = (
+        await recordRevokedAuthTokenAudit({
+          auditHistoryService: container.services.auditHistoryService,
+          administrativeActor,
+          tokenId,
+          command: "revoke-auth-token",
+          reason: request.reason,
+          alreadyRevoked: revocation.alreadyRevoked,
+          persisted: revocation.persisted,
+          recordedTokenFound: ledgerRevocation.found
+        })
+      ).warnings;
 
       writeJson(
         {
@@ -311,11 +619,16 @@ async function main(): Promise<void> {
           alreadyRevoked: revocation.alreadyRevoked,
           persisted: revocation.persisted,
           recordedTokenFound: ledgerRevocation.found,
-          reason: request.reason
+          reason: request.reason,
+          ...(warnings.length > 0 ? { warnings } : {})
         },
         parsed.options.pretty
       );
       process.exitCode = 0;
+      return;
+    } catch (error) {
+      writeJson(mapCliError(error), parsed.options.pretty);
+      process.exitCode = 1;
       return;
     } finally {
       container.dispose();
@@ -468,6 +781,58 @@ function countCommandPayloadSources(options: ParsedCli["options"]): boolean[] {
   return [options.stdin, Boolean(options.inputPath), Boolean(options.inlineJson)].filter(Boolean);
 }
 
+function buildCliToolboxControlSurface(
+  payload: JsonRecord,
+  env: ReturnType<typeof loadEnvironment>
+) {
+  const container = buildServiceContainer(env);
+  const manifestDirectory = resolveCliToolboxManifestDirectory(
+    payload,
+    env.toolboxManifestDir
+  );
+  const activeProfileId =
+    optionalCliString(payload.activeProfileId, "activeProfileId")
+    ?? env.toolboxActiveProfile
+    ?? "bootstrap";
+  const clientId =
+    optionalCliString(payload.clientId, "clientId")
+    ?? env.toolboxClientId
+    ?? "codex";
+  const leaseStore = env.toolboxLeaseIssuerSecret
+    ? new SqliteToolboxSessionLeaseStore(env.sqlitePath)
+    : undefined;
+
+  return {
+    manifestDirectory,
+    activeProfileId,
+    clientId,
+    controlSurface: buildMimirControlSurface({
+      manifestDirectory,
+      activeProfileId,
+      clientId,
+      auditHistoryService: container.services.auditHistoryService,
+      leaseIssuer: env.toolboxLeaseIssuer,
+      leaseAudience: env.toolboxLeaseAudience,
+      leaseIssuerSecret: env.toolboxLeaseIssuerSecret,
+      leaseStore
+    }),
+    dispose: () => {
+      leaseStore?.close();
+      container.dispose();
+    }
+  };
+}
+
+function resolveCliToolboxManifestDirectory(
+  payload: JsonRecord,
+  defaultDirectory: string
+): string {
+  return (
+    optionalCliString(payload.manifestDirectory, "manifestDirectory")
+    ?? defaultDirectory
+  );
+}
+
 function parseJson(value: string): JsonRecord {
   const parsed = JSON.parse(value) as unknown;
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -487,6 +852,11 @@ async function readStdin(): Promise<string> {
 function buildActorContext(command: RuntimeCliCommandName, actor: unknown): ActorContext {
   const input = actor && typeof actor === "object" ? actor as Partial<ActorContext> : {};
   const now = new Date().toISOString();
+  const activeProfile = process.env.MAB_TOOLBOX_ACTIVE_PROFILE?.trim() || undefined;
+  const sessionPolicyToken =
+    input.sessionPolicyToken ??
+    process.env.MAB_TOOLBOX_SESSION_POLICY_TOKEN?.trim() ??
+    undefined;
 
   return {
     actorId: input.actorId ?? `${command}-cli`,
@@ -496,8 +866,68 @@ function buildActorContext(command: RuntimeCliCommandName, actor: unknown): Acto
     requestId: input.requestId ?? randomUUID(),
     initiatedAt: input.initiatedAt ?? now,
     toolName: input.toolName ?? command,
-    authToken: input.authToken
+    authToken: input.authToken,
+    sessionPolicyToken,
+    toolboxSessionMode:
+      input.toolboxSessionMode ??
+      (process.env.MAB_TOOLBOX_SESSION_MODE?.trim() as ActorContext["toolboxSessionMode"] | undefined) ??
+      (activeProfile
+        ? (activeProfile === "bootstrap" ? "toolbox-bootstrap" : "toolbox-activated")
+        : undefined),
+    toolboxClientId:
+      input.toolboxClientId ??
+      process.env.MAB_TOOLBOX_CLIENT_ID?.trim() ??
+      undefined,
+    toolboxProfileId:
+      input.toolboxProfileId ??
+      activeProfile
   };
+}
+
+function buildAdministrativeActorContext(
+  administrativeAction: AdministrativeAction,
+  actor: unknown
+): ActorContext {
+  const input = actor && typeof actor === "object" ? actor as Partial<ActorContext> : {};
+  const now = new Date().toISOString();
+  const activeProfile = process.env.MAB_TOOLBOX_ACTIVE_PROFILE?.trim() || undefined;
+  const sessionPolicyToken =
+    input.sessionPolicyToken ??
+    process.env.MAB_TOOLBOX_SESSION_POLICY_TOKEN?.trim() ??
+    undefined;
+
+  return {
+    actorId: input.actorId ?? `${administrativeAction}-cli`,
+    actorRole: input.actorRole ?? "operator",
+    transport: "cli",
+    source: input.source ?? "mimir-cli-admin",
+    requestId: input.requestId ?? randomUUID(),
+    initiatedAt: input.initiatedAt ?? now,
+    toolName: input.toolName ?? administrativeAction,
+    authToken: input.authToken,
+    sessionPolicyToken,
+    toolboxSessionMode:
+      input.toolboxSessionMode ??
+      (process.env.MAB_TOOLBOX_SESSION_MODE?.trim() as ActorContext["toolboxSessionMode"] | undefined) ??
+      (activeProfile
+        ? (activeProfile === "bootstrap" ? "toolbox-bootstrap" : "toolbox-activated")
+        : undefined),
+    toolboxClientId:
+      input.toolboxClientId ??
+      process.env.MAB_TOOLBOX_CLIENT_ID?.trim() ??
+      undefined,
+    toolboxProfileId:
+      input.toolboxProfileId ??
+      activeProfile
+  };
+}
+
+function extractAdministrativeActor(payload: unknown): unknown {
+  if (!payload || typeof payload !== "object") {
+    return undefined;
+  }
+
+  return (payload as JsonRecord).actor;
 }
 
 function normalizeCommandRequest(command: RuntimeCliCommandName, request: JsonRecord): JsonRecord {
@@ -585,6 +1015,14 @@ Commands:
   auth-status          Print the effective actor-registry and issued-token summary
   auth-issued-tokens   List recorded issued actor tokens and their lifecycle state
   auth-introspect-token  Inspect a static or issued actor token against the current auth policy
+  check-mcp-profiles   Validate repo-managed Docker MCP toolbox manifests and emit the compiled contract summary
+  sync-mcp-profiles    Compile a deterministic Docker MCP runtime plan from the checked-in toolbox manifests
+  list-toolboxes       List intent-level toolboxes before peer MCP tools are exposed
+  describe-toolbox     Describe one toolbox, its categories, and anti-use-cases
+  request-toolbox-activation  Approve a profile-bound toolbox handoff and issue a lease when configured
+  list-active-toolbox  Report the current active toolbox profile and overlay
+  list-active-tools    Report the current profile's active tool descriptors after overlay suppression
+  deactivate-toolbox   Revoke an issued toolbox lease and return the downgrade target
   freshness-status     Print temporal-validity summary data and refresh candidates
   issue-auth-token     Mint a short-lived issued actor token from JSON input
   revoke-auth-token    Revoke a previously issued actor token through the local revocation store
@@ -615,9 +1053,17 @@ Commands:
   create-session-archive  Persist an immutable non-authoritative session transcript archive
 
 Notes:
-  - version, --version, and auth-status do not require an input payload.
-  - auth-issued-tokens accepts optional JSON input with actorId, asOf, includeRevoked, and limit.
+  - version and --version do not require an input payload.
+  - auth-status has no required payload, but enforced auth mode requires operator or system actor context when you call the command.
+  - auth-issued-tokens accepts optional JSON input with actor, actorId, asOf, includeRevoked, issuedByActorId, revokedByActorId, lifecycleStatus, and limit.
   - auth-introspect-token expects JSON input with token and optional asOf, expectedTransport, expectedCommand, or expectedAdministrativeAction.
+  - check-mcp-profiles accepts optional JSON input with manifestDirectory.
+  - sync-mcp-profiles accepts optional JSON input with manifestDirectory and generatedAt.
+  - list-toolboxes accepts optional JSON input with manifestDirectory, activeProfileId, and clientId.
+  - describe-toolbox expects JSON input with toolboxId and optional manifestDirectory, activeProfileId, and clientId.
+  - request-toolbox-activation expects JSON input with requestedToolbox or requiredCategories, plus optional taskSummary, clientId, manifestDirectory, and activeProfileId.
+  - list-active-toolbox and list-active-tools accept optional JSON input with manifestDirectory, activeProfileId, and clientId.
+  - deactivate-toolbox accepts JSON input with optional leaseToken and optional manifestDirectory, activeProfileId, and clientId.
   - freshness-status accepts optional JSON input with asOf, expiringWithinDays, corpusId, and limitPerCategory.
   - create-refresh-draft expects JSON input with noteId and optional asOf, expiringWithinDays, or bodyHints.
   - create-refresh-drafts accepts optional JSON input with asOf, expiringWithinDays, corpusId, limitPerCategory, maxDrafts, sourceStates, and bodyHints.
@@ -636,7 +1082,8 @@ Notes:
   - issue-auth-token expects JSON input with actorId, actorRole, and optional source, allowedTransports, allowedCommands, allowedAdminActions, validFrom, validUntil, or ttlMinutes.
   - revoke-auth-token expects JSON input with tokenId or a valid issued token, and optional reason.
   - Input payloads are JSON objects shaped like the existing service contracts.
-  - Actor context is optional in the payload; the CLI injects command-safe defaults.
+  - Runtime command actor context is optional in the payload; the CLI injects command-safe defaults for those commands.
+  - In enforced auth mode, auth-status, auth-issued-tokens, auth-introspect-token, issue-auth-token, and revoke-auth-token require operator or system actor context in the JSON payload.
   - execute-coding-task defaults repoRoot to the current working directory when omitted.
   - Output is always JSON so later HTTP and MCP adapters can mirror the same response shape.
 `.trim();
@@ -660,6 +1107,18 @@ function optionalCliString(value: unknown, field: string): string | undefined {
   }
 
   return requireCliString(value, field);
+}
+
+function optionalCliStringArray(value: unknown, field: string): string[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error(`Invalid field '${field}': must be an array of non-empty strings.`);
+  }
+
+  return value.map((item, index) => requireCliString(item, `${field}[${index}]`));
 }
 
 function requireCliActorRole(value: unknown, field: string): ActorRole {

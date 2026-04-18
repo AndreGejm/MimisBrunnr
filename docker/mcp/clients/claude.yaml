@@ -1,0 +1,6 @@
+client:
+  id: claude
+  displayName: Claude
+  handoffStrategy: env-reconnect
+  handoffPresetRef: claude.toolbox
+  suppressSemanticCapabilities: []

@@ -86,9 +86,9 @@ The running architecture is a local-first monorepo with clear boundaries:
 - actor-registry-backed authn/authz across CLI, HTTP, MCP, and orchestrator command dispatch
 - file-backed actor-registry loading with rotated credential windows and entry validity support
 - issuer-secret-backed short-lived issued tokens for registered actors
-- persisted issued-token lifecycle storage and listing through SQLite
+- persisted issued-token lifecycle storage and listing through SQLite, including issuer attribution for active records, revoker attribution for revoked records, operator-facing filtering by issuer, revoker, and lifecycle state, and queryable audit-history events for token issue plus revoke operations
 - file-backed issued-token revocation support for immediate denylisting of minted actor tokens
-- protected operator auth-control surfaces for auth status, issued-token listing, token issuance, token introspection, and token revocation
+- protected operator auth-control surfaces for auth status, issued-token listing, token issuance, token introspection, and token revocation across CLI and HTTP
 - promotion event recording
 - audit-history queries
 - a documented Git-centric versioning contract with runtime release metadata surfaces
@@ -177,7 +177,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 
 These areas have enabling structure but are not fully complete:
 
-- shared-rollout auth hardening beyond the file-backed actor registry, rotated credentials, issued tokens, persisted issued-token lifecycle reporting, issued-token revocation, protected local operator control surfaces, and basic token lifecycle operations
+- shared-rollout auth hardening beyond the file-backed actor registry, rotated credentials, issued tokens, persisted issued-token lifecycle reporting, issuer- and revoker-attributed token lifecycle operations, queryable lifecycle filtering, filtered issue/revoke audit-history queries by actor, action type, and source, protected local operator control surfaces, and basic token lifecycle operations
 - richer temporal-validity governance beyond validity windows, refresh-candidate reporting, bounded batch refresh-draft creation, idempotent refresh-draft reuse, explicit refresh-draft creation, freshness warnings, and stale ranking
 - hierarchical retrieval rollout beyond the current `flat` default, explicit opt-in strategy selection, trace metadata, packet-diff checks, and the documented rollback path back to `flat`
 

@@ -73,6 +73,21 @@ corepack pnpm cli -- auth-status
 corepack pnpm cli -- search-context --json '{ "query": "example", "corpusIds": ["mimisbrunnr"], "budget": { "maxTokens": 1000, "maxSources": 3, "maxRawExcerpts": 1, "maxSummarySentences": 3 } }'
 ```
 
+In enforced auth mode, the CLI auth-control commands are still JSON commands even
+when they have no required business payload. Pass operator or system actor
+context explicitly, for example:
+
+```powershell
+corepack pnpm cli -- auth-status --json '{
+  "actor": {
+    "actorId": "operator-cli",
+    "actorRole": "operator",
+    "source": "mimir-cli-admin",
+    "authToken": "<token>"
+  }
+}'
+```
+
 The package exposes `mimir-cli` as the package bin name after package linking,
 but a fresh clone does not provide a tracked global `mimir` command. This manual uses
 `corepack pnpm cli --` so first-time users can run the examples directly from
@@ -117,7 +132,7 @@ initialization.
 | Command | Writes memory/domain state? | What it changes |
 | --- | --- | --- |
 | `version` | No | Prints release metadata |
-| `auth-status` | No | Prints auth summary |
+| `auth-status` | No required business payload | Prints auth summary; enforced auth mode still requires operator or system actor context |
 | `search-context` | Audit only | Reads memory and may record retrieval history |
 | `assemble-agent-context` | Audit only | Reads memory/session recall and may record retrieval history |
 | `create-session-archive` | Yes | Writes non-authoritative session archive records |
@@ -398,7 +413,8 @@ Expected behavior:
 - `corepack pnpm build` compiles TypeScript into each package/app `dist` directory.
 - `corepack pnpm cli -- version` prints JSON with `ok: true` and release metadata.
 - `corepack pnpm cli -- auth-status` prints the effective auth mode and actor registry
-  summary.
+  summary. In enforced mode, call it with operator or system actor context in the
+  JSON payload.
 
 You may see a Node warning that SQLite is experimental. That warning comes from
 Node's built-in SQLite support. It is not a mimir failure by itself.
@@ -1373,6 +1389,10 @@ current authorization path does not enforce corpus restrictions. Treat
 Use issued tokens for short-lived operational access. Revoke them through the
 revocation store when no longer needed.
 
+Issuing and revoking tokens also writes bounded audit-history entries. Those
+records store the token id, target actor metadata, lifecycle-policy booleans,
+and revocation reason where applicable. They do not store the raw token value.
+
 ## 12. Storing Information
 
 There are three ways to store information, each with a different authority
@@ -2277,15 +2297,28 @@ Query history:
 
 ```powershell
 corepack pnpm cli -- query-history --json '{
+  "actor": {
+    "actorId": "operator-cli",
+    "actorRole": "operator",
+    "source": "mimir-cli-admin",
+    "authToken": "<token>"
+  },
+  "actorId": "operator-cli",
+  "actionType": "issue_auth_token",
   "limit": 20,
   "noteId": "optional-note-id"
 }'
 ```
 
+Supported `query-history` filters are `actorId`, `actionType`, `source`, `noteId`, `since`, `until`, and `limit`.
+Filtering happens before the bounded `limit` is applied.
+
 History records are produced for:
 
 - Retrieval.
 - Promotion.
+- Token issuance.
+- Token revocation.
 - Coding task execution.
 - Other application actions where the service records audit entries.
 
@@ -2386,13 +2419,26 @@ MCP session defaults:
 Check auth state:
 
 ```powershell
-corepack pnpm cli -- auth-status
+corepack pnpm cli -- auth-status --json '{
+  "actor": {
+    "actorId": "operator-cli",
+    "actorRole": "operator",
+    "source": "mimir-cli-admin",
+    "authToken": "<token>"
+  }
+}'
 ```
 
 Issue a token:
 
 ```powershell
 corepack pnpm cli -- issue-auth-token --json '{
+  "actor": {
+    "actorId": "operator-cli",
+    "actorRole": "operator",
+    "source": "mimir-cli-admin",
+    "authToken": "<token>"
+  },
   "actorId": "operator-local",
   "actorRole": "operator",
   "source": "manual",
@@ -2411,6 +2457,12 @@ Inspect a token:
 
 ```powershell
 corepack pnpm cli -- auth-introspect-token --json '{
+  "actor": {
+    "actorId": "operator-cli",
+    "actorRole": "operator",
+    "source": "mimir-cli-admin",
+    "authToken": "<token>"
+  },
   "token": "issued-token",
   "expectedTransport": "mcp",
   "expectedCommand": "search_context"
@@ -2421,21 +2473,84 @@ List issued tokens:
 
 ```powershell
 corepack pnpm cli -- auth-issued-tokens --json '{
+  "actor": {
+    "actorId": "operator-cli",
+    "actorRole": "operator",
+    "source": "mimir-cli-admin",
+    "authToken": "<token>"
+  },
   "includeRevoked": true,
   "limit": 20
 }'
 ```
 
+Filter issued tokens by issuer, revoker, or lifecycle state:
+
+```powershell
+corepack pnpm cli -- auth-issued-tokens --json '{
+  "actor": {
+    "actorId": "operator-cli",
+    "actorRole": "operator",
+    "source": "mimir-cli-admin",
+    "authToken": "<token>"
+  },
+  "issuedByActorId": "security-cli",
+  "revokedByActorId": "operator-cli",
+  "lifecycleStatus": "revoked",
+  "includeRevoked": true
+}'
+```
+
+Issued-token lifecycle operations are also visible in query history. Look for
+`issue_auth_token` and `revoke_auth_token` entries when you need an audit trail
+for who minted or revoked a specific token id. Combine `actorId`,
+`actionType`, and `source` when you need an exact operator-facing lifecycle
+slice instead of a broad history scan.
+
 Revoke a token:
 
 ```powershell
 corepack pnpm cli -- revoke-auth-token --json '{
+  "actor": {
+    "actorId": "operator-cli",
+    "actorRole": "operator",
+    "source": "mimir-cli-admin",
+    "authToken": "<token>"
+  },
   "tokenId": "issued-token-id",
   "reason": "operator cleanup"
 }'
 ```
 
-Auth-control HTTP endpoints require an operator or system actor.
+Auth-control CLI and HTTP endpoints require an operator or system actor when auth
+is enforced.
+
+When issued-token listings include lifecycle attribution, the payload can
+include issuer fields for active or future records and revoker fields for
+revoked records:
+
+- `issuedByActorId`
+- `issuedByActorRole`
+- `issuedBySource`
+- `issuedByTransport`
+
+- `revokedByActorId`
+- `revokedByActorRole`
+- `revokedBySource`
+- `revokedByTransport`
+
+Issued-token listing responses now also support request-side filtering by:
+
+- `actorId`
+- `issuedByActorId`
+- `revokedByActorId`
+- `lifecycleStatus`
+- `asOf`
+- `includeRevoked`
+- `limit`
+
+The summary returned beside an issued-token listing applies the same filters
+except for `limit`.
 
 ## 31. Health And Diagnostics
 
@@ -2595,10 +2710,11 @@ Most CLI commands require exactly one of:
 Commands that do not require payloads include:
 
 - `version`.
-- `auth-status`.
 
 Some commands accept optional payloads:
 
+- `auth-status` when auth is not enforced. In enforced mode, include operator or
+  system actor context.
 - `freshness-status`.
 - `auth-issued-tokens`.
 - `create-refresh-drafts`.

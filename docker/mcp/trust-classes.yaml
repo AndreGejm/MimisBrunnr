@@ -1,0 +1,22 @@
+trustClasses:
+  local-read:
+    level: 10
+    description: Local read-only capabilities
+  local-readwrite:
+    level: 20
+    description: Local read and write capabilities
+  external-read:
+    level: 30
+    description: External read-only capabilities
+  external-readwrite:
+    level: 40
+    description: External mutation capabilities
+  ops-read:
+    level: 50
+    description: Operational read-only capabilities
+  ops-mutate:
+    level: 60
+    description: Operational mutation capabilities
+  operator-only:
+    level: 70
+    description: Operator-only and emergency capabilities

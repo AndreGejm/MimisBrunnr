@@ -10,8 +10,12 @@ This directory contains narrow operator and launcher helpers. These scripts are 
 - `install-default-codex-mcp.mjs`: writes the default Codex MCP server configuration for `mimir`.
 - `install-default-access.mjs`: installs both launcher and Codex MCP access using the shared default-access helper.
 - `doctor-default-access.mjs`: diagnoses wrapper paths, built entrypoints, Codex MCP config, launcher files, PATH state, and the local install manifest.
+- `docker/audit-toolbox-assets.mjs`: machine-readable audit for the tracked `docker/mcp` toolbox manifests and compiled Docker runtime plan.
+- `docker/sync-mcp-profiles.mjs`: deterministic compiler-to-runtime-plan bridge for Docker MCP profiles.
+- `installers/windows/cli.ps1`: experimental headless Windows installer backend contract for `detect-environment`, `audit-install-surface`, `prepare-repo-workspace`, `audit-toolbox-assets`, `prepare-toolbox-runtime`, `audit-docker-mcp-toolkit`, `plan-docker-mcp-toolkit-apply`, `plan-client-access`, `apply-client-access`, and `show-state`.
+- `installers/windows/installer.ps1`: thin wrapper over `installers/windows/cli.ps1` reserved for later GUI work.
 - `review-note-gui.py`: local GUI helper for reviewing staged notes.
-- `run-mimisbrunnr-cleanup.ps1`: governed cleanup wrapper that calls mimir surfaces instead of editing memory files directly.
+- `run-mimisbrunnr-cleanup.ps1`: governed maintenance wrapper that inspects the review queue and freshness status, and can create refresh drafts through mimir without editing memory files directly.
 
 ## What these scripts are not
 
@@ -25,6 +29,9 @@ This directory contains narrow operator and launcher helpers. These scripts are 
 
 - This statement is based on the tracked contents of `scripts/`.
 - Launcher aliases are centralized through `scripts/lib/default-access.mjs`.
+- The Windows installer backend currently wraps `scripts/doctor-default-access.mjs` through `scripts/installers/windows/lib/adapters/default-access.ps1`.
+- The Windows installer backend now has separate modules for environment detection, repo bootstrap, toolbox asset audit, toolbox runtime preparation, Docker MCP Toolkit audit, write-target planning, apply orchestration, and client definition resolution.
+- The Windows installer backend now also includes a Docker Toolkit apply-plan boundary that compares compiled runtime commands with the live Toolkit capability surface without mutating Docker.
 
 ### Assumptions
 
@@ -32,4 +39,4 @@ This directory contains narrow operator and launcher helpers. These scripts are 
 
 ### TODO gaps
 
-- If release packaging adds a true installer or migration script, document its inputs, mutation surface, and rollback behavior here.
+- Expand this file when the Windows installer grows beyond the current headless backend and adds guided bootstrap or GUI flows.

@@ -1,0 +1,20 @@
+server:
+  id: github-read
+  displayName: GitHub Read
+  source: peer
+  kind: peer
+  trustClass: external-read
+  mutationLevel: read
+  tools:
+    - toolId: github.search
+      displayName: Search GitHub
+      category: github-read
+      trustClass: external-read
+      mutationLevel: read
+      semanticCapabilityId: github.search
+    - toolId: github.pull_request.read
+      displayName: Read Pull Request
+      category: github-read
+      trustClass: external-read
+      mutationLevel: read
+      semanticCapabilityId: github.pull-request.read

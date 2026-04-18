@@ -52,6 +52,9 @@ const ADMIN_ACTION_NAMES = new Set<AdministrativeAction>([
   "revoke_auth_token",
   "view_freshness_status"
 ]);
+const ISSUED_TOKEN_LIFECYCLE_STATUSES = new Set<
+  "active" | "future" | "expired" | "revoked"
+>(["active", "future", "expired", "revoked"]);
 
 export interface IssueActorTokenControlRequest {
   actorId: string;
@@ -84,6 +87,9 @@ export interface ListIssuedActorTokensControlRequest {
   actorId?: string;
   asOf?: string;
   includeRevoked?: boolean;
+  issuedByActorId?: string;
+  revokedByActorId?: string;
+  lifecycleStatus?: "active" | "future" | "expired" | "revoked";
   limit?: number;
 }
 
@@ -163,6 +169,13 @@ export function validateListIssuedActorTokensControlRequest(
     actorId: optionalString(payload.actorId, "actorId"),
     asOf: optionalString(payload.asOf, "asOf"),
     includeRevoked: optionalBoolean(payload.includeRevoked, "includeRevoked"),
+    issuedByActorId: optionalString(payload.issuedByActorId, "issuedByActorId"),
+    revokedByActorId: optionalString(payload.revokedByActorId, "revokedByActorId"),
+    lifecycleStatus: optionalEnum(
+      payload.lifecycleStatus,
+      "lifecycleStatus",
+      ISSUED_TOKEN_LIFECYCLE_STATUSES
+    ),
     limit: optionalInteger(payload.limit, "limit", 1)
   };
 }

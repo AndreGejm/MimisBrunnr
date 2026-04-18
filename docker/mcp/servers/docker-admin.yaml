@@ -1,0 +1,14 @@
+server:
+  id: docker-admin
+  displayName: Docker Admin
+  source: peer
+  kind: peer
+  trustClass: ops-mutate
+  mutationLevel: admin
+  tools:
+    - toolId: docker.restart
+      displayName: Restart Container
+      category: docker-write
+      trustClass: ops-mutate
+      mutationLevel: admin
+      semanticCapabilityId: docker.runtime.restart

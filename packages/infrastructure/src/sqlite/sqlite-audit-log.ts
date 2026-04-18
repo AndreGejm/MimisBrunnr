@@ -96,7 +96,10 @@ export class SqliteAuditLog implements AuditLog {
         ae.detail_json
       FROM audit_entries ae
       WHERE
-        (:since IS NULL OR ae.occurred_at >= :since)
+        (:actorId IS NULL OR ae.actor_id = :actorId)
+        AND (:actionType IS NULL OR ae.action_type = :actionType)
+        AND (:source IS NULL OR ae.source = :source)
+        AND (:since IS NULL OR ae.occurred_at >= :since)
         AND (:until IS NULL OR ae.occurred_at <= :until)
         AND (
           :noteId IS NULL
@@ -110,7 +113,10 @@ export class SqliteAuditLog implements AuditLog {
       ORDER BY ae.occurred_at DESC
       LIMIT :limit
     `).all({
+      actorId: request.actorId ?? null,
+      actionType: request.actionType ?? null,
       noteId: request.noteId ?? null,
+      source: request.source ?? null,
       since: request.since ?? null,
       until: request.until ?? null,
       limit
@@ -171,6 +177,9 @@ export class SqliteAuditLog implements AuditLog {
       );
 
       CREATE INDEX IF NOT EXISTS idx_audit_entries_occurred_at ON audit_entries(occurred_at);
+      CREATE INDEX IF NOT EXISTS idx_audit_entries_actor_id ON audit_entries(actor_id);
+      CREATE INDEX IF NOT EXISTS idx_audit_entries_action_type ON audit_entries(action_type);
+      CREATE INDEX IF NOT EXISTS idx_audit_entries_source ON audit_entries(source);
     `);
   }
 }

@@ -70,9 +70,17 @@ Source of truth: `apps/mimir-cli/src/main.ts`
 - `auth-status`
 - `auth-issued-tokens`
 - `auth-introspect-token`
+- `check-mcp-profiles`
 - `freshness-status`
 - `issue-auth-token`
+- `list-active-toolbox`
+- `list-active-tools`
+- `list-toolboxes`
+- `describe-toolbox`
+- `deactivate-toolbox`
 - `revoke-auth-token`
+- `request-toolbox-activation`
+- `sync-mcp-profiles`
 - `execute-coding-task`
 - `list-agent-traces`
 - `show-tool-output`
@@ -110,19 +118,63 @@ Commands read JSON from exactly one of:
 Commands with no required payload:
 
 - `version`
-- `auth-status`
+- `auth-status` with the caveat that enforced auth mode still requires operator or system actor context in the payload
 
 Commands with optional payload:
 
 - `auth-issued-tokens`
+- `check-mcp-profiles`
 - `freshness-status`
 - `list-ai-tools`
+- `list-active-toolbox`
+- `list-active-tools`
+- `list-toolboxes`
 - `check-ai-tools`
+- `sync-mcp-profiles`
 - `tools-package-plan`
 - `list-review-queue`
 - `create-refresh-drafts`
 
 From the workspace root, the verified invocation form is `corepack pnpm cli -- <command>`.
+
+For CLI auth-control commands in enforced mode, pass an `actor` object with operator or system credentials in the JSON payload. That applies to `auth-status`, `auth-issued-tokens`, `auth-introspect-token`, `issue-auth-token`, and `revoke-auth-token`.
+
+`auth-issued-tokens` and `GET /v1/system/auth/issued-tokens` return operator-attribution fields for token lifecycle operations. Active or future records can include `issuedByActorId`, `issuedByActorRole`, `issuedBySource`, and `issuedByTransport`. Revoked records can also include `revokedByActorId`, `revokedByActorRole`, `revokedBySource`, and `revokedByTransport` alongside `revokedAt` and `revokedReason`.
+
+Token issuance and revocation also emit queryable audit-history events. `issue-auth-token` / `POST /v1/system/auth/issue-token` write `issue_auth_token` entries, and `revoke-auth-token` / `POST /v1/system/auth/revoke-token` write `revoke_auth_token` entries. Those audit entries store the token id, target actor metadata, lifecycle-policy booleans, and revocation reason where applicable; they do not store the raw issued token.
+
+`query-history` / `POST /v1/history/query` can filter audit history before the bounded `limit` is applied. Supported request fields are:
+
+- `actorId`
+- `actionType`
+- `source`
+- `noteId`
+- `since`
+- `until`
+- `limit`
+
+Toolbox control commands are implemented through the shared control surface. The current commands are:
+
+- `check-mcp-profiles`
+- `sync-mcp-profiles`
+- `list-toolboxes`
+- `describe-toolbox`
+- `request-toolbox-activation`
+- `list-active-toolbox`
+- `list-active-tools`
+- `deactivate-toolbox`
+
+Issued-token listing filters are implemented end to end across CLI and HTTP. The supported request fields are:
+
+- `actorId`
+- `issuedByActorId`
+- `revokedByActorId`
+- `lifecycleStatus` with `active`, `future`, `expired`, or `revoked`
+- `asOf`
+- `includeRevoked`
+- `limit`
+
+The issued-token summary returned alongside a filtered listing applies the same filters except for `limit`.
 
 ## MCP
 
@@ -130,6 +182,8 @@ Source of truth:
 
 - `apps/mimir-mcp/src/tool-definitions.ts`
 - `apps/mimir-mcp/src/main.ts`
+- `apps/mimir-control-mcp/src/tool-definitions.ts`
+- `apps/mimir-control-mcp/src/main.ts`
 
 ### Implemented methods
 
@@ -164,6 +218,15 @@ Source of truth:
 - `promote_note`
 - `query_history`
 - `create_session_archive`
+
+### Toolbox control MCP tools
+
+- `list_toolboxes`
+- `describe_toolbox`
+- `request_toolbox_activation`
+- `list_active_toolbox`
+- `list_active_tools`
+- `deactivate_toolbox`
 
 ## Internal integration surfaces
 

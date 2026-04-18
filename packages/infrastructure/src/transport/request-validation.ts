@@ -4,6 +4,10 @@ import {
   type RuntimeCliCommandName
 } from "@mimir/contracts";
 import {
+  AUDIT_ACTION_TYPES,
+  type AuditActionType
+} from "@mimir/domain";
+import {
   optionalBoolean,
   optionalEnum,
   optionalEnumArray,
@@ -108,6 +112,7 @@ const TEMPORAL_REFRESH_STATES = new Set([
   "future_dated",
   "expiring_soon"
 ]);
+const AUDIT_ACTION_TYPE_SET = new Set<AuditActionType>(AUDIT_ACTION_TYPES);
 
 type TransportCommandValidator = (
   payload: JsonRecord,
@@ -260,7 +265,10 @@ const TRANSPORT_COMMAND_VALIDATORS: Record<RuntimeCliCommandName, TransportComma
   }),
   "query-history": (payload, actor) => ({
     actor,
+    actorId: optionalString(payload.actorId, "actorId"),
+    actionType: optionalEnum(payload.actionType, "actionType", AUDIT_ACTION_TYPE_SET),
     noteId: optionalString(payload.noteId, "noteId"),
+    source: optionalString(payload.source, "source"),
     since: optionalString(payload.since, "since"),
     until: optionalString(payload.until, "until"),
     limit: requireInteger(payload.limit, "limit", { min: 1 })
@@ -310,7 +318,11 @@ function validateActorOverride(value: unknown, field: string): JsonRecord {
     requestId: optionalString(actor.requestId, `${field}.requestId`),
     initiatedAt: optionalString(actor.initiatedAt, `${field}.initiatedAt`),
     toolName: optionalString(actor.toolName, `${field}.toolName`),
-    authToken: optionalString(actor.authToken, `${field}.authToken`)
+    authToken: optionalString(actor.authToken, `${field}.authToken`),
+    sessionPolicyToken: optionalString(actor.sessionPolicyToken, `${field}.sessionPolicyToken`),
+    toolboxSessionMode: optionalString(actor.toolboxSessionMode, `${field}.toolboxSessionMode`),
+    toolboxClientId: optionalString(actor.toolboxClientId, `${field}.toolboxClientId`),
+    toolboxProfileId: optionalString(actor.toolboxProfileId, `${field}.toolboxProfileId`)
   };
 }
 

@@ -27,6 +27,7 @@ export * from "./retrieval/assemble-context-packet.contract.js";
 export * from "./retrieval/assemble-agent-context.contract.js";
 export * from "./retrieval/read-context-node.contract.js";
 export * from "./retrieval/retrieve-context.contract.js";
+export * from "./toolbox/index.js";
 export * from "./validation/validate-note.contract.js";
 export * from "./external-sources/external-source.contract.js";
 export * from "./external-sources/external-source-registry.contract.js";

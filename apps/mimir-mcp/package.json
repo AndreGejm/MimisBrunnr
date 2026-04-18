@@ -25,6 +25,7 @@
                 },
     "dependencies":  {
                          "@mimir/contracts":  "workspace:*",
+                         "@mimir/domain":  "workspace:*",
                          "@mimir/infrastructure":  "workspace:*"
                      }
 }

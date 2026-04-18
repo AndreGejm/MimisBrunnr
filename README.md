@@ -108,7 +108,7 @@ corepack pnpm install
 corepack pnpm build
 ```
 
-The root package scripts are the supported install and build entrypoints. `scripts/` contains narrow operator helpers for launcher installation, Codex MCP setup, diagnostics, review, cleanup, and wrapper entrypoints; it does not contain a one-shot bootstrap script.
+The root package scripts are the supported install and build entrypoints. `scripts/` contains narrow operator helpers for launcher installation, Codex MCP setup, diagnostics, toolbox audit/sync, review, cleanup, and wrapper entrypoints; it does not contain a one-shot bootstrap script. An experimental Windows installer backend now lives under `scripts/installers/windows/`, but it is currently an environment/audit/repo-prepare/toolbox-audit/toolbox-prepare/docker-mcp-audit/docker-mcp-apply-plan/plan/apply/state contract rather than the full guided bootstrap flow.
 
 If `corepack enable` cannot install a global `pnpm` shim on your machine, run the
 workspace commands as `corepack pnpm ...` directly.
@@ -388,6 +388,10 @@ The same thin review workflow is also reachable over HTTP on `/v1/review/*`
 and over MCP through `list_review_queue`, `read_review_note`, `accept_note`,
 and `reject_note`.
 
+In enforced auth mode, the CLI auth-control commands also require operator or
+system actor context in their JSON payloads. The payload-free path is only
+reliable for `version`, and for auth-control commands when auth is not enforced.
+
 See `documentation/reference/interfaces.md` for the canonical interface list.
 
 ## Health behavior
@@ -427,7 +431,7 @@ docker/        Dockerfile and local compose profile
 documentation/          canonical docs plus planning/history docs
 runtimes/      vendored Python coding runtime
 tests/         end-to-end transport and service tests
-scripts/       launcher, installer, doctor, review, and cleanup helpers
+scripts/       launcher, installer backend, doctor, review, and cleanup helpers
 ```
 
 Full map: `documentation/reference/repo-map.md`

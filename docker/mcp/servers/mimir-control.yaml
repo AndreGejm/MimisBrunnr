@@ -1,0 +1,44 @@
+server:
+  id: mimir-control
+  displayName: Mimir Control
+  source: owned
+  kind: control
+  trustClass: local-read
+  mutationLevel: read
+  tools:
+    - toolId: list_toolboxes
+      displayName: List Toolboxes
+      category: repo-read
+      trustClass: local-read
+      mutationLevel: read
+      semanticCapabilityId: toolbox.discovery.list
+    - toolId: describe_toolbox
+      displayName: Describe Toolbox
+      category: repo-read
+      trustClass: local-read
+      mutationLevel: read
+      semanticCapabilityId: toolbox.discovery.describe
+    - toolId: request_toolbox_activation
+      displayName: Request Toolbox Activation
+      category: repo-read
+      trustClass: local-read
+      mutationLevel: read
+      semanticCapabilityId: toolbox.activation.request
+    - toolId: list_active_toolbox
+      displayName: List Active Toolbox
+      category: repo-read
+      trustClass: local-read
+      mutationLevel: read
+      semanticCapabilityId: toolbox.activation.state
+    - toolId: list_active_tools
+      displayName: List Active Tools
+      category: repo-read
+      trustClass: local-read
+      mutationLevel: read
+      semanticCapabilityId: toolbox.activation.tools
+    - toolId: deactivate_toolbox
+      displayName: Deactivate Toolbox
+      category: repo-read
+      trustClass: local-read
+      mutationLevel: read
+      semanticCapabilityId: toolbox.activation.deactivate

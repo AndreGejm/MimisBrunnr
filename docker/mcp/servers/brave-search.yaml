@@ -1,0 +1,14 @@
+server:
+  id: brave-search
+  displayName: Brave Search
+  source: peer
+  kind: peer
+  trustClass: external-read
+  mutationLevel: read
+  tools:
+    - toolId: brave.web_search
+      displayName: Brave Web Search
+      category: web-search
+      trustClass: external-read
+      mutationLevel: read
+      semanticCapabilityId: web.search

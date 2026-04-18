@@ -14,7 +14,11 @@ const normalizedActor = {
   requestId: undefined,
   initiatedAt: undefined,
   toolName: undefined,
-  authToken: undefined
+  authToken: undefined,
+  sessionPolicyToken: undefined,
+  toolboxSessionMode: undefined,
+  toolboxClientId: undefined,
+  toolboxProfileId: undefined
 };
 
 test("coding command validators preserve coding transport payload semantics", () => {
