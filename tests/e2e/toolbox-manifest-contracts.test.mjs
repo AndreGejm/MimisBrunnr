@@ -362,6 +362,84 @@ test("compileToolboxPolicyFromDirectory rejects duplicate semantic capabilities 
   }
 });
 
+test("compileToolboxPolicyFromDirectory rejects duplicate tool IDs inherited through composite base profiles", () => {
+  const root = createFixtureRoot();
+  try {
+    seedBaseFixture(root);
+    writeUtf8(
+      root,
+      "servers/github-read-alt.yaml",
+      [
+        "server:",
+        "  id: github-read-alt",
+        "  displayName: GitHub Read Alt",
+        "  source: peer",
+        "  kind: peer",
+        "  trustClass: external-read",
+        "  mutationLevel: read",
+        "  dockerRuntime:",
+        "    applyMode: catalog",
+        "    catalogServerId: github-read-alt",
+        "  tools:",
+        "    - toolId: github.search",
+        "      displayName: Search GitHub Alt Collision",
+        "      category: docs-search",
+        "      trustClass: external-read",
+        "      mutationLevel: read",
+        "      semanticCapabilityId: github.search.alt"
+      ].join("\n")
+    );
+    writeUtf8(
+      root,
+      "profiles/docs-research-alt.yaml",
+      [
+        "profile:",
+        "  id: docs-research-alt",
+        "  displayName: Docs Research Alt",
+        "  sessionMode: toolbox-activated",
+        "  includeServers:",
+        "    - mimir-control",
+        "    - mimir-core",
+        "    - github-read-alt",
+        "  allowedCategories:",
+        "    - repo-read",
+        "    - docs-search",
+        "  deniedCategories:",
+        "    - docker-write"
+      ].join("\n")
+    );
+    writeUtf8(
+      root,
+      "profiles/docs-research+alt.yaml",
+      [
+        "profile:",
+        "  id: docs-research+alt",
+        "  displayName: Docs Research Plus Alt",
+        "  sessionMode: toolbox-activated",
+        "  baseProfiles:",
+        "    - docs-research",
+        "    - docs-research-alt",
+        "  compositeReason: repeated_workflow",
+        "  includeServers:",
+        "    - mimir-control",
+        "    - mimir-core",
+        "  allowedCategories:",
+        "    - repo-read",
+        "    - docs-search",
+        "  deniedCategories:",
+        "    - docker-write"
+      ].join("\n")
+    );
+
+    assert.throws(
+      () => compileToolboxPolicyFromDirectory(root),
+      /Profile 'docs-research\+alt'.*duplicate toolId 'github\.search'/i
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("compileToolboxPolicyFromDirectory rejects overlays that widen trust boundaries", () => {
   const root = createFixtureRoot();
   try {

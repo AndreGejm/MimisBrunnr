@@ -252,7 +252,16 @@ function compileProfiles(manifests: ToolboxManifestSet): Record<string, Compiled
     );
 
     const seenSemanticCapabilities = new Map<string, string>();
+    const seenToolIds = new Map<string, string>();
     for (const tool of tools) {
+      const previousToolServerId = seenToolIds.get(tool.toolId);
+      if (previousToolServerId) {
+        throw new Error(
+          `Profile '${profileId}' has duplicate toolId '${tool.toolId}' from '${previousToolServerId}' and '${tool.serverId}'.`
+        );
+      }
+      seenToolIds.set(tool.toolId, tool.serverId);
+
       const previous = seenSemanticCapabilities.get(tool.semanticCapabilityId);
       if (previous) {
         throw new Error(
