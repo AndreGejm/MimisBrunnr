@@ -597,4 +597,171 @@ test("checked-in docker/mcp manifests compile into the bootstrap and activated p
     compiled.servers["kubernetes-read"].tools.some((t) => t.toolId === "kubernetes.logs.query"),
     "kubernetes-read server must contain toolId kubernetes.logs.query"
   );
+
+  assert.ok(
+    compiled.categories["container-registry-read"],
+    "container-registry-read category must exist"
+  );
+  assert.ok(compiled.servers["dockerhub-read"], "dockerhub-read server must exist");
+});
+
+test("container-registry-read category has external-read trust class and read mutation level", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  assert.ok(
+    compiled.categories["container-registry-read"],
+    "container-registry-read category must exist"
+  );
+  assert.equal(
+    compiled.categories["container-registry-read"].trustClass,
+    "external-read",
+    "container-registry-read category must have trustClass external-read"
+  );
+  assert.equal(
+    compiled.categories["container-registry-read"].mutationLevel,
+    "read",
+    "container-registry-read category must have mutationLevel read"
+  );
+});
+
+test("dockerhub-read server exists as external-read peer with read-only container registry tools", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  assert.ok(compiled.servers["dockerhub-read"], "dockerhub-read server must exist");
+
+  const server = compiled.servers["dockerhub-read"];
+  assert.equal(server.trustClass, "external-read", "dockerhub-read server must have trustClass external-read");
+  assert.equal(server.mutationLevel, "read", "dockerhub-read server must have mutationLevel read");
+  assert.ok(server.tools.length > 0, "dockerhub-read server must have at least one tool");
+
+  for (const tool of server.tools) {
+    assert.equal(
+      tool.mutationLevel,
+      "read",
+      `dockerhub-read tool ${tool.toolId} must be read-only`
+    );
+    assert.ok(
+      tool.semanticCapabilityId.startsWith("container.registry."),
+      `dockerhub-read tool ${tool.toolId} semanticCapabilityId must be under container.registry.* namespace`
+    );
+  }
+
+  const toolIds = server.tools.map((t) => t.toolId);
+  assert.ok(
+    toolIds.includes("dockerhub.image.search"),
+    "dockerhub-read server must include dockerhub.image.search tool"
+  );
+  assert.ok(
+    toolIds.includes("dockerhub.image.tags.list"),
+    "dockerhub-read server must include dockerhub.image.tags.list tool"
+  );
+  assert.ok(
+    toolIds.includes("dockerhub.image.inspect"),
+    "dockerhub-read server must include dockerhub.image.inspect tool"
+  );
+});
+
+test("docs-research profile includes dockerhub-read server and allows container-registry-read", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  assert.ok(
+    compiled.profiles["docs-research"].includeServers.includes("dockerhub-read"),
+    "docs-research profile must include dockerhub-read server"
+  );
+  assert.ok(
+    compiled.profiles["docs-research"].allowedCategories.includes("container-registry-read"),
+    "docs-research profile must allow container-registry-read category"
+  );
+  assert.ok(
+    compiled.profiles["docs-research"].tools.some((t) => t.toolId === "dockerhub.image.search"),
+    "docs-research profile must expose dockerhub.image.search"
+  );
+});
+
+test("full profile includes dockerhub-read server and allows container-registry-read", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  assert.ok(
+    compiled.profiles["full"].includeServers.includes("dockerhub-read"),
+    "full profile must include dockerhub-read server"
+  );
+  assert.ok(
+    compiled.profiles["full"].allowedCategories.includes("container-registry-read"),
+    "full profile must allow container-registry-read category"
+  );
+  assert.ok(
+    compiled.profiles["full"].tools.some((t) => t.toolId === "dockerhub.image.search"),
+    "full profile must expose dockerhub.image.search"
+  );
+});
+
+test("core-dev+docs-research inherits dockerhub-read from docs-research base profile", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  assert.ok(
+    compiled.profiles["core-dev+docs-research"].includeServers.includes("dockerhub-read"),
+    "core-dev+docs-research profile must include dockerhub-read server inherited from docs-research"
+  );
+  assert.ok(
+    compiled.profiles["core-dev+docs-research"].tools.some(
+      (t) => t.toolId === "dockerhub.image.search"
+    ),
+    "core-dev+docs-research must expose dockerhub.image.search via docs-research inheritance"
+  );
+  assert.ok(
+    compiled.profiles["core-dev+docs-research"].allowedCategories.includes("container-registry-read"),
+    "core-dev+docs-research must allow container-registry-read via docs-research inheritance"
+  );
+});
+
+test("dockerhub-read is absent from bootstrap, core-dev, runtime-observe, runtime-admin, heavy-rag, and delivery-admin profiles", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  for (const profileId of [
+    "bootstrap",
+    "core-dev",
+    "runtime-observe",
+    "runtime-admin",
+    "heavy-rag",
+    "delivery-admin"
+  ]) {
+    assert.ok(
+      !compiled.profiles[profileId].includeServers.includes("dockerhub-read"),
+      `${profileId} profile must NOT include dockerhub-read server`
+    );
+    assert.ok(
+      !compiled.profiles[profileId].allowedCategories.includes("container-registry-read"),
+      `${profileId} profile must NOT allow container-registry-read category`
+    );
+  }
+});
+
+test("docs-research and full intents allow container-registry-read category", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  for (const intentId of ["docs-research", "full"]) {
+    const allowed = compiled.intents[intentId].allowedCategories;
+    assert.ok(
+      allowed.includes("container-registry-read"),
+      `${intentId} intent must allow container-registry-read`
+    );
+  }
+});
+
+test("container-registry-read is absent from runtime-observe, runtime-admin, core-dev, heavy-rag, and delivery-admin intents", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  for (const intentId of [
+    "core-dev",
+    "runtime-observe",
+    "runtime-admin",
+    "heavy-rag",
+    "delivery-admin"
+  ]) {
+    const allowed = compiled.intents[intentId].allowedCategories;
+    assert.ok(
+      !allowed.includes("container-registry-read"),
+      `${intentId} intent must NOT allow container-registry-read`
+    );
+  }
 });

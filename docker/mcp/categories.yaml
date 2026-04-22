@@ -63,6 +63,10 @@ categories:
     description: External delivery and publish actions
     trustClass: operator-only
     mutationLevel: admin
+  container-registry-read:
+    description: Read-only access to container registry metadata and image search
+    trustClass: external-read
+    mutationLevel: read
   k8s-read:
     description: Inspect Kubernetes cluster state
     trustClass: ops-read

@@ -518,6 +518,58 @@ test("mimir-control MCP lists kubernetes read-only tools when runtime-observe is
   }
 });
 
+test("mimir-control MCP lists DockerHub read-only tools when docs-research is active", async () => {
+  const child = spawnControlServer({ activeProfile: "docs-research", clientId: "codex" });
+  try {
+    const transport = createMessageCollector(child.stdout);
+    await initializeMcp(transport, child.stdin);
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
+      id: 210,
+      method: "tools/call",
+      params: {
+        name: "list_active_tools",
+        arguments: {}
+      }
+    });
+
+    const activeTools = await transport.next();
+    const activeToolIds = activeTools.result.structuredContent.activeTools.map((t) => t.toolId);
+
+    assert.ok(
+      activeToolIds.includes("dockerhub.image.search"),
+      "docs-research must expose dockerhub.image.search as active tool"
+    );
+    assert.ok(
+      activeToolIds.includes("dockerhub.image.tags.list"),
+      "docs-research must expose dockerhub.image.tags.list as active tool"
+    );
+    assert.ok(
+      activeToolIds.includes("dockerhub.image.inspect"),
+      "docs-research must expose dockerhub.image.inspect as active tool"
+    );
+
+    const dockerHubTools = activeTools.result.structuredContent.activeTools.filter((t) =>
+      t.toolId.startsWith("dockerhub.")
+    );
+    for (const tool of dockerHubTools) {
+      assert.equal(tool.category, "container-registry-read", `${tool.toolId} must use container-registry-read`);
+      assert.equal(tool.trustClass, "external-read", `${tool.toolId} must be external-read`);
+      assert.equal(tool.mutationLevel, "read", `${tool.toolId} must be read-only`);
+    }
+
+    assert.ok(
+      !activeTools.result.structuredContent.suppressedTools.some((t) =>
+        t.toolId.startsWith("dockerhub.")
+      ),
+      "Codex overlay must not suppress dockerhub tools"
+    );
+  } finally {
+    await stopChild(child);
+  }
+});
+
 async function createTempSqlitePath() {
   const root = await mkdtemp(path.join(os.tmpdir(), "mimir-toolbox-"));
   return {

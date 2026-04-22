@@ -188,6 +188,14 @@ For sessions using `runtime-observe`, `core-dev+runtime-observe`, `runtime-admin
 
 All six are `mutationLevel: read`. There is no Kubernetes mutation tool in v1.
 
+For sessions using `docs-research`, `core-dev+docs-research`, or `full`, the active tool surface may include DockerHub read-only descriptors from the `dockerhub-read` peer server. The current DockerHub tool ids are:
+
+- `dockerhub.image.search`
+- `dockerhub.image.tags.list`
+- `dockerhub.image.inspect`
+
+All three are `mutationLevel: read`. There is no DockerHub publish, delete, pull, push, signing, or deployment tool in this band.
+
 Issued-token listing filters are implemented end to end across CLI and HTTP. The supported request fields are:
 
 - `actorId`

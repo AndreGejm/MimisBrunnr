@@ -29,6 +29,7 @@ intents:
       - docs-search
       - web-search
       - github-read
+      - container-registry-read
     deniedCategories:
       - github-write
       - docker-write
@@ -127,5 +128,6 @@ intents:
       - k8s-read
       - k8s-logs-read
       - k8s-events-read
+      - container-registry-read
     deniedCategories: []
     fallbackProfile: delivery-admin

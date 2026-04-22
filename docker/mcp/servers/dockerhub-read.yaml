@@ -1,0 +1,26 @@
+server:
+  id: dockerhub-read
+  displayName: DockerHub Read
+  source: peer
+  kind: peer
+  trustClass: external-read
+  mutationLevel: read
+  tools:
+    - toolId: dockerhub.image.search
+      displayName: Search DockerHub Images
+      category: container-registry-read
+      trustClass: external-read
+      mutationLevel: read
+      semanticCapabilityId: container.registry.image.search
+    - toolId: dockerhub.image.tags.list
+      displayName: List DockerHub Image Tags
+      category: container-registry-read
+      trustClass: external-read
+      mutationLevel: read
+      semanticCapabilityId: container.registry.image.tags.list
+    - toolId: dockerhub.image.inspect
+      displayName: Inspect DockerHub Image
+      category: container-registry-read
+      trustClass: external-read
+      mutationLevel: read
+      semanticCapabilityId: container.registry.image.inspect

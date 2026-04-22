@@ -155,7 +155,7 @@ The next implementation order now begins with the stricter read-path governance 
 | TB-004 | Docker Toolkit apply: translate compiled plan into live `docker mcp profile` commands | partial | `docker:mcp:sync` produces the plan; `docker mcp profile` subcommand absent from current Docker MCP Toolkit build; apply is blocked until the subcommand ships |
 | TB-005 | Add Kubernetes read-only peer band to runtime observation profiles | done | `kubernetes-read` server with six read-only tools exposed in `runtime-observe`, `core-dev+runtime-observe`, `runtime-admin`, and `full`; no mutation tools in v1 |
 | TB-006 | Approval-gated Kubernetes mutation / deployment tooling | blocked | Depends on a separate governance decision and a future Kubernetes write server; no mutation tool is present in v1 |
-| TB-007 | Broader toolbox rollout beyond current curated peer bands | partial | Current profiles cover docs-research, runtime-observe, runtime-admin, and full; additional peer servers require manifest additions and test coverage |
+| TB-007 | Broader toolbox rollout beyond current curated peer bands | partial | `dockerhub-read` now adds read-only container registry discovery to `docs-research`, `core-dev+docs-research`, and `full`; remaining peer bands still require manifest additions and test coverage |
 
 ## Not In The Current Stack
 

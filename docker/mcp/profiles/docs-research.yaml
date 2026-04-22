@@ -9,6 +9,7 @@ profile:
     - brave-search
     - docker-docs
     - microsoft-learn
+    - dockerhub-read
   allowedCategories:
     - repo-read
     - local-docs
@@ -16,6 +17,7 @@ profile:
     - docs-search
     - web-search
     - github-read
+    - container-registry-read
   deniedCategories:
     - github-write
     - docker-write

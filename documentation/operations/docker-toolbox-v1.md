@@ -142,6 +142,20 @@ Allowed categories for these profiles include `k8s-read`, `k8s-logs-read`, and `
 
 v1 is **read-only** for Kubernetes. No Kubernetes mutation, deployment, or admin tool is exposed by any v1 profile. Future approval-gated Kubernetes mutation is tracked in the backlog but is not part of the current implementation.
 
+## DockerHub read-only peer band
+
+`docs-research`, `core-dev+docs-research` (inherits from `docs-research`), and `full` include the `dockerhub-read` peer server.
+
+Allowed categories for these profiles include `container-registry-read`.
+
+The current DockerHub tool ids are:
+
+- `dockerhub.image.search`
+- `dockerhub.image.tags.list`
+- `dockerhub.image.inspect`
+
+All three are `mutationLevel: read`. This band is for image discovery and metadata inspection only; it does not pull, push, publish, sign, delete, or deploy images.
+
 ## Enforcement notes
 
 - overlays may suppress or reduce capabilities

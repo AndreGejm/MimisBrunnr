@@ -24,6 +24,57 @@ test("compileDockerMcpRuntimePlan returns deterministic Docker profile and serve
   assert.equal(new Set(canonicalNames).size, canonicalNames.length);
   assert.ok(first.servers.some((server) => server.id === "mimir-control"));
   assert.ok(first.servers.some((server) => server.id === "kubernetes-read"));
+  assert.ok(
+    first.servers.some((server) => server.id === "dockerhub-read"),
+    "compileDockerMcpRuntimePlan must include dockerhub-read server"
+  );
+});
+
+test("sync-mcp-profiles apply mode includes dockerhub-read server ref in docs-research and full commands", async () => {
+  const stub = createDockerStub(true);
+  try {
+    const result = await runSyncCommand(
+      ["--apply", "--json", JSON.stringify({ generatedAt: "2026-01-01T00:00:00.000Z" }), "--no-pretty"],
+      {
+        MIMIR_DOCKER_EXECUTABLE: process.execPath,
+        MIMIR_DOCKER_EXECUTABLE_ARGS_JSON: JSON.stringify([stub.stubScript]),
+        MIMIR_DOCKER_RUNTIME_GENERATED_AT: "2026-01-01T00:00:00.000Z",
+        DOCKER_STUB_LOG: stub.logFile
+      }
+    );
+
+    assert.equal(result.exitCode, 0, result.stderr);
+    const payload = JSON.parse(result.stdout);
+
+    const docsCommand = payload.apply.plan.commands.find(
+      (command) => command.profileId === "docs-research"
+    );
+    assert.ok(docsCommand, "docs-research apply command must exist");
+    assert.ok(
+      docsCommand.serverRefs.includes("catalog://mcp/docker-mcp-catalog/dockerhub-read"),
+      "docs-research command must include catalog://mcp/docker-mcp-catalog/dockerhub-read server ref"
+    );
+
+    const fullCommand = payload.apply.plan.commands.find(
+      (command) => command.profileId === "full"
+    );
+    assert.ok(fullCommand, "full apply command must exist");
+    assert.ok(
+      fullCommand.serverRefs.includes("catalog://mcp/docker-mcp-catalog/dockerhub-read"),
+      "full command must include catalog://mcp/docker-mcp-catalog/dockerhub-read server ref"
+    );
+
+    const bootstrapCommand = payload.apply.plan.commands.find(
+      (command) => command.profileId === "bootstrap"
+    );
+    assert.ok(bootstrapCommand, "bootstrap apply command must exist");
+    assert.ok(
+      !bootstrapCommand.serverRefs.includes("catalog://mcp/docker-mcp-catalog/dockerhub-read"),
+      "bootstrap command must NOT include dockerhub-read server ref"
+    );
+  } finally {
+    rmSync(stub.rootDir, { recursive: true, force: true });
+  }
 });
 
 test("sync-mcp-profiles dry-run output remains deterministic", async () => {

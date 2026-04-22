@@ -187,7 +187,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - session leases with revision-bound, audience-bound tokens; `toolbox_expired` audit events on expiry deactivation
 - Docker runtime planning (`docker:mcp:sync`) and installer audit (`audit-toolbox-assets.mjs`) surface `serverIds` and `profileIds`, including `kubernetes-read` and `runtime-observe`
 - client overlays declare `handoffStrategy` and `handoffPresetRef`; activation returns structured reconnect handoff data
-- category-owned peer curation: `runtime-observe`, `core-dev+runtime-observe` (via base-profile inheritance), `runtime-admin`, and `full` include the `kubernetes-read` peer band for read-only Kubernetes observation (`k8s-read`, `k8s-logs-read`, `k8s-events-read`)
+- category-owned peer curation: `runtime-observe`, `core-dev+runtime-observe` (via base-profile inheritance), `runtime-admin`, and `full` include the `kubernetes-read` peer band for read-only Kubernetes observation (`k8s-read`, `k8s-logs-read`, `k8s-events-read`); `docs-research`, `core-dev+docs-research` (via base-profile inheritance), and `full` include the `dockerhub-read` peer band for read-only container registry access (`container-registry-read`)
 
 ## Partial Or Incomplete Areas
 
@@ -195,7 +195,7 @@ These areas have enabling structure but are not fully complete:
 
 - richer temporal-validity governance beyond validity windows, refresh-candidate reporting, bounded batch refresh-draft creation, idempotent refresh-draft reuse, explicit refresh-draft creation, freshness warnings, and stale ranking
 - hierarchical retrieval rollout beyond the current `flat` default, explicit opt-in strategy selection, trace metadata, packet-diff checks, and the documented rollback path back to `flat`
-- broader toolbox rollout beyond the current curated peer bands (docs-research, runtime-observe, runtime-admin, full); additional peer servers require their own category, server, and profile manifests plus test coverage
+- broader toolbox rollout beyond the current curated peer bands (docs-research, runtime-observe, runtime-admin, full); `dockerhub-read` (`container-registry-read`) is now live in docs-research and full; additional peer servers require their own category, server, and profile manifests plus test coverage
 - target-machine Docker Toolkit validation: `docker mcp profile` subcommand is not available in the current Docker MCP Toolkit build; the `docker:mcp:sync` plan is compiled but apply is blocked until the subcommand is present
 - future approval-gated Kubernetes mutation: no Kubernetes write or deployment tool is in v1; the workstream is blocked pending a separate governance decision
 
