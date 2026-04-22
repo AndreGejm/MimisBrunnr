@@ -16,6 +16,7 @@ profile:
     - kubernetes-read
     - dockerhub-read
     - semgrep-audit
+    - deepwiki-read
   allowedCategories:
     - repo-read
     - repo-write
@@ -37,6 +38,7 @@ profile:
     - k8s-logs-read
     - k8s-events-read
     - container-registry-read
+    - repo-knowledge-read
     - security-scan-read
   deniedCategories: []
   fallbackProfile: delivery-admin

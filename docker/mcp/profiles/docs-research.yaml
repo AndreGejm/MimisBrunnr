@@ -10,6 +10,7 @@ profile:
     - docker-docs
     - microsoft-learn
     - dockerhub-read
+    - deepwiki-read
   allowedCategories:
     - repo-read
     - local-docs
@@ -18,6 +19,7 @@ profile:
     - web-search
     - github-read
     - container-registry-read
+    - repo-knowledge-read
   deniedCategories:
     - github-write
     - docker-write

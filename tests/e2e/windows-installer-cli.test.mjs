@@ -337,6 +337,10 @@ test("windows installer cli audit-toolbox-assets returns toolbox manifest and ru
     envelope.details.toolboxAssets.runtimePlan.serverIds.includes("semgrep-audit"),
     "audit-toolbox-assets runtimePlan.serverIds must include semgrep-audit"
   );
+  assert.ok(
+    envelope.details.toolboxAssets.runtimePlan.serverIds.includes("deepwiki-read"),
+    "audit-toolbox-assets runtimePlan.serverIds must include deepwiki-read"
+  );
   assert.ok(Array.isArray(envelope.details.toolboxAssets.runtimePlan.profileIds));
   assert.ok(envelope.details.toolboxAssets.runtimePlan.profileIds.includes("runtime-observe"));
   assert.ok(
@@ -394,6 +398,10 @@ test("windows installer cli prepare-toolbox-runtime writes a compiled runtime-pl
   assert.ok(
     envelope.details.toolboxRuntime.serverIds.includes("semgrep-audit"),
     "prepare-toolbox-runtime serverIds must include semgrep-audit"
+  );
+  assert.ok(
+    envelope.details.toolboxRuntime.serverIds.includes("deepwiki-read"),
+    "prepare-toolbox-runtime serverIds must include deepwiki-read"
   );
   assert.ok(Array.isArray(envelope.details.toolboxRuntime.profileIds));
   assert.ok(envelope.details.toolboxRuntime.profileIds.includes("runtime-observe"));

@@ -416,6 +416,51 @@ test("mimir-cli list-active-tools when security-audit is active includes semgrep
   }
 });
 
+test("mimir-cli list-active-tools when docs-research is active includes deepwiki read-only tools", async () => {
+  const sqlitePath = await createTempSqlitePath();
+  const env = {
+    ...process.env,
+    MAB_NODE_ENV: "test",
+    MAB_TOOLBOX_MANIFEST_DIR: path.resolve("docker", "mcp"),
+    MAB_TOOLBOX_ACTIVE_PROFILE: "docs-research",
+    MAB_TOOLBOX_CLIENT_ID: "codex",
+    MAB_TOOLBOX_LEASE_ISSUER: "mimir-control",
+    MAB_TOOLBOX_LEASE_AUDIENCE: "mimir-core",
+    MAB_TOOLBOX_LEASE_ISSUER_SECRET: "toolbox-secret",
+    MAB_SQLITE_PATH: sqlitePath
+  };
+
+  const activeToolsResult = await runCliCommand(
+    ["list-active-tools", "--json", "{}", "--no-pretty"],
+    env
+  );
+  assert.equal(activeToolsResult.exitCode, 0, activeToolsResult.stderr);
+  const payload = JSON.parse(activeToolsResult.stdout);
+  assert.equal(payload.ok, true);
+
+  const activeToolIds = payload.activeTools.map((t) => t.toolId);
+  assert.ok(
+    activeToolIds.includes("read_wiki_structure"),
+    "docs-research active tools must include read_wiki_structure"
+  );
+  assert.ok(
+    activeToolIds.includes("read_wiki_contents"),
+    "docs-research active tools must include read_wiki_contents"
+  );
+  assert.ok(
+    activeToolIds.includes("ask_question"),
+    "docs-research active tools must include ask_question"
+  );
+
+  const deepwikiActive = payload.activeTools.filter((t) =>
+    t.semanticCapabilityId?.startsWith("repo.knowledge.")
+  );
+  for (const tool of deepwikiActive) {
+    assert.equal(tool.category, "repo-knowledge-read", `${tool.toolId} must use repo-knowledge-read`);
+    assert.equal(tool.mutationLevel, "read", `${tool.toolId} must be read-only`);
+  }
+});
+
 function runCliCommand(args, env, cwd = process.cwd()) {
   const scriptPath = path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js");
   return new Promise((resolve, reject) => {

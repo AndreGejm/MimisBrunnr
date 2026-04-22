@@ -1,0 +1,29 @@
+server:
+  id: deepwiki-read
+  displayName: DeepWiki Read
+  source: peer
+  kind: peer
+  trustClass: external-read
+  mutationLevel: read
+  dockerRuntime:
+    applyMode: catalog
+    catalogServerId: deepwiki
+  tools:
+    - toolId: read_wiki_structure
+      displayName: Read DeepWiki Structure
+      category: repo-knowledge-read
+      trustClass: external-read
+      mutationLevel: read
+      semanticCapabilityId: repo.knowledge.structure.read
+    - toolId: read_wiki_contents
+      displayName: Read DeepWiki Contents
+      category: repo-knowledge-read
+      trustClass: external-read
+      mutationLevel: read
+      semanticCapabilityId: repo.knowledge.contents.read
+    - toolId: ask_question
+      displayName: Ask DeepWiki Repository Question
+      category: repo-knowledge-read
+      trustClass: external-read
+      mutationLevel: read
+      semanticCapabilityId: repo.knowledge.question.ask

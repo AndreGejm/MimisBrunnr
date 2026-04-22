@@ -524,6 +524,43 @@ test("compileDockerMcpRuntimePlan includes semgrep-audit server with catalog app
   );
 });
 
+test("sync-mcp-profiles dry-run emits catalog://mcp/docker-mcp-catalog/deepwiki for research profiles", async () => {
+  const result = await runSyncCommand(
+    ["--json", JSON.stringify({ generatedAt: "2026-01-01T00:00:00.000Z" }), "--no-pretty"],
+    { MIMIR_DOCKER_RUNTIME_GENERATED_AT: "2026-01-01T00:00:00.000Z" }
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+
+  for (const profileId of ["docs-research", "core-dev+docs-research", "full"]) {
+    const command = output.apply.commands.find((c) => c.profileId === profileId);
+    assert.ok(command, `${profileId} command must appear in dry-run apply plan`);
+    assert.ok(
+      command.serverRefs.includes("catalog://mcp/docker-mcp-catalog/deepwiki"),
+      `${profileId} must reference deepwiki-read using catalogServerId 'deepwiki'`
+    );
+  }
+});
+
+test("compileDockerMcpRuntimePlan includes deepwiki-read server with catalog apply mode and catalogServerId deepwiki", () => {
+  const policy = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+  const plan = compileDockerMcpRuntimePlan(policy);
+
+  const deepwikiServer = plan.servers.find((s) => s.id === "deepwiki-read");
+  assert.ok(deepwikiServer, "deepwiki-read must appear in the runtime plan");
+  assert.equal(
+    deepwikiServer.dockerApplyMode,
+    "catalog",
+    "deepwiki-read must expose dockerApplyMode: catalog"
+  );
+  assert.equal(
+    deepwikiServer.catalogServerId,
+    "deepwiki",
+    "deepwiki-read catalogServerId must be 'deepwiki' (the live Docker catalog name)"
+  );
+});
+
 function runSyncCommand(args, extraEnv = {}) {
   const scriptPath = path.join(process.cwd(), "scripts", "docker", "sync-mcp-profiles.mjs");
   return new Promise((resolve, reject) => {

@@ -570,6 +570,58 @@ test("mimir-control MCP lists DockerHub read-only tools when docs-research is ac
   }
 });
 
+test("mimir-control MCP lists DeepWiki read-only tools when docs-research is active", { timeout: 10000 }, async () => {
+  const child = spawnControlServer({ activeProfile: "docs-research", clientId: "codex" });
+  try {
+    const transport = createMessageCollector(child.stdout);
+    await initializeMcp(transport, child.stdin);
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
+      id: 221,
+      method: "tools/call",
+      params: {
+        name: "list_active_tools",
+        arguments: {}
+      }
+    });
+
+    const activeTools = await transport.next();
+    const activeToolIds = activeTools.result.structuredContent.activeTools.map((t) => t.toolId);
+
+    assert.ok(
+      activeToolIds.includes("read_wiki_structure"),
+      "docs-research must expose read_wiki_structure as active tool"
+    );
+    assert.ok(
+      activeToolIds.includes("read_wiki_contents"),
+      "docs-research must expose read_wiki_contents as active tool"
+    );
+    assert.ok(
+      activeToolIds.includes("ask_question"),
+      "docs-research must expose ask_question as active tool"
+    );
+
+    const deepwikiTools = activeTools.result.structuredContent.activeTools.filter((t) =>
+      t.semanticCapabilityId?.startsWith("repo.knowledge.")
+    );
+    for (const tool of deepwikiTools) {
+      assert.equal(tool.category, "repo-knowledge-read", `${tool.toolId} must use repo-knowledge-read`);
+      assert.equal(tool.trustClass, "external-read", `${tool.toolId} must be external-read`);
+      assert.equal(tool.mutationLevel, "read", `${tool.toolId} must be read-only`);
+    }
+
+    assert.ok(
+      !activeTools.result.structuredContent.suppressedTools.some((t) =>
+        t.semanticCapabilityId?.startsWith("repo.knowledge.")
+      ),
+      "Codex overlay must not suppress deepwiki tools"
+    );
+  } finally {
+    await stopChild(child);
+  }
+});
+
 test("mimir-control MCP lists Semgrep read-only tools when security-audit is active", { timeout: 10000 }, async () => {
   const child = spawnControlServer({ activeProfile: "security-audit", clientId: "codex" });
   try {

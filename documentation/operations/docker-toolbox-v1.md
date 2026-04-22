@@ -176,6 +176,23 @@ also exposes repository creation and metadata update tools. The curated
 `dockerhub-read` toolbox server is therefore `descriptor-only` until a
 read-filtered wrapper or catalog entry exists.
 
+## DeepWiki read-only repo knowledge band
+
+`docs-research`, `core-dev+docs-research` (inherits from `docs-research`), and `full` include the `deepwiki-read` peer server.
+
+Allowed categories for these profiles include `repo-knowledge-read`.
+
+The current DeepWiki tool ids are:
+
+- `read_wiki_structure`
+- `read_wiki_contents`
+- `ask_question`
+
+All three are `mutationLevel: read`. This band is for generated GitHub repository documentation and repository Q&A only; it does not write GitHub state or mutate local files.
+
+DeepWiki apply note: the live Docker catalog server is named `deepwiki`, so the
+repo policy id `deepwiki-read` maps to catalog server `deepwiki`.
+
 ## Semgrep read-only security audit band
 
 `security-audit`, `core-dev+security-audit` (inherits from `security-audit`), and `full` include the `semgrep-audit` peer server.

@@ -667,6 +667,25 @@ test("container-registry-read category has external-read trust class and read mu
   );
 });
 
+test("repo-knowledge-read category has external-read trust class and read mutation level", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  assert.ok(
+    compiled.categories["repo-knowledge-read"],
+    "repo-knowledge-read category must exist"
+  );
+  assert.equal(
+    compiled.categories["repo-knowledge-read"].trustClass,
+    "external-read",
+    "repo-knowledge-read category must have trustClass external-read"
+  );
+  assert.equal(
+    compiled.categories["repo-knowledge-read"].mutationLevel,
+    "read",
+    "repo-knowledge-read category must have mutationLevel read"
+  );
+});
+
 test("dockerhub-read server exists as external-read peer with read-only container registry tools", () => {
   const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
 
@@ -714,6 +733,36 @@ test("dockerhub-read server exists as external-read peer with read-only containe
   );
 });
 
+test("deepwiki-read server exists as external-read peer with catalog mode and read-only repo knowledge tools", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  assert.ok(compiled.servers["deepwiki-read"], "deepwiki-read server must exist");
+
+  const server = compiled.servers["deepwiki-read"];
+  assert.equal(server.trustClass, "external-read", "deepwiki-read server must have trustClass external-read");
+  assert.equal(server.mutationLevel, "read", "deepwiki-read server must have mutationLevel read");
+  assert.equal(server.dockerRuntime?.applyMode, "catalog", "deepwiki-read must declare dockerRuntime catalog mode");
+  assert.equal(server.dockerRuntime?.catalogServerId, "deepwiki", "deepwiki-read must map to catalogServerId deepwiki");
+
+  const toolIds = server.tools.map((t) => t.toolId);
+  for (const requiredToolId of ["read_wiki_structure", "read_wiki_contents", "ask_question"]) {
+    assert.ok(
+      toolIds.includes(requiredToolId),
+      `deepwiki-read server must include ${requiredToolId}`
+    );
+  }
+
+  for (const tool of server.tools) {
+    assert.equal(tool.category, "repo-knowledge-read", `${tool.toolId} must use repo-knowledge-read`);
+    assert.equal(tool.trustClass, "external-read", `${tool.toolId} must be external-read`);
+    assert.equal(tool.mutationLevel, "read", `${tool.toolId} must be read-only`);
+    assert.ok(
+      tool.semanticCapabilityId.startsWith("repo.knowledge."),
+      `${tool.toolId} semanticCapabilityId must be under repo.knowledge.*`
+    );
+  }
+});
+
 test("docs-research profile includes dockerhub-read server and allows container-registry-read", () => {
   const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
 
@@ -731,6 +780,23 @@ test("docs-research profile includes dockerhub-read server and allows container-
   );
 });
 
+test("docs-research profile includes deepwiki-read server and allows repo-knowledge-read", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  assert.ok(
+    compiled.profiles["docs-research"].includeServers.includes("deepwiki-read"),
+    "docs-research profile must include deepwiki-read server"
+  );
+  assert.ok(
+    compiled.profiles["docs-research"].allowedCategories.includes("repo-knowledge-read"),
+    "docs-research profile must allow repo-knowledge-read category"
+  );
+  assert.ok(
+    compiled.profiles["docs-research"].tools.some((t) => t.toolId === "read_wiki_structure"),
+    "docs-research profile must expose read_wiki_structure"
+  );
+});
+
 test("full profile includes dockerhub-read server and allows container-registry-read", () => {
   const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
 
@@ -745,6 +811,23 @@ test("full profile includes dockerhub-read server and allows container-registry-
   assert.ok(
     compiled.profiles["full"].tools.some((t) => t.toolId === "dockerhub.image.search"),
     "full profile must expose dockerhub.image.search"
+  );
+});
+
+test("full profile includes deepwiki-read server and allows repo-knowledge-read", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  assert.ok(
+    compiled.profiles["full"].includeServers.includes("deepwiki-read"),
+    "full profile must include deepwiki-read server"
+  );
+  assert.ok(
+    compiled.profiles["full"].allowedCategories.includes("repo-knowledge-read"),
+    "full profile must allow repo-knowledge-read category"
+  );
+  assert.ok(
+    compiled.profiles["full"].tools.some((t) => t.semanticCapabilityId.startsWith("repo.knowledge.")),
+    "full profile must expose at least one repo.knowledge.* tool"
   );
 });
 
@@ -767,7 +850,24 @@ test("core-dev+docs-research inherits dockerhub-read from docs-research base pro
   );
 });
 
-test("dockerhub-read is absent from bootstrap, core-dev, runtime-observe, runtime-admin, heavy-rag, and delivery-admin profiles", () => {
+test("core-dev+docs-research inherits deepwiki-read from docs-research base profile", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  assert.ok(
+    compiled.profiles["core-dev+docs-research"].includeServers.includes("deepwiki-read"),
+    "core-dev+docs-research profile must include deepwiki-read server inherited from docs-research"
+  );
+  assert.ok(
+    compiled.profiles["core-dev+docs-research"].allowedCategories.includes("repo-knowledge-read"),
+    "core-dev+docs-research must allow repo-knowledge-read via docs-research inheritance"
+  );
+  assert.ok(
+    compiled.profiles["core-dev+docs-research"].tools.some((t) => t.toolId === "ask_question"),
+    "core-dev+docs-research must expose ask_question"
+  );
+});
+
+test("dockerhub-read and deepwiki-read are absent from non-research profiles", () => {
   const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
 
   for (const profileId of [
@@ -776,20 +876,30 @@ test("dockerhub-read is absent from bootstrap, core-dev, runtime-observe, runtim
     "runtime-observe",
     "runtime-admin",
     "heavy-rag",
-    "delivery-admin"
+    "delivery-admin",
+    "security-audit",
+    "core-dev+security-audit"
   ]) {
     assert.ok(
       !compiled.profiles[profileId].includeServers.includes("dockerhub-read"),
       `${profileId} profile must NOT include dockerhub-read server`
     );
     assert.ok(
+      !compiled.profiles[profileId].includeServers.includes("deepwiki-read"),
+      `${profileId} profile must NOT include deepwiki-read server`
+    );
+    assert.ok(
       !compiled.profiles[profileId].allowedCategories.includes("container-registry-read"),
       `${profileId} profile must NOT allow container-registry-read category`
+    );
+    assert.ok(
+      !compiled.profiles[profileId].allowedCategories.includes("repo-knowledge-read"),
+      `${profileId} profile must NOT allow repo-knowledge-read category`
     );
   }
 });
 
-test("docs-research and full intents allow container-registry-read category", () => {
+test("docs-research and full intents allow container-registry-read and repo-knowledge-read categories", () => {
   const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
 
   for (const intentId of ["docs-research", "full"]) {
@@ -798,10 +908,14 @@ test("docs-research and full intents allow container-registry-read category", ()
       allowed.includes("container-registry-read"),
       `${intentId} intent must allow container-registry-read`
     );
+    assert.ok(
+      allowed.includes("repo-knowledge-read"),
+      `${intentId} intent must allow repo-knowledge-read`
+    );
   }
 });
 
-test("container-registry-read is absent from runtime-observe, runtime-admin, core-dev, heavy-rag, and delivery-admin intents", () => {
+test("container-registry-read and repo-knowledge-read are absent from non-research intents", () => {
   const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
 
   for (const intentId of [
@@ -809,12 +923,17 @@ test("container-registry-read is absent from runtime-observe, runtime-admin, cor
     "runtime-observe",
     "runtime-admin",
     "heavy-rag",
-    "delivery-admin"
+    "delivery-admin",
+    "security-audit"
   ]) {
     const allowed = compiled.intents[intentId].allowedCategories;
     assert.ok(
       !allowed.includes("container-registry-read"),
       `${intentId} intent must NOT allow container-registry-read`
+    );
+    assert.ok(
+      !allowed.includes("repo-knowledge-read"),
+      `${intentId} intent must NOT allow repo-knowledge-read`
     );
   }
 });
