@@ -806,6 +806,31 @@ test("windows installer cli plan-docker-mcp-toolkit-apply reports a blocked dry-
   assert.equal(envelope.details.dockerMcpToolkitApplyPlan.compatibleWithCurrentToolkit, false);
   assert.equal(envelope.details.dockerMcpToolkitApplyPlan.dockerProfileSubcommandAvailable, false);
   assert.ok(envelope.details.dockerMcpToolkitApplyPlan.applyCommandCount > 0);
+  assert.ok(envelope.details.dockerMcpToolkitApplyPlan.fallbackGatewayCommandCount > 0);
+  assert.ok(Array.isArray(envelope.details.dockerMcpToolkitApplyPlan.fallbackGatewayCommands));
+  const docsFallback = envelope.details.dockerMcpToolkitApplyPlan.fallbackGatewayCommands.find(
+    (entry) => entry.profileId === "docs-research"
+  );
+  assert.ok(docsFallback, "docs-research fallback command must be included in installer report");
+  assert.deepEqual(docsFallback.argv.slice(0, 3), ["mcp", "gateway", "run"]);
+  assert.deepEqual(docsFallback.serverNames, [
+    "brave",
+    "deepwiki",
+    "docker-docs",
+    "microsoft-learn"
+  ]);
+  assert.ok(
+    docsFallback.omittedServers.some(
+      (entry) => entry.id === "mimir-control" && /owned/i.test(entry.blockedReason)
+    ),
+    "fallback omittedServers must include owned mimir-control"
+  );
+  assert.ok(
+    docsFallback.omittedServers.some(
+      (entry) => entry.id === "github-read" && /descriptor-only/i.test(entry.blockedReason)
+    ),
+    "fallback omittedServers must include descriptor-only github-read"
+  );
   assert.match(
     envelope.details.dockerMcpToolkitApplyPlan.blockedReasons[0],
     /profile/i

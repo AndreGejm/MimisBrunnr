@@ -40,8 +40,17 @@ export interface DockerMcpRuntimeApplyCommandPlan {
   blockedServers?: DockerMcpBlockedServer[];
 }
 
+export interface DockerMcpRuntimeGatewayRunCommandPlan {
+  description: string;
+  argv: string[];
+  profileId: string;
+  serverNames: string[];
+  omittedServers?: DockerMcpBlockedServer[];
+}
+
 export interface DockerMcpRuntimeApplyPlan {
   commands: DockerMcpRuntimeApplyCommandPlan[];
+  gatewayRunCommands: DockerMcpRuntimeGatewayRunCommandPlan[];
   blockedServers?: DockerMcpBlockedServer[];
 }
 
@@ -141,10 +150,13 @@ export function buildDockerMcpRuntimeApplyPlan(
 ): DockerMcpRuntimeApplyPlan {
   const serversById = new Map(plan.servers.map((server) => [server.id, server]));
   const planBlockedById = new Map<string, DockerMcpBlockedServer>();
+  const gatewayRunCommands: DockerMcpRuntimeGatewayRunCommandPlan[] = [];
 
   const commands: DockerMcpRuntimeApplyCommandPlan[] = plan.profiles.map((profile) => {
     const commandBlockedServers: DockerMcpBlockedServer[] = [];
     const serverRefs: string[] = [];
+    const gatewayServerNames: string[] = [];
+    const gatewayOmittedServers: DockerMcpBlockedServer[] = [];
 
     for (const serverId of profile.serverIds) {
       const server = serversById.get(serverId);
@@ -156,20 +168,26 @@ export function buildDockerMcpRuntimeApplyPlan(
 
       if (server.source === "peer") {
         if (server.dockerApplyMode === "descriptor-only") {
+          const descriptorOnlyReason = server.blockedReason ?? "no safe catalog target";
           const blocked: DockerMcpBlockedServer = {
             id: server.id,
-            blockedReason: server.blockedReason ?? "descriptor-only: no safe catalog target"
+            blockedReason: /descriptor-only/i.test(descriptorOnlyReason)
+              ? descriptorOnlyReason
+              : `descriptor-only: ${descriptorOnlyReason}`
           };
           commandBlockedServers.push(blocked);
+          gatewayOmittedServers.push(blocked);
           planBlockedById.set(server.id, blocked);
         } else if (server.dockerApplyMode === "catalog" && server.catalogServerId) {
           serverRefs.push(`catalog://mcp/docker-mcp-catalog/${server.catalogServerId}`);
+          gatewayServerNames.push(server.catalogServerId);
         } else if (server.dockerApplyMode === "catalog") {
           const blocked: DockerMcpBlockedServer = {
             id: server.id,
             blockedReason: "missing catalogServerId: catalog-mode peer server has no catalog target"
           };
           commandBlockedServers.push(blocked);
+          gatewayOmittedServers.push(blocked);
           planBlockedById.set(server.id, blocked);
         } else {
           const blocked: DockerMcpBlockedServer = {
@@ -179,11 +197,34 @@ export function buildDockerMcpRuntimeApplyPlan(
               "missing dockerApplyMode: apply metadata required for peer servers"
           };
           commandBlockedServers.push(blocked);
+          gatewayOmittedServers.push(blocked);
           planBlockedById.set(server.id, blocked);
         }
       } else {
         serverRefs.push(`file://./docker/mcp/servers/${server.id}.yaml`);
+        gatewayOmittedServers.push({
+          id: server.id,
+          blockedReason:
+            "owned server: docker mcp gateway run --servers fallback only supports catalog-mode peer servers"
+        });
       }
+    }
+
+    if (gatewayServerNames.length > 0) {
+      gatewayRunCommands.push({
+        description:
+          `Run Docker MCP gateway for catalog-mode peer subset in profile '${profile.id}' (diagnostic fallback only).`,
+        argv: [
+          "mcp",
+          "gateway",
+          "run",
+          "--servers",
+          gatewayServerNames.join(",")
+        ],
+        profileId: profile.id,
+        serverNames: gatewayServerNames,
+        ...(gatewayOmittedServers.length > 0 ? { omittedServers: gatewayOmittedServers } : {})
+      } satisfies DockerMcpRuntimeGatewayRunCommandPlan);
     }
 
     return {
@@ -210,6 +251,7 @@ export function buildDockerMcpRuntimeApplyPlan(
 
   return {
     commands,
+    gatewayRunCommands,
     ...(planBlockedServers.length > 0 ? { blockedServers: planBlockedServers } : {})
   };
 }

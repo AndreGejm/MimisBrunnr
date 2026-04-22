@@ -31,6 +31,63 @@ test("compileDockerMcpRuntimePlan returns deterministic Docker profile and serve
   );
 });
 
+test("buildDockerMcpRuntimeApplyPlan exposes gateway run fallback commands for catalog-mode peers only", () => {
+  const policy = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+  const plan = compileDockerMcpRuntimePlan(policy, {
+    generatedAt: "2026-01-01T00:00:00.000Z"
+  });
+  const applyPlan = buildDockerMcpRuntimeApplyPlan(plan);
+
+  assert.ok(
+    Array.isArray(applyPlan.gatewayRunCommands),
+    "applyPlan.gatewayRunCommands must be present"
+  );
+
+  const docsFallback = applyPlan.gatewayRunCommands.find(
+    (command) => command.profileId === "docs-research"
+  );
+  assert.ok(docsFallback, "docs-research fallback command must exist");
+  assert.deepEqual(docsFallback.argv.slice(0, 3), ["mcp", "gateway", "run"]);
+  assert.ok(
+    docsFallback.argv.includes("--servers"),
+    "gateway fallback argv must include --servers"
+  );
+  assert.deepEqual(docsFallback.serverNames, [
+    "brave",
+    "deepwiki",
+    "docker-docs",
+    "microsoft-learn"
+  ]);
+  assert.ok(
+    Array.isArray(docsFallback.omittedServers),
+    "docs-research fallback must report omittedServers"
+  );
+  assert.ok(
+    docsFallback.omittedServers.some(
+      (entry) => entry.id === "mimir-control" && /owned/i.test(entry.blockedReason)
+    ),
+    "docs-research fallback must report mimir-control as omitted owned server"
+  );
+  assert.ok(
+    docsFallback.omittedServers.some(
+      (entry) => entry.id === "mimir-core" && /owned/i.test(entry.blockedReason)
+    ),
+    "docs-research fallback must report mimir-core as omitted owned server"
+  );
+  assert.ok(
+    docsFallback.omittedServers.some(
+      (entry) => entry.id === "github-read" && /descriptor-only/i.test(entry.blockedReason)
+    ),
+    "docs-research fallback must report github-read as descriptor-only omitted server"
+  );
+  assert.ok(
+    docsFallback.omittedServers.some(
+      (entry) => entry.id === "dockerhub-read" && /descriptor-only/i.test(entry.blockedReason)
+    ),
+    "docs-research fallback must report dockerhub-read as descriptor-only omitted server"
+  );
+});
+
 test("sync-mcp-profiles apply mode is blocked and omits descriptor-only dockerhub-read from server refs", async () => {
   const stub = createDockerStub(true);
   try {
@@ -97,6 +154,14 @@ test("sync-mcp-profiles dry-run output remains deterministic", async () => {
   assert.equal(result.dryRun, true);
   assert.equal(result.apply.status, "dry-run");
   assert.ok(result.apply.commands.length > 0);
+  assert.ok(
+    Array.isArray(result.apply.gatewayRunCommands),
+    "dry-run output must include gatewayRunCommands for profileless fallback diagnostics"
+  );
+  assert.ok(
+    result.apply.gatewayRunCommands.some((command) => command.profileId === "docs-research"),
+    "dry-run output must include docs-research gateway fallback command"
+  );
 });
 
 test("sync-mcp-profiles apply mode fails clearly when local Docker MCP profiles are unavailable", async () => {

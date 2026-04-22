@@ -132,6 +132,11 @@ function Invoke-InstallerDockerMcpToolkitApplyPlan {
   } else {
     @()
   }
+  $gatewayRunCommands = if ($null -ne $apply -and $apply.PSObject.Properties.Name -contains "gatewayRunCommands") {
+    @($apply.gatewayRunCommands)
+  } else {
+    @()
+  }
   $requiresDockerProfile = @(
     $applyCommands | Where-Object {
       $argv = @($_.argv)
@@ -169,6 +174,22 @@ function Invoke-InstallerDockerMcpToolkitApplyPlan {
       }
     }
   )
+  $compactGatewayRunCommands = @(
+    foreach ($entry in $gatewayRunCommands) {
+      $omittedServers = if ($entry.PSObject.Properties.Name -contains "omittedServers" -and $null -ne $entry.omittedServers) {
+        @($entry.omittedServers)
+      } else {
+        @()
+      }
+      [pscustomobject]@{
+        description = $entry.description
+        profileId = $entry.profileId
+        argv = @($entry.argv)
+        serverNames = @($entry.serverNames)
+        omittedServers = @($omittedServers)
+      }
+    }
+  )
 
   return [pscustomobject]@{
     commands = @($runtimePrepare.command) + @($toolkitAudit.commands) + @($profileSupport.command)
@@ -186,6 +207,8 @@ function Invoke-InstallerDockerMcpToolkitApplyPlan {
       applyAttempted = if ($null -ne $apply -and $apply.PSObject.Properties.Name -contains "attempted") { [bool]$apply.attempted } else { $false }
       applyCommandCount = $applyCommands.Count
       commands = @($compactCommands)
+      fallbackGatewayCommandCount = $gatewayRunCommands.Count
+      fallbackGatewayCommands = @($compactGatewayRunCommands)
       dockerProfileSubcommandAvailable = [bool]$profileSupport.available
       compatibleWithCurrentToolkit = [bool]$compatibleWithCurrentToolkit
       blockedReasons = @($blockedReasons)

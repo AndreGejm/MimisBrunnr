@@ -126,6 +126,13 @@ blocked before shelling out profile mutation commands if any selected profile
 contains descriptor-only peers. This prevents read-filtered policy surfaces such
 as `dockerhub-read` from being replaced by broader raw catalog servers.
 
+When the local toolkit does not expose `docker mcp profile`, the compiled apply
+plan also emits deterministic diagnostic fallback commands:
+`docker mcp gateway run --servers <catalog-server-ids>`. These fallback entries
+include only catalog-mode peer servers and explicitly list omitted owned servers
+and descriptor-only peers. They are for operator diagnostics and handoff
+planning, not complete profile sessions.
+
 Run the control MCP server directly:
 
 ```bash
