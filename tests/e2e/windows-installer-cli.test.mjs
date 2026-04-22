@@ -331,6 +331,10 @@ test("windows installer cli audit-toolbox-assets returns toolbox manifest and ru
   assert.ok(envelope.details.toolboxAssets.counts.clients > 0);
   assert.ok(envelope.details.toolboxAssets.runtimePlan.serverCount > 0);
   assert.ok(envelope.details.toolboxAssets.runtimePlan.profileCount > 0);
+  assert.ok(Array.isArray(envelope.details.toolboxAssets.runtimePlan.serverIds));
+  assert.ok(envelope.details.toolboxAssets.runtimePlan.serverIds.includes("kubernetes-read"));
+  assert.ok(Array.isArray(envelope.details.toolboxAssets.runtimePlan.profileIds));
+  assert.ok(envelope.details.toolboxAssets.runtimePlan.profileIds.includes("runtime-observe"));
   assert.equal(envelope.details.toolboxAssets.bootstrapProfilePresent, true);
   assert.equal(envelope.details.toolboxAssets.controlServerPresent, true);
 
@@ -377,6 +381,10 @@ test("windows installer cli prepare-toolbox-runtime writes a compiled runtime-pl
   assert.notEqual(envelope.details.toolboxRuntime.manifestRevision.length, 0);
   assert.ok(envelope.details.toolboxRuntime.profileCount > 0);
   assert.ok(envelope.details.toolboxRuntime.serverCount > 0);
+  assert.ok(Array.isArray(envelope.details.toolboxRuntime.serverIds));
+  assert.ok(envelope.details.toolboxRuntime.serverIds.includes("kubernetes-read"));
+  assert.ok(Array.isArray(envelope.details.toolboxRuntime.profileIds));
+  assert.ok(envelope.details.toolboxRuntime.profileIds.includes("runtime-observe"));
   assert.equal(envelope.details.toolboxRuntime.dryRun, true);
   assert.equal(envelope.details.toolboxRuntime.dockerApplyImplemented, false);
   assert.ok(envelope.artifactsWritten.includes(expectedOutputPath));
@@ -388,6 +396,7 @@ test("windows installer cli prepare-toolbox-runtime writes a compiled runtime-pl
   );
   assert.ok(Array.isArray(writtenPlan.profiles));
   assert.ok(Array.isArray(writtenPlan.servers));
+  assert.ok(writtenPlan.servers.some((server) => server.id === "kubernetes-read"));
 
   const persistedReport = JSON.parse(
     await readFile(path.join(stateRoot, "last-report.json"), "utf8")

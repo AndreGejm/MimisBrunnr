@@ -134,6 +134,14 @@ pnpm mcp:control
 
 Composite profiles are only allowed for repeated workflows with explicit fixtures and tests.
 
+## Kubernetes read-only peer band
+
+`runtime-observe`, `core-dev+runtime-observe` (inherits from `runtime-observe`), `runtime-admin`, and `full` include the `kubernetes-read` peer server.
+
+Allowed categories for these profiles include `k8s-read`, `k8s-logs-read`, and `k8s-events-read`.
+
+v1 is **read-only** for Kubernetes. No Kubernetes mutation, deployment, or admin tool is exposed by any v1 profile. Future approval-gated Kubernetes mutation is tracked in the backlog but is not part of the current implementation.
+
 ## Enforcement notes
 
 - overlays may suppress or reduce capabilities

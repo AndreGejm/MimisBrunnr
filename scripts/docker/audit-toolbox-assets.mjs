@@ -50,7 +50,9 @@ function buildValidReport(sourceDirectory) {
     runtimePlan: {
       generatedAt: runtimePlan.generatedAt,
       serverCount: runtimePlan.servers.length,
-      profileCount: runtimePlan.profiles.length
+      profileCount: runtimePlan.profiles.length,
+      serverIds: runtimePlan.servers.map((server) => server.id),
+      profileIds: runtimePlan.profiles.map((profile) => profile.id)
     },
     bootstrapProfilePresent: Object.hasOwn(policy.profiles, "bootstrap"),
     controlServerPresent: Object.hasOwn(policy.servers, "mimir-control"),
@@ -76,7 +78,9 @@ function buildInvalidReport(sourceDirectory, error) {
     runtimePlan: {
       generatedAt: null,
       serverCount: 0,
-      profileCount: 0
+      profileCount: 0,
+      serverIds: [],
+      profileIds: []
     },
     bootstrapProfilePresent: false,
     controlServerPresent: false,

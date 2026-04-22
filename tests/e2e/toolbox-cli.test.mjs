@@ -338,6 +338,48 @@ test("mimir-cli records toolbox_expired when deactivating an expired lease", asy
   assert.ok(actionTypes.includes("toolbox_deactivated"));
 });
 
+test("mimir-cli list-active-tools when runtime-observe is active includes kubernetes read-only tools", async () => {
+  const sqlitePath = await createTempSqlitePath();
+  const env = {
+    ...process.env,
+    MAB_NODE_ENV: "test",
+    MAB_TOOLBOX_MANIFEST_DIR: path.resolve("docker", "mcp"),
+    MAB_TOOLBOX_ACTIVE_PROFILE: "runtime-observe",
+    MAB_TOOLBOX_CLIENT_ID: "codex",
+    MAB_TOOLBOX_LEASE_ISSUER: "mimir-control",
+    MAB_TOOLBOX_LEASE_AUDIENCE: "mimir-core",
+    MAB_TOOLBOX_LEASE_ISSUER_SECRET: "toolbox-secret",
+    MAB_SQLITE_PATH: sqlitePath
+  };
+
+  const activeToolsResult = await runCliCommand(
+    ["list-active-tools", "--json", "{}", "--no-pretty"],
+    env
+  );
+  assert.equal(activeToolsResult.exitCode, 0, activeToolsResult.stderr);
+  const payload = JSON.parse(activeToolsResult.stdout);
+  assert.equal(payload.ok, true);
+
+  const activeToolIds = payload.activeTools.map((t) => t.toolId);
+  assert.ok(
+    activeToolIds.includes("kubernetes.context.inspect"),
+    "runtime-observe active tools must include kubernetes.context.inspect"
+  );
+  assert.ok(
+    activeToolIds.includes("kubernetes.events.list"),
+    "runtime-observe active tools must include kubernetes.events.list"
+  );
+  assert.ok(
+    activeToolIds.includes("kubernetes.logs.query"),
+    "runtime-observe active tools must include kubernetes.logs.query"
+  );
+
+  const k8sActive = payload.activeTools.filter((t) => t.toolId.startsWith("kubernetes."));
+  for (const tool of k8sActive) {
+    assert.equal(tool.mutationLevel, "read", `${tool.toolId} must be read-only`);
+  }
+});
+
 function runCliCommand(args, env, cwd = process.cwd()) {
   const scriptPath = path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js");
   return new Promise((resolve, reject) => {

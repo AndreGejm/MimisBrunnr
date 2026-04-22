@@ -467,6 +467,57 @@ test("mimir-control MCP returns parse errors for malformed frames and stays aliv
   }
 });
 
+test("mimir-control MCP lists kubernetes read-only tools when runtime-observe is active", async () => {
+  const child = spawnControlServer({ activeProfile: "runtime-observe", clientId: "codex" });
+  try {
+    const transport = createMessageCollector(child.stdout);
+    await initializeMcp(transport, child.stdin);
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
+      id: 200,
+      method: "tools/call",
+      params: {
+        name: "list_active_tools",
+        arguments: {}
+      }
+    });
+
+    const activeTools = await transport.next();
+    const activeToolIds = activeTools.result.structuredContent.activeTools.map((t) => t.toolId);
+
+    assert.ok(
+      activeToolIds.includes("kubernetes.context.inspect"),
+      "runtime-observe must expose kubernetes.context.inspect as active tool"
+    );
+    assert.ok(
+      activeToolIds.includes("kubernetes.events.list"),
+      "runtime-observe must expose kubernetes.events.list as active tool"
+    );
+    assert.ok(
+      activeToolIds.includes("kubernetes.logs.query"),
+      "runtime-observe must expose kubernetes.logs.query as active tool"
+    );
+
+    const k8sTools = activeTools.result.structuredContent.activeTools.filter((t) =>
+      t.toolId.startsWith("kubernetes.")
+    );
+    for (const tool of k8sTools) {
+      assert.equal(tool.mutationLevel, "read", `${tool.toolId} must be read-only`);
+    }
+
+    // Codex overlay must not suppress kubernetes tools (no kubernetes semantic capability suppression)
+    assert.ok(
+      !activeTools.result.structuredContent.suppressedTools.some((t) =>
+        t.toolId.startsWith("kubernetes.")
+      ),
+      "Codex overlay must not suppress kubernetes tools"
+    );
+  } finally {
+    await stopChild(child);
+  }
+});
+
 async function createTempSqlitePath() {
   const root = await mkdtemp(path.join(os.tmpdir(), "mimir-toolbox-"));
   return {

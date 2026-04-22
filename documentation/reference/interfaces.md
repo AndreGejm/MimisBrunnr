@@ -177,6 +177,17 @@ Toolbox control commands are implemented through the shared control surface. The
 - `activeTools`: tools currently exposed to the session after overlay suppression
 - `suppressedTools`: declared tools hidden by overlay rules, including `suppressionReasons`
 
+For sessions using `runtime-observe`, `core-dev+runtime-observe`, `runtime-admin`, or `full`, the active tool surface may include Kubernetes read-only descriptors from the `kubernetes-read` peer server. The current Kubernetes tool ids are:
+
+- `kubernetes.context.inspect`
+- `kubernetes.namespaces.list`
+- `kubernetes.workloads.list`
+- `kubernetes.pods.list`
+- `kubernetes.events.list`
+- `kubernetes.logs.query`
+
+All six are `mutationLevel: read`. There is no Kubernetes mutation tool in v1.
+
 Issued-token listing filters are implemented end to end across CLI and HTTP. The supported request fields are:
 
 - `actorId`

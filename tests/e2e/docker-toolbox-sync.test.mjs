@@ -23,6 +23,7 @@ test("compileDockerMcpRuntimePlan returns deterministic Docker profile and serve
   const canonicalNames = first.profiles.map((profile) => profile.dockerProfileName);
   assert.equal(new Set(canonicalNames).size, canonicalNames.length);
   assert.ok(first.servers.some((server) => server.id === "mimir-control"));
+  assert.ok(first.servers.some((server) => server.id === "kubernetes-read"));
 });
 
 test("sync-mcp-profiles dry-run output remains deterministic", async () => {
@@ -111,6 +112,14 @@ test("sync-mcp-profiles apply mode shells out when docker mcp profile support ex
     );
     assert.ok(
       docsCommand.serverRefs.includes("catalog://mcp/docker-mcp-catalog/docker-docs")
+    );
+
+    const observeCommand = payload.apply.plan.commands.find(
+      (command) => command.profileId === "runtime-observe"
+    );
+    assert.ok(observeCommand);
+    assert.ok(
+      observeCommand.serverRefs.includes("catalog://mcp/docker-mcp-catalog/kubernetes-read")
     );
 
     const log = readFileSync(stub.logFile, "utf8").trim().split(/\r?\n/);

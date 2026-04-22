@@ -63,3 +63,15 @@ categories:
     description: External delivery and publish actions
     trustClass: operator-only
     mutationLevel: admin
+  k8s-read:
+    description: Inspect Kubernetes cluster state
+    trustClass: ops-read
+    mutationLevel: read
+  k8s-logs-read:
+    description: Read Kubernetes pod and container logs
+    trustClass: ops-read
+    mutationLevel: read
+  k8s-events-read:
+    description: Read Kubernetes cluster and workload events
+    trustClass: ops-read
+    mutationLevel: read

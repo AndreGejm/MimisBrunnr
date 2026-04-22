@@ -475,6 +475,107 @@ test("compileToolboxPolicyFromDirectory rejects unknown fallback profiles", () =
   }
 });
 
+test("runtime-observe profile exposes kubernetes-read server with k8s categories and read-only tools", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  assert.ok(
+    compiled.profiles["runtime-observe"].includeServers.includes("kubernetes-read"),
+    "runtime-observe profile must include kubernetes-read server"
+  );
+
+  const allowed = compiled.profiles["runtime-observe"].allowedCategories;
+  assert.ok(allowed.includes("k8s-read"), "runtime-observe must allow k8s-read");
+  assert.ok(allowed.includes("k8s-logs-read"), "runtime-observe must allow k8s-logs-read");
+  assert.ok(allowed.includes("k8s-events-read"), "runtime-observe must allow k8s-events-read");
+
+  const toolIds = compiled.profiles["runtime-observe"].tools.map((t) => t.toolId);
+  assert.ok(toolIds.includes("kubernetes.context.inspect"), "runtime-observe must expose kubernetes.context.inspect");
+  assert.ok(toolIds.includes("kubernetes.events.list"), "runtime-observe must expose kubernetes.events.list");
+  assert.ok(toolIds.includes("kubernetes.logs.query"), "runtime-observe must expose kubernetes.logs.query");
+
+  const k8sTools = compiled.profiles["runtime-observe"].tools.filter((t) =>
+    t.toolId.startsWith("kubernetes.")
+  );
+  for (const tool of k8sTools) {
+    assert.equal(tool.mutationLevel, "read", `kubernetes tool ${tool.toolId} must be read-only`);
+  }
+});
+
+test("core-dev+runtime-observe profile exposes kubernetes-read server inherited from runtime-observe", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  assert.ok(
+    compiled.profiles["core-dev+runtime-observe"].includeServers.includes("kubernetes-read"),
+    "core-dev+runtime-observe profile must include kubernetes-read server"
+  );
+  assert.ok(
+    compiled.profiles["core-dev+runtime-observe"].tools.some(
+      (t) => t.toolId === "kubernetes.context.inspect"
+    ),
+    "core-dev+runtime-observe must expose kubernetes.context.inspect"
+  );
+  assert.ok(
+    compiled.profiles["core-dev+runtime-observe"].tools.some(
+      (t) => t.toolId === "kubernetes.logs.query"
+    ),
+    "core-dev+runtime-observe must expose kubernetes.logs.query"
+  );
+});
+
+test("runtime-admin profile exposes kubernetes-read server as read-only peer beside docker peers", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  assert.ok(
+    compiled.profiles["runtime-admin"].includeServers.includes("kubernetes-read"),
+    "runtime-admin profile must include kubernetes-read server"
+  );
+  assert.ok(
+    compiled.profiles["runtime-admin"].allowedCategories.includes("k8s-read"),
+    "runtime-admin must allow k8s-read category"
+  );
+  assert.ok(
+    compiled.profiles["runtime-admin"].tools.some((t) => t.toolId === "kubernetes.events.list"),
+    "runtime-admin must expose kubernetes.events.list"
+  );
+  assert.ok(
+    compiled.profiles["runtime-admin"].tools.some((t) => t.toolId === "kubernetes.logs.query"),
+    "runtime-admin must expose kubernetes.logs.query"
+  );
+  // Also retains existing docker peers
+  assert.ok(
+    compiled.profiles["runtime-admin"].includeServers.includes("docker-admin"),
+    "runtime-admin must still include docker-admin"
+  );
+});
+
+test("full profile exposes kubernetes-read server with k8s categories", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  assert.ok(
+    compiled.profiles["full"].includeServers.includes("kubernetes-read"),
+    "full profile must include kubernetes-read server"
+  );
+  assert.ok(
+    compiled.profiles["full"].allowedCategories.includes("k8s-read"),
+    "full profile must allow k8s-read category"
+  );
+  assert.ok(
+    compiled.profiles["full"].tools.some((t) => t.toolId === "kubernetes.context.inspect"),
+    "full profile must expose kubernetes.context.inspect"
+  );
+});
+
+test("runtime-observe, runtime-admin, and full intents include k8s categories in allowedCategories", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  for (const intentId of ["runtime-observe", "runtime-admin", "full"]) {
+    const allowed = compiled.intents[intentId].allowedCategories;
+    assert.ok(allowed.includes("k8s-read"), `${intentId} intent must allow k8s-read`);
+    assert.ok(allowed.includes("k8s-logs-read"), `${intentId} intent must allow k8s-logs-read`);
+    assert.ok(allowed.includes("k8s-events-read"), `${intentId} intent must allow k8s-events-read`);
+  }
+});
+
 test("checked-in docker/mcp manifests compile into the bootstrap and activated profile graph", () => {
   const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
 
@@ -487,4 +588,13 @@ test("checked-in docker/mcp manifests compile into the bootstrap and activated p
   assert.equal(compiled.clients.codex.handoffStrategy, "env-reconnect");
   assert.equal(compiled.clients.claude.handoffStrategy, "env-reconnect");
   assert.equal(compiled.clients.antigravity.handoffStrategy, "manual-env-reconnect");
+
+  assert.ok(compiled.categories["k8s-read"], "k8s-read category must exist");
+  assert.ok(compiled.categories["k8s-logs-read"], "k8s-logs-read category must exist");
+  assert.ok(compiled.categories["k8s-events-read"], "k8s-events-read category must exist");
+  assert.ok(compiled.servers["kubernetes-read"], "kubernetes-read server must exist");
+  assert.ok(
+    compiled.servers["kubernetes-read"].tools.some((t) => t.toolId === "kubernetes.logs.query"),
+    "kubernetes-read server must contain toolId kubernetes.logs.query"
+  );
 });

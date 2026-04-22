@@ -13,6 +13,7 @@ profile:
     - grafana-observe
     - docker-read
     - docker-admin
+    - kubernetes-read
   allowedCategories:
     - repo-read
     - repo-write
@@ -30,5 +31,8 @@ profile:
     - docker-write
     - model-inference
     - deployment
+    - k8s-read
+    - k8s-logs-read
+    - k8s-events-read
   deniedCategories: []
   fallbackProfile: delivery-admin

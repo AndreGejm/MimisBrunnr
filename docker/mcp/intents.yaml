@@ -47,6 +47,9 @@ intents:
       - metrics-read
       - traces-read
       - docker-read
+      - k8s-read
+      - k8s-logs-read
+      - k8s-events-read
     deniedCategories:
       - docker-write
       - deployment
@@ -65,6 +68,9 @@ intents:
       - traces-read
       - docker-read
       - docker-write
+      - k8s-read
+      - k8s-logs-read
+      - k8s-events-read
     deniedCategories:
       - deployment
     fallbackProfile: runtime-observe
@@ -118,5 +124,8 @@ intents:
       - docker-write
       - model-inference
       - deployment
+      - k8s-read
+      - k8s-logs-read
+      - k8s-events-read
     deniedCategories: []
     fallbackProfile: delivery-admin
