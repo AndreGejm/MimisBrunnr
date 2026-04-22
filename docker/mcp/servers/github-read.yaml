@@ -5,6 +5,12 @@ server:
   kind: peer
   trustClass: external-read
   mutationLevel: read
+  dockerRuntime:
+    applyMode: descriptor-only
+    blockedReason: >-
+      github-read is a descriptor-only read-filtered surface. The live GitHub
+      Docker MCP catalog server bundles write capabilities; a read-only catalog
+      entry must be published before this server can appear in catalog profiles.
   tools:
     - toolId: github.search
       displayName: Search GitHub

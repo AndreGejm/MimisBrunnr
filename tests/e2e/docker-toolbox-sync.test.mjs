@@ -7,7 +7,8 @@ import process from "node:process";
 import { spawn } from "node:child_process";
 import {
   compileToolboxPolicyFromDirectory,
-  compileDockerMcpRuntimePlan
+  compileDockerMcpRuntimePlan,
+  buildDockerMcpRuntimeApplyPlan
 } from "../../packages/infrastructure/dist/index.js";
 
 test("compileDockerMcpRuntimePlan returns deterministic Docker profile and server output", () => {
@@ -30,7 +31,7 @@ test("compileDockerMcpRuntimePlan returns deterministic Docker profile and serve
   );
 });
 
-test("sync-mcp-profiles apply mode includes dockerhub-read server ref in docs-research and full commands", async () => {
+test("sync-mcp-profiles apply mode is blocked and omits descriptor-only dockerhub-read from server refs", async () => {
   const stub = createDockerStub(true);
   try {
     const result = await runSyncCommand(
@@ -43,33 +44,34 @@ test("sync-mcp-profiles apply mode includes dockerhub-read server ref in docs-re
       }
     );
 
-    assert.equal(result.exitCode, 0, result.stderr);
+    // dockerhub-read is descriptor-only: apply must be blocked
+    assert.notEqual(result.exitCode, 0, result.stderr);
     const payload = JSON.parse(result.stdout);
-
-    const docsCommand = payload.apply.plan.commands.find(
-      (command) => command.profileId === "docs-research"
-    );
-    assert.ok(docsCommand, "docs-research apply command must exist");
+    assert.equal(payload.ok, false);
+    assert.equal(payload.apply.status, "blocked");
     assert.ok(
-      docsCommand.serverRefs.includes("catalog://mcp/docker-mcp-catalog/dockerhub-read"),
-      "docs-research command must include catalog://mcp/docker-mcp-catalog/dockerhub-read server ref"
+      Array.isArray(payload.apply.blockedServers),
+      "blocked apply must report blockedServers array"
+    );
+    assert.ok(
+      payload.apply.blockedServers.some((s) => s.id === "dockerhub-read"),
+      "blockedServers must include dockerhub-read"
     );
 
-    const fullCommand = payload.apply.plan.commands.find(
-      (command) => command.profileId === "full"
-    );
-    assert.ok(fullCommand, "full apply command must exist");
-    assert.ok(
-      fullCommand.serverRefs.includes("catalog://mcp/docker-mcp-catalog/dockerhub-read"),
-      "full command must include catalog://mcp/docker-mcp-catalog/dockerhub-read server ref"
-    );
+    // No catalog refs for descriptor-only servers anywhere in the plan commands
+    for (const command of payload.apply.plan.commands) {
+      assert.ok(
+        !command.serverRefs.some((ref) => ref.includes("dockerhub-read")),
+        `profile '${command.profileId}' must NOT emit a catalog ref for descriptor-only dockerhub-read`
+      );
+    }
 
     const bootstrapCommand = payload.apply.plan.commands.find(
       (command) => command.profileId === "bootstrap"
     );
     assert.ok(bootstrapCommand, "bootstrap apply command must exist");
     assert.ok(
-      !bootstrapCommand.serverRefs.includes("catalog://mcp/docker-mcp-catalog/dockerhub-read"),
+      !bootstrapCommand.serverRefs.some((ref) => ref.includes("dockerhub-read")),
       "bootstrap command must NOT include dockerhub-read server ref"
     );
   } finally {
@@ -118,7 +120,7 @@ test("sync-mcp-profiles apply mode fails clearly when local Docker MCP profiles 
   );
 });
 
-test("sync-mcp-profiles apply mode shells out when docker mcp profile support exists", async () => {
+test("sync-mcp-profiles apply mode is blocked when descriptor-only servers exist, plan commands use correct catalog IDs", async () => {
   const stub = createDockerStub(true);
   try {
     const result = await runSyncCommand(
@@ -131,12 +133,17 @@ test("sync-mcp-profiles apply mode shells out when docker mcp profile support ex
       }
     );
 
-    assert.equal(result.exitCode, 0, result.stderr);
+    // With checked-in manifests several profiles include descriptor-only servers
+    // (dockerhub-read, kubernetes-read, github-read, docker-read, docker-admin,
+    //  github-write). Apply must be blocked; no profile-create commands are run.
+    assert.notEqual(result.exitCode, 0, result.stderr);
     const payload = JSON.parse(result.stdout);
-    assert.equal(payload.ok, true);
-    assert.equal(payload.apply.status, "applied");
-    assert.equal(payload.apply.commandResults.length, payload.plan.profiles.length);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.apply.status, "blocked");
+    assert.ok(Array.isArray(payload.apply.blockedServers));
+    assert.ok(payload.apply.blockedServers.some((s) => s.id === "dockerhub-read"));
 
+    // Bootstrap command only references owned file URIs
     const bootstrapCommand = payload.apply.plan.commands.find(
       (command) => command.profileId === "bootstrap"
     );
@@ -154,30 +161,316 @@ test("sync-mcp-profiles apply mode shells out when docker mcp profile support ex
       "file://./docker/mcp/servers/mimir-core.yaml"
     ]);
 
+    // Catalog-mode servers use catalogServerId (not the policy server id)
     const docsCommand = payload.apply.plan.commands.find(
       (command) => command.profileId === "docs-research"
     );
     assert.ok(docsCommand);
     assert.ok(
-      docsCommand.serverRefs.includes("catalog://mcp/docker-mcp-catalog/brave-search")
+      docsCommand.serverRefs.includes("catalog://mcp/docker-mcp-catalog/brave"),
+      "docs-research must reference brave-search via catalogServerId 'brave'"
     );
     assert.ok(
       docsCommand.serverRefs.includes("catalog://mcp/docker-mcp-catalog/docker-docs")
     );
-
-    const observeCommand = payload.apply.plan.commands.find(
-      (command) => command.profileId === "runtime-observe"
-    );
-    assert.ok(observeCommand);
     assert.ok(
-      observeCommand.serverRefs.includes("catalog://mcp/docker-mcp-catalog/kubernetes-read")
+      !docsCommand.serverRefs.some((ref) => ref.includes("kubernetes-read")),
+      "docs-research must not emit kubernetes-read catalog ref"
     );
 
-    const log = readFileSync(stub.logFile, "utf8").trim().split(/\r?\n/);
-    assert.equal(log.length, payload.plan.profiles.length);
+    // No docker profile create commands were shelled out (logFile absent or empty)
+    let logLines = [];
+    try {
+      logLines = readFileSync(stub.logFile, "utf8").trim().split(/\r?\n/).filter(Boolean);
+    } catch {
+      // logFile was never written; acceptable
+    }
+    assert.equal(logLines.length, 0, "no docker profile create commands must be run when apply is blocked");
   } finally {
     rmSync(stub.rootDir, { recursive: true, force: true });
   }
+});
+
+test("compileDockerMcpRuntimePlan exposes dockerApplyMode catalog and catalogServerId on catalog-mode peer servers", () => {
+  const policy = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+  const plan = compileDockerMcpRuntimePlan(policy);
+
+  const braveServer = plan.servers.find((s) => s.id === "brave-search");
+  assert.ok(braveServer, "brave-search must appear in the runtime plan");
+  assert.equal(
+    braveServer.dockerApplyMode,
+    "catalog",
+    "brave-search must expose dockerApplyMode: catalog (declared in its server manifest dockerRuntime stanza)"
+  );
+  assert.equal(
+    braveServer.catalogServerId,
+    "brave",
+    "brave-search catalogServerId must be 'brave' (the live Docker catalog name), not 'brave-search'"
+  );
+});
+
+test("compileDockerMcpRuntimePlan marks descriptor-only peer servers with blockedReason and no catalogServerId", () => {
+  const policy = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+  const plan = compileDockerMcpRuntimePlan(policy);
+
+  const dockerhubServer = plan.servers.find((s) => s.id === "dockerhub-read");
+  assert.ok(dockerhubServer, "dockerhub-read must appear in the runtime plan");
+  assert.equal(
+    dockerhubServer.dockerApplyMode,
+    "descriptor-only",
+    "dockerhub-read must expose dockerApplyMode: descriptor-only; the live dockerhub catalog server exposes mutation tools"
+  );
+  assert.ok(
+    typeof dockerhubServer.blockedReason === "string" && dockerhubServer.blockedReason.length > 0,
+    "dockerhub-read must expose a non-empty blockedReason"
+  );
+  assert.equal(
+    dockerhubServer.catalogServerId,
+    undefined,
+    "descriptor-only server dockerhub-read must not expose a catalogServerId"
+  );
+});
+
+test("sync-mcp-profiles dry-run apply commands use catalogServerId for catalog-mode peer server refs", async () => {
+  const result = await runSyncCommand(
+    ["--json", JSON.stringify({ generatedAt: "2026-01-01T00:00:00.000Z" }), "--no-pretty"],
+    { MIMIR_DOCKER_RUNTIME_GENERATED_AT: "2026-01-01T00:00:00.000Z" }
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+
+  const docsCommand = output.apply.commands.find((c) => c.profileId === "docs-research");
+  assert.ok(docsCommand, "docs-research command must appear in dry-run apply plan");
+  assert.ok(
+    docsCommand.serverRefs.includes("catalog://mcp/docker-mcp-catalog/brave"),
+    "docs-research must reference brave-search using catalogServerId 'brave', not the policy server id 'brave-search'"
+  );
+  assert.ok(
+    !docsCommand.serverRefs.includes("catalog://mcp/docker-mcp-catalog/brave-search"),
+    "docs-research must NOT emit 'brave-search' as the Docker catalog server ID"
+  );
+});
+
+test("sync-mcp-profiles dry-run apply commands omit descriptor-only servers from catalog refs", async () => {
+  const result = await runSyncCommand(
+    ["--json", JSON.stringify({ generatedAt: "2026-01-01T00:00:00.000Z" }), "--no-pretty"],
+    { MIMIR_DOCKER_RUNTIME_GENERATED_AT: "2026-01-01T00:00:00.000Z" }
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+
+  for (const command of output.apply.commands) {
+    assert.ok(
+      !command.serverRefs.some((ref) => ref.includes("dockerhub-read")),
+      `profile '${command.profileId}' must NOT emit a catalog ref for descriptor-only server 'dockerhub-read'`
+    );
+  }
+});
+
+test("sync-mcp-profiles apply mode returns blocked when compiled plan contains descriptor-only servers in profiles", async () => {
+  const stub = createDockerStub(true);
+  try {
+    const result = await runSyncCommand(
+      ["--apply", "--json", JSON.stringify({ generatedAt: "2026-01-01T00:00:00.000Z" }), "--no-pretty"],
+      {
+        MIMIR_DOCKER_EXECUTABLE: process.execPath,
+        MIMIR_DOCKER_EXECUTABLE_ARGS_JSON: JSON.stringify([stub.stubScript]),
+        MIMIR_DOCKER_RUNTIME_GENERATED_AT: "2026-01-01T00:00:00.000Z",
+        DOCKER_STUB_LOG: stub.logFile
+      }
+    );
+
+    assert.notEqual(result.exitCode, 0, "apply must exit non-zero when descriptor-only servers are in profiles");
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(
+      payload.apply.status,
+      "blocked",
+      "apply status must be 'blocked' when compiled plan contains descriptor-only servers in profiles"
+    );
+    assert.ok(
+      Array.isArray(payload.apply.blockedServers),
+      "payload.apply.blockedServers must be an array reporting descriptor-only servers that caused the block"
+    );
+    assert.ok(
+      payload.apply.blockedServers.some((s) => s.id === "dockerhub-read"),
+      "blockedServers must include dockerhub-read"
+    );
+  } finally {
+    rmSync(stub.rootDir, { recursive: true, force: true });
+  }
+});
+
+test("sync-mcp-profiles dry-run succeeds and reports dockerApplyMode metadata per server in plan", async () => {
+  const result = await runSyncCommand(
+    ["--json", JSON.stringify({ generatedAt: "2026-01-01T00:00:00.000Z" }), "--no-pretty"],
+    { MIMIR_DOCKER_RUNTIME_GENERATED_AT: "2026-01-01T00:00:00.000Z" }
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.ok, true);
+  assert.equal(output.dryRun, true);
+
+  const planServers = output.plan.servers;
+  assert.ok(Array.isArray(planServers), "dry-run plan must include a servers array");
+
+  const braveServer = planServers.find((s) => s.id === "brave-search");
+  assert.ok(braveServer, "dry-run plan must include brave-search server");
+  assert.equal(
+    braveServer.dockerApplyMode,
+    "catalog",
+    "brave-search must report dockerApplyMode: catalog in dry-run plan output"
+  );
+  assert.equal(
+    braveServer.catalogServerId,
+    "brave",
+    "brave-search must report catalogServerId: brave in dry-run plan output"
+  );
+
+  const dockerhubServer = planServers.find((s) => s.id === "dockerhub-read");
+  assert.ok(dockerhubServer, "dry-run plan must include dockerhub-read server");
+  assert.equal(
+    dockerhubServer.dockerApplyMode,
+    "descriptor-only",
+    "dockerhub-read must report dockerApplyMode: descriptor-only in dry-run plan output"
+  );
+  assert.ok(
+    typeof dockerhubServer.blockedReason === "string" && dockerhubServer.blockedReason.length > 0,
+    "dockerhub-read must report a non-empty blockedReason in dry-run plan output"
+  );
+});
+
+test("buildDockerMcpRuntimeApplyPlan blocks peer server with missing dockerApplyMode and omits catalog ref", () => {
+  const minimalPlan = {
+    manifestRevision: "test-rev",
+    generatedAt: "2026-01-01T00:00:00.000Z",
+    servers: [
+      {
+        id: "owned-server",
+        dockerServerName: "owned-server",
+        source: "owned",
+        kind: "control",
+        toolIds: []
+      },
+      {
+        id: "peer-no-metadata",
+        dockerServerName: "peer-no-metadata",
+        source: "peer",
+        kind: "peer",
+        toolIds: []
+        // no dockerApplyMode, no catalogServerId
+      }
+    ],
+    profiles: [
+      {
+        id: "test-profile",
+        dockerProfileName: "test-profile",
+        sessionMode: "toolbox-activated",
+        serverIds: ["owned-server", "peer-no-metadata"],
+        toolIds: []
+      }
+    ]
+  };
+
+  const applyPlan = buildDockerMcpRuntimeApplyPlan(minimalPlan);
+
+  const command = applyPlan.commands.find((c) => c.profileId === "test-profile");
+  assert.ok(command, "test-profile command must exist");
+
+  // owned server emits a file:// ref
+  assert.ok(
+    command.serverRefs.some((ref) => ref === "file://./docker/mcp/servers/owned-server.yaml"),
+    "serverRefs must include file:// ref for owned-server"
+  );
+
+  // peer with no metadata must NOT emit any catalog:// ref
+  assert.ok(
+    !command.serverRefs.some((ref) => ref.includes("catalog://")),
+    "serverRefs must NOT include any catalog:// ref when peer has no dockerApplyMode"
+  );
+
+  // command.blockedServers must include the peer
+  assert.ok(
+    Array.isArray(command.blockedServers) &&
+      command.blockedServers.some((s) => s.id === "peer-no-metadata"),
+    "command.blockedServers must include peer-no-metadata"
+  );
+
+  const commandBlocked = command.blockedServers.find((s) => s.id === "peer-no-metadata");
+  assert.ok(
+    /missing docker[Aa]pply[Mm]ode|missing apply metadata/i.test(commandBlocked.blockedReason),
+    `blockedReason must mention missing dockerApplyMode or apply metadata, got: '${commandBlocked.blockedReason}'`
+  );
+
+  // applyPlan.blockedServers (plan-level) must also include the peer
+  assert.ok(
+    Array.isArray(applyPlan.blockedServers) &&
+      applyPlan.blockedServers.some((s) => s.id === "peer-no-metadata"),
+    "applyPlan.blockedServers must include peer-no-metadata"
+  );
+
+  const planBlocked = applyPlan.blockedServers.find((s) => s.id === "peer-no-metadata");
+  assert.ok(
+    /missing docker[Aa]pply[Mm]ode|missing apply metadata/i.test(planBlocked.blockedReason),
+    `plan-level blockedReason must mention missing dockerApplyMode or apply metadata, got: '${planBlocked.blockedReason}'`
+  );
+});
+
+test("buildDockerMcpRuntimeApplyPlan blocks catalog-mode peer server with missing catalogServerId", () => {
+  const minimalPlan = {
+    manifestRevision: "test-rev",
+    generatedAt: "2026-01-01T00:00:00.000Z",
+    servers: [
+      {
+        id: "peer-catalog-no-id",
+        dockerServerName: "peer-catalog-no-id",
+        source: "peer",
+        kind: "peer",
+        toolIds: [],
+        dockerApplyMode: "catalog"
+        // catalogServerId intentionally absent
+      }
+    ],
+    profiles: [
+      {
+        id: "test-profile",
+        dockerProfileName: "test-profile",
+        sessionMode: "toolbox-activated",
+        serverIds: ["peer-catalog-no-id"],
+        toolIds: []
+      }
+    ]
+  };
+
+  const applyPlan = buildDockerMcpRuntimeApplyPlan(minimalPlan);
+  const command = applyPlan.commands.find((c) => c.profileId === "test-profile");
+  assert.ok(command, "test-profile command must exist");
+
+  assert.ok(
+    !command.serverRefs.some((ref) => ref.includes("catalog://")),
+    "catalog-mode peer with missing catalogServerId must NOT emit a catalog:// ref"
+  );
+
+  assert.ok(
+    Array.isArray(command.blockedServers) &&
+      command.blockedServers.some((s) => s.id === "peer-catalog-no-id"),
+    "command.blockedServers must include peer-catalog-no-id"
+  );
+
+  const blocked = command.blockedServers.find((s) => s.id === "peer-catalog-no-id");
+  assert.ok(
+    /missing catalogServerId/i.test(blocked.blockedReason),
+    `blockedReason must mention missing catalogServerId, got: '${blocked.blockedReason}'`
+  );
+
+  assert.ok(
+    Array.isArray(applyPlan.blockedServers) &&
+      applyPlan.blockedServers.some((s) => s.id === "peer-catalog-no-id"),
+    "applyPlan.blockedServers must include peer-catalog-no-id"
+  );
 });
 
 test("sync-mcp-profiles rejects unknown flags and missing --source values", async () => {

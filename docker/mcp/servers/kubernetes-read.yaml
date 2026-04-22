@@ -5,6 +5,13 @@ server:
   kind: peer
   trustClass: ops-read
   mutationLevel: read
+  dockerRuntime:
+    applyMode: descriptor-only
+    blockedReason: >-
+      No matching read-only entry in the live Docker MCP catalog. The
+      kubernetes-read surface is a descriptor-only, read-filtered wrapper;
+      a dedicated catalog server must be published before it can be used in
+      catalog profile references.
   tools:
     - toolId: kubernetes.context.inspect
       displayName: Inspect Kubernetes Context

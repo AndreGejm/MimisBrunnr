@@ -113,6 +113,19 @@ pnpm docker:mcp:sync
 pnpm docker:mcp:sync:json
 ```
 
+`sync-mcp-profiles` emits Docker apply metadata for each server:
+
+- `catalog` peers can be emitted as Docker MCP catalog references and may use a
+  different live catalog id than the repo policy id, for example
+  `brave-search` maps to Docker catalog server `brave`
+- `descriptor-only` peers describe a governed toolbox surface but are not safe
+  raw Docker catalog targets yet
+
+Dry-run still succeeds when descriptor-only peers are present. Live apply is
+blocked before shelling out profile mutation commands if any selected profile
+contains descriptor-only peers. This prevents read-filtered policy surfaces such
+as `dockerhub-read` from being replaced by broader raw catalog servers.
+
 Run the control MCP server directly:
 
 ```bash
@@ -155,6 +168,11 @@ The current DockerHub tool ids are:
 - `dockerhub.image.inspect`
 
 All three are `mutationLevel: read`. This band is for image discovery and metadata inspection only; it does not pull, push, publish, sign, delete, or deploy images.
+
+DockerHub apply caveat: the live Docker catalog server is named `dockerhub` and
+also exposes repository creation and metadata update tools. The curated
+`dockerhub-read` toolbox server is therefore `descriptor-only` until a
+read-filtered wrapper or catalog entry exists.
 
 ## Enforcement notes
 

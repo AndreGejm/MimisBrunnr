@@ -1,12 +1,20 @@
 import type { CompiledToolboxPolicy } from "@mimir/contracts";
 import { spawnSync } from "node:child_process";
 
+export interface DockerMcpBlockedServer {
+  id: string;
+  blockedReason: string;
+}
+
 export interface DockerMcpRuntimeServerPlan {
   id: string;
   dockerServerName: string;
   source: "owned" | "peer";
   kind: "control" | "semantic" | "peer";
   toolIds: string[];
+  dockerApplyMode?: "catalog" | "descriptor-only";
+  catalogServerId?: string;
+  blockedReason?: string;
 }
 
 export interface DockerMcpRuntimeProfilePlan {
@@ -29,10 +37,12 @@ export interface DockerMcpRuntimeApplyCommandPlan {
   argv: string[];
   profileId: string;
   serverRefs: string[];
+  blockedServers?: DockerMcpBlockedServer[];
 }
 
 export interface DockerMcpRuntimeApplyPlan {
   commands: DockerMcpRuntimeApplyCommandPlan[];
+  blockedServers?: DockerMcpBlockedServer[];
 }
 
 export interface DockerMcpRuntimeCompatibilityReport {
@@ -56,10 +66,11 @@ export interface DockerMcpRuntimeCommandResult {
 
 export interface DockerMcpRuntimeApplyExecutionResult {
   attempted: boolean;
-  status: "applied" | "unsupported" | "failed";
+  status: "applied" | "unsupported" | "failed" | "blocked";
   plan: DockerMcpRuntimeApplyPlan;
   compatibility: DockerMcpRuntimeCompatibilityReport;
   commandResults: DockerMcpRuntimeCommandResult[];
+  blockedServers?: DockerMcpBlockedServer[];
   failedCommand?: DockerMcpRuntimeApplyCommandPlan;
   failureMessage?: string;
 }
@@ -78,12 +89,20 @@ export function compileDockerMcpRuntimePlan(
   const servers = Object.values(policy.servers).map((server) => {
     const dockerServerName = canonicalizeDockerIdentifier(server.id);
     assertCollision(serverNameCollisions, dockerServerName, server.id, "server");
+
+    const dockerApplyMode = server.dockerRuntime?.applyMode;
+    const catalogServerId = server.dockerRuntime?.catalogServerId;
+    const blockedReason = server.dockerRuntime?.blockedReason;
+
     return {
       id: server.id,
       dockerServerName,
       source: server.source,
       kind: server.kind,
-      toolIds: server.tools.map((tool) => tool.toolId).sort()
+      toolIds: server.tools.map((tool) => tool.toolId).sort(),
+      ...(dockerApplyMode !== undefined ? { dockerApplyMode } : {}),
+      ...(catalogServerId !== undefined ? { catalogServerId } : {}),
+      ...(blockedReason !== undefined ? { blockedReason } : {})
     } satisfies DockerMcpRuntimeServerPlan;
   });
 
@@ -121,40 +140,77 @@ export function buildDockerMcpRuntimeApplyPlan(
   plan: DockerMcpRuntimePlan
 ): DockerMcpRuntimeApplyPlan {
   const serversById = new Map(plan.servers.map((server) => [server.id, server]));
+  const planBlockedById = new Map<string, DockerMcpBlockedServer>();
+
+  const commands: DockerMcpRuntimeApplyCommandPlan[] = plan.profiles.map((profile) => {
+    const commandBlockedServers: DockerMcpBlockedServer[] = [];
+    const serverRefs: string[] = [];
+
+    for (const serverId of profile.serverIds) {
+      const server = serversById.get(serverId);
+      if (!server) {
+        throw new Error(
+          `Profile '${profile.id}' references unknown server '${serverId}' in the runtime plan.`
+        );
+      }
+
+      if (server.source === "peer") {
+        if (server.dockerApplyMode === "descriptor-only") {
+          const blocked: DockerMcpBlockedServer = {
+            id: server.id,
+            blockedReason: server.blockedReason ?? "descriptor-only: no safe catalog target"
+          };
+          commandBlockedServers.push(blocked);
+          planBlockedById.set(server.id, blocked);
+        } else if (server.dockerApplyMode === "catalog" && server.catalogServerId) {
+          serverRefs.push(`catalog://mcp/docker-mcp-catalog/${server.catalogServerId}`);
+        } else if (server.dockerApplyMode === "catalog") {
+          const blocked: DockerMcpBlockedServer = {
+            id: server.id,
+            blockedReason: "missing catalogServerId: catalog-mode peer server has no catalog target"
+          };
+          commandBlockedServers.push(blocked);
+          planBlockedById.set(server.id, blocked);
+        } else {
+          const blocked: DockerMcpBlockedServer = {
+            id: server.id,
+            blockedReason:
+              server.blockedReason ??
+              "missing dockerApplyMode: apply metadata required for peer servers"
+          };
+          commandBlockedServers.push(blocked);
+          planBlockedById.set(server.id, blocked);
+        }
+      } else {
+        serverRefs.push(`file://./docker/mcp/servers/${server.id}.yaml`);
+      }
+    }
+
+    return {
+      description: `Create or refresh Docker MCP profile '${profile.id}'.`,
+      argv: [
+        "mcp",
+        "profile",
+        "create",
+        "--name",
+        profile.dockerProfileName,
+        "--id",
+        profile.dockerProfileName,
+        ...serverRefs.flatMap((serverRef) => ["--server", serverRef])
+      ],
+      profileId: profile.id,
+      serverRefs,
+      ...(commandBlockedServers.length > 0 ? { blockedServers: commandBlockedServers } : {})
+    } satisfies DockerMcpRuntimeApplyCommandPlan;
+  });
+
+  const planBlockedServers = [...planBlockedById.values()].sort((a, b) =>
+    a.id.localeCompare(b.id)
+  );
 
   return {
-    commands: plan.profiles.map((profile) => {
-      const serverRefs = profile.serverIds.map((serverId) => {
-        const server = serversById.get(serverId);
-        if (!server) {
-          throw new Error(
-            `Profile '${profile.id}' references unknown server '${serverId}' in the runtime plan.`
-          );
-        }
-
-        if (server.source === "peer") {
-          return `catalog://mcp/docker-mcp-catalog/${server.dockerServerName}`;
-        }
-
-        return `file://./docker/mcp/servers/${server.id}.yaml`;
-      });
-
-      return {
-        description: `Create or refresh Docker MCP profile '${profile.id}'.`,
-        argv: [
-          "mcp",
-          "profile",
-          "create",
-          "--name",
-          profile.dockerProfileName,
-          "--id",
-          profile.dockerProfileName,
-          ...serverRefs.flatMap((serverRef) => ["--server", serverRef])
-        ],
-        profileId: profile.id,
-        serverRefs
-      } satisfies DockerMcpRuntimeApplyCommandPlan;
-    })
+    commands,
+    ...(planBlockedServers.length > 0 ? { blockedServers: planBlockedServers } : {})
   };
 }
 
@@ -204,6 +260,18 @@ export function applyDockerMcpRuntimePlan(
       plan: applyPlan,
       compatibility,
       commandResults: []
+    };
+  }
+
+  const blockedServers = applyPlan.blockedServers ?? [];
+  if (blockedServers.length > 0) {
+    return {
+      attempted: false,
+      status: "blocked",
+      plan: applyPlan,
+      compatibility,
+      commandResults: [],
+      blockedServers
     };
   }
 

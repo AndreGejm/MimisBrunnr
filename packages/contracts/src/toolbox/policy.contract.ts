@@ -25,6 +25,10 @@ export interface ToolboxServerToolManifest {
   semanticCapabilityId: string;
 }
 
+export type ToolboxDockerRuntimeManifest =
+  | { applyMode: "catalog"; catalogServerId: string; blockedReason?: never }
+  | { applyMode: "descriptor-only"; blockedReason: string; catalogServerId?: never };
+
 export interface ToolboxServerManifest {
   id: string;
   displayName: string;
@@ -33,6 +37,7 @@ export interface ToolboxServerManifest {
   trustClass: string;
   mutationLevel: ToolboxMutationLevel;
   tools: ToolboxServerToolManifest[];
+  dockerRuntime?: ToolboxDockerRuntimeManifest;
 }
 
 export interface ToolboxProfileManifest {

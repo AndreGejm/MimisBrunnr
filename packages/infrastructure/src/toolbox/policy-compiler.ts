@@ -11,6 +11,7 @@ import type {
   CompiledToolboxIntent,
   ToolboxCategoryManifest,
   ToolboxClientOverlayManifest,
+  ToolboxDockerRuntimeManifest,
   ToolboxIntentManifest,
   ToolboxMutationLevel,
   ToolboxProfileManifest,
@@ -33,6 +34,7 @@ const MUTATION_LEVELS = new Set<ToolboxMutationLevel>(["read", "write", "admin"]
 const PROFILE_SESSION_MODES = new Set(["toolbox-bootstrap", "toolbox-activated"]);
 const SERVER_KINDS = new Set(["control", "semantic", "peer"]);
 const SERVER_SOURCES = new Set(["owned", "peer"]);
+const DOCKER_APPLY_MODES = new Set(["catalog", "descriptor-only"]);
 
 export function compileToolboxPolicyFromDirectory(
   sourceDirectory: string
@@ -114,6 +116,11 @@ function validateToolboxManifestSet(manifests: ToolboxManifestSet): void {
   for (const [serverId, server] of Object.entries(manifests.servers)) {
     requireTrustClass(server.trustClass, trustClassIds, `server '${serverId}'`);
     requireMutationLevel(server.mutationLevel, `server '${serverId}'`);
+    if (server.source === "peer" && !server.dockerRuntime) {
+      throw new Error(
+        `Peer server '${serverId}' must declare dockerRuntime apply metadata.`
+      );
+    }
 
     for (const tool of server.tools) {
       requireCategory(tool.category, categoryIds, `tool '${tool.toolId}'`);
@@ -350,6 +357,29 @@ function readTrustClasses(document: JsonRecord): Record<string, ToolboxTrustClas
 
 function readServer(document: JsonRecord, field: string): ToolboxServerManifest {
   const server = requireRecord(document[field], field);
+  const dockerRuntimeRaw = server.dockerRuntime;
+  let dockerRuntime: ToolboxDockerRuntimeManifest | undefined;
+  if (dockerRuntimeRaw !== undefined) {
+    const dr = requireRecord(dockerRuntimeRaw, `${field}.dockerRuntime`);
+    const applyMode = requireStringEnum(dr.applyMode, `${field}.dockerRuntime.applyMode`, DOCKER_APPLY_MODES) as "catalog" | "descriptor-only";
+    if (applyMode === "catalog") {
+      if (dr.blockedReason !== undefined) {
+        throw new Error(`${field}.dockerRuntime.blockedReason is only valid for descriptor-only mode.`);
+      }
+      dockerRuntime = {
+        applyMode,
+        catalogServerId: requireString(dr.catalogServerId, `${field}.dockerRuntime.catalogServerId`)
+      };
+    } else {
+      if (dr.catalogServerId !== undefined) {
+        throw new Error(`${field}.dockerRuntime.catalogServerId is only valid for catalog mode.`);
+      }
+      dockerRuntime = {
+        applyMode,
+        blockedReason: requireString(dr.blockedReason, `${field}.dockerRuntime.blockedReason`)
+      };
+    }
+  }
   return {
     id: requireString(server.id, `${field}.id`),
     displayName: requireString(server.displayName, `${field}.displayName`),
@@ -376,7 +406,8 @@ function readServer(document: JsonRecord, field: string): ToolboxServerManifest 
           `${field}.tools[${index}].semanticCapabilityId`
         )
       };
-    })
+    }),
+    ...(dockerRuntime !== undefined ? { dockerRuntime } : {})
   };
 }
 

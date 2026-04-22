@@ -5,6 +5,12 @@ server:
   kind: peer
   trustClass: external-read
   mutationLevel: read
+  dockerRuntime:
+    applyMode: descriptor-only
+    blockedReason: >-
+      The live Docker catalog 'dockerhub' server exposes mutation tools
+      (repository creation and repository metadata updates). A read-filtered wrapper is required
+      before this server can be safely emitted as a catalog profile reference.
   tools:
     - toolId: dockerhub.image.search
       displayName: Search DockerHub Images

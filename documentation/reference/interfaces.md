@@ -177,6 +177,14 @@ Toolbox control commands are implemented through the shared control surface. The
 - `activeTools`: tools currently exposed to the session after overlay suppression
 - `suppressedTools`: declared tools hidden by overlay rules, including `suppressionReasons`
 
+`sync-mcp-profiles` includes Docker runtime apply metadata in its generated plan:
+
+- server descriptors may include `dockerApplyMode`
+- catalog-mode peers include `catalogServerId`
+- descriptor-only peers include `blockedReason`
+- apply commands omit descriptor-only peers from `serverRefs` and report them in `blockedServers`
+- apply mode may return `status: "blocked"` when Docker profile support exists but the selected plan contains descriptor-only peers
+
 For sessions using `runtime-observe`, `core-dev+runtime-observe`, `runtime-admin`, or `full`, the active tool surface may include Kubernetes read-only descriptors from the `kubernetes-read` peer server. The current Kubernetes tool ids are:
 
 - `kubernetes.context.inspect`

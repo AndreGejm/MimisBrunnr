@@ -131,6 +131,9 @@ function seedBaseFixture(root) {
       "  kind: peer",
       "  trustClass: external-read",
       "  mutationLevel: read",
+      "  dockerRuntime:",
+      "    applyMode: catalog",
+      "    catalogServerId: github-read",
       "  tools:",
       "    - toolId: github.search",
       "      displayName: Search GitHub",
@@ -152,6 +155,9 @@ function seedBaseFixture(root) {
       "  kind: peer",
       "  trustClass: ops-read",
       "  mutationLevel: read",
+      "  dockerRuntime:",
+      "    applyMode: descriptor-only",
+      "    blockedReason: Docker read fixture is descriptor-only",
       "  tools:",
       "    - toolId: docker.inspect",
       "      displayName: Inspect Docker Runtime",
@@ -314,6 +320,9 @@ test("compileToolboxPolicyFromDirectory rejects duplicate semantic capabilities 
         "  kind: peer",
         "  trustClass: external-read",
         "  mutationLevel: read",
+        "  dockerRuntime:",
+        "    applyMode: catalog",
+        "    catalogServerId: github-read-duplicate",
         "  tools:",
         "    - toolId: github.search.alt",
         "      displayName: Search GitHub Alt",
@@ -469,6 +478,40 @@ test("compileToolboxPolicyFromDirectory rejects unknown fallback profiles", () =
     assert.throws(
       () => compileToolboxPolicyFromDirectory(root),
       /unknown fallback profile/i
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("compileToolboxPolicyFromDirectory rejects peer servers without dockerRuntime apply metadata", () => {
+  const root = createFixtureRoot();
+  try {
+    seedBaseFixture(root);
+    writeUtf8(
+      root,
+      "servers/github-read.yaml",
+      [
+        "server:",
+        "  id: github-read",
+        "  displayName: GitHub Read",
+        "  source: peer",
+        "  kind: peer",
+        "  trustClass: external-read",
+        "  mutationLevel: read",
+        "  tools:",
+        "    - toolId: github.search",
+        "      displayName: Search GitHub",
+        "      category: docs-search",
+        "      trustClass: external-read",
+        "      mutationLevel: read",
+        "      semanticCapabilityId: github.search"
+      ].join("\n")
+    );
+
+    assert.throws(
+      () => compileToolboxPolicyFromDirectory(root),
+      /must declare dockerRuntime apply metadata/i
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -764,4 +807,53 @@ test("container-registry-read is absent from runtime-observe, runtime-admin, cor
       `${intentId} intent must NOT allow container-registry-read`
     );
   }
+});
+
+test("checked-in peer server manifests declare dockerRuntime apply metadata", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  for (const server of Object.values(compiled.servers).filter((entry) => entry.source === "peer")) {
+    assert.ok(
+      server.dockerRuntime,
+      `peer server ${server.id} must declare dockerRuntime apply metadata`
+    );
+  }
+});
+
+test("brave-search server manifest declares dockerRuntime catalog mode with catalogServerId brave", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  const server = compiled.servers["brave-search"];
+  assert.ok(server, "brave-search server must exist");
+  assert.equal(
+    server.dockerRuntime?.applyMode,
+    "catalog",
+    "brave-search must declare dockerRuntime.applyMode: catalog in its server manifest"
+  );
+  assert.equal(
+    server.dockerRuntime?.catalogServerId,
+    "brave",
+    "brave-search must declare dockerRuntime.catalogServerId: brave (the live Docker catalog server name)"
+  );
+});
+
+test("dockerhub-read server manifest declares dockerRuntime descriptor-only with blockedReason", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  const server = compiled.servers["dockerhub-read"];
+  assert.ok(server, "dockerhub-read server must exist");
+  assert.equal(
+    server.dockerRuntime?.applyMode,
+    "descriptor-only",
+    "dockerhub-read must declare dockerRuntime.applyMode: descriptor-only (live dockerhub catalog server exposes mutation tools)"
+  );
+  assert.ok(
+    typeof server.dockerRuntime?.blockedReason === "string" && server.dockerRuntime.blockedReason.length > 0,
+    "dockerhub-read must declare a non-empty dockerRuntime.blockedReason"
+  );
+  assert.equal(
+    server.dockerRuntime?.catalogServerId,
+    undefined,
+    "dockerhub-read must not declare a catalogServerId - descriptor-only servers have no safe catalog target"
+  );
 });

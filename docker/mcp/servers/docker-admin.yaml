@@ -5,6 +5,12 @@ server:
   kind: peer
   trustClass: ops-mutate
   mutationLevel: admin
+  dockerRuntime:
+    applyMode: descriptor-only
+    blockedReason: >-
+      docker-admin is a descriptor-only surface. The live Docker catalog
+      admin server must be separately vetted and approved before it can be
+      referenced in catalog profiles.
   tools:
     - toolId: docker.restart
       displayName: Restart Container
