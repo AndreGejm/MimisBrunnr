@@ -89,6 +89,22 @@ intents:
       - docker-write
       - deployment
     fallbackProfile: core-dev
+  security-audit:
+    displayName: Security Audit
+    targetProfile: security-audit
+    trustClass: external-read
+    requiresApproval: false
+    activationMode: session-switch
+    allowedCategories:
+      - repo-read
+      - local-docs
+      - internal-memory
+      - security-scan-read
+    deniedCategories:
+      - github-write
+      - docker-write
+      - deployment
+    fallbackProfile: core-dev
   delivery-admin:
     displayName: Delivery Admin
     targetProfile: delivery-admin
@@ -129,5 +145,6 @@ intents:
       - k8s-logs-read
       - k8s-events-read
       - container-registry-read
+      - security-scan-read
     deniedCategories: []
     fallbackProfile: delivery-admin

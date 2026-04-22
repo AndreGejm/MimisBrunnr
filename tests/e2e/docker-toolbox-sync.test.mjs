@@ -487,6 +487,43 @@ test("sync-mcp-profiles rejects unknown flags and missing --source values", asyn
   assert.match(missingSource.stderr, /--source requires a directory path/);
 });
 
+test("sync-mcp-profiles dry-run emits catalog://mcp/docker-mcp-catalog/semgrep for security-audit and full profiles", async () => {
+  const result = await runSyncCommand(
+    ["--json", JSON.stringify({ generatedAt: "2026-01-01T00:00:00.000Z" }), "--no-pretty"],
+    { MIMIR_DOCKER_RUNTIME_GENERATED_AT: "2026-01-01T00:00:00.000Z" }
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+
+  for (const profileId of ["security-audit", "full"]) {
+    const command = output.apply.commands.find((c) => c.profileId === profileId);
+    assert.ok(command, `${profileId} command must appear in dry-run apply plan`);
+    assert.ok(
+      command.serverRefs.includes("catalog://mcp/docker-mcp-catalog/semgrep"),
+      `${profileId} must reference semgrep-audit using catalogServerId 'semgrep'`
+    );
+  }
+});
+
+test("compileDockerMcpRuntimePlan includes semgrep-audit server with catalog apply mode and catalogServerId semgrep", () => {
+  const policy = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+  const plan = compileDockerMcpRuntimePlan(policy);
+
+  const semgrepServer = plan.servers.find((s) => s.id === "semgrep-audit");
+  assert.ok(semgrepServer, "semgrep-audit must appear in the runtime plan");
+  assert.equal(
+    semgrepServer.dockerApplyMode,
+    "catalog",
+    "semgrep-audit must expose dockerApplyMode: catalog"
+  );
+  assert.equal(
+    semgrepServer.catalogServerId,
+    "semgrep",
+    "semgrep-audit catalogServerId must be 'semgrep' (the live Docker catalog name, not 'semgrep-audit')"
+  );
+});
+
 function runSyncCommand(args, extraEnv = {}) {
   const scriptPath = path.join(process.cwd(), "scripts", "docker", "sync-mcp-profiles.mjs");
   return new Promise((resolve, reject) => {

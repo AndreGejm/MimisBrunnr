@@ -679,6 +679,16 @@ test("dockerhub-read server exists as external-read peer with read-only containe
 
   for (const tool of server.tools) {
     assert.equal(
+      tool.category,
+      "container-registry-read",
+      `dockerhub-read tool ${tool.toolId} must use container-registry-read`
+    );
+    assert.equal(
+      tool.trustClass,
+      "external-read",
+      `dockerhub-read tool ${tool.toolId} must be external-read`
+    );
+    assert.equal(
       tool.mutationLevel,
       "read",
       `dockerhub-read tool ${tool.toolId} must be read-only`
@@ -856,4 +866,242 @@ test("dockerhub-read server manifest declares dockerRuntime descriptor-only with
     undefined,
     "dockerhub-read must not declare a catalogServerId - descriptor-only servers have no safe catalog target"
   );
+});
+
+test("security-scan-read category has external-read trust class and read mutation level", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  assert.ok(
+    compiled.categories["security-scan-read"],
+    "security-scan-read category must exist"
+  );
+  assert.equal(
+    compiled.categories["security-scan-read"].trustClass,
+    "external-read",
+    "security-scan-read category must have trustClass external-read"
+  );
+  assert.equal(
+    compiled.categories["security-scan-read"].mutationLevel,
+    "read",
+    "security-scan-read category must have mutationLevel read"
+  );
+});
+
+test("semgrep-audit server exists as external-read peer with catalog mode and read-only security tools", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  assert.ok(compiled.servers["semgrep-audit"], "semgrep-audit server must exist");
+
+  const server = compiled.servers["semgrep-audit"];
+  assert.equal(server.trustClass, "external-read", "semgrep-audit server must have trustClass external-read");
+  assert.equal(server.mutationLevel, "read", "semgrep-audit server must have mutationLevel read");
+  assert.equal(
+    server.dockerRuntime?.applyMode,
+    "catalog",
+    "semgrep-audit must declare dockerRuntime.applyMode: catalog"
+  );
+  assert.equal(
+    server.dockerRuntime?.catalogServerId,
+    "semgrep",
+    "semgrep-audit must declare dockerRuntime.catalogServerId: semgrep"
+  );
+  assert.ok(server.tools.length > 0, "semgrep-audit server must have at least one tool");
+
+  for (const tool of server.tools) {
+    assert.equal(
+      tool.category,
+      "security-scan-read",
+      `semgrep-audit tool ${tool.toolId} must use security-scan-read`
+    );
+    assert.equal(
+      tool.trustClass,
+      "external-read",
+      `semgrep-audit tool ${tool.toolId} must be external-read`
+    );
+    assert.equal(
+      tool.mutationLevel,
+      "read",
+      `semgrep-audit tool ${tool.toolId} must be read-only`
+    );
+    assert.ok(
+      tool.semanticCapabilityId.startsWith("security.semgrep."),
+      `semgrep-audit tool ${tool.toolId} semanticCapabilityId must be under security.semgrep.* namespace`
+    );
+  }
+});
+
+test("security-audit profile includes semgrep-audit server and allows security-scan-read", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  assert.ok(compiled.profiles["security-audit"], "security-audit profile must exist");
+
+  const profile = compiled.profiles["security-audit"];
+  assert.ok(
+    profile.includeServers.includes("mimir-control"),
+    "security-audit profile must include mimir-control server"
+  );
+  assert.ok(
+    profile.includeServers.includes("mimir-core"),
+    "security-audit profile must include mimir-core server"
+  );
+  assert.ok(
+    profile.includeServers.includes("semgrep-audit"),
+    "security-audit profile must include semgrep-audit server"
+  );
+  assert.ok(
+    profile.allowedCategories.includes("security-scan-read"),
+    "security-audit profile must allow security-scan-read category"
+  );
+  assert.ok(
+    profile.allowedCategories.includes("repo-read"),
+    "security-audit profile must allow repo-read category"
+  );
+  assert.ok(
+    !profile.allowedCategories.includes("repo-write"),
+    "security-audit profile must not allow repo-write category"
+  );
+  assert.ok(
+    !profile.allowedCategories.includes("internal-memory-write"),
+    "security-audit profile must not allow internal-memory-write category"
+  );
+  assert.ok(
+    profile.deniedCategories.includes("github-write"),
+    "security-audit profile must deny github-write category"
+  );
+  assert.ok(
+    profile.deniedCategories.includes("docker-write"),
+    "security-audit profile must deny docker-write category"
+  );
+  assert.ok(
+    profile.deniedCategories.includes("deployment"),
+    "security-audit profile must deny deployment category"
+  );
+  assert.equal(
+    profile.fallbackProfile,
+    "core-dev",
+    "security-audit profile must have fallbackProfile core-dev"
+  );
+});
+
+test("core-dev+security-audit composite profile includes semgrep-audit and allows security-scan-read", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  assert.ok(
+    compiled.profiles["core-dev+security-audit"],
+    "core-dev+security-audit composite profile must exist"
+  );
+
+  const profile = compiled.profiles["core-dev+security-audit"];
+  assert.equal(profile.composite, true, "core-dev+security-audit must be a composite profile");
+  assert.ok(
+    profile.baseProfiles.includes("core-dev"),
+    "core-dev+security-audit must list core-dev as a base profile"
+  );
+  assert.ok(
+    profile.baseProfiles.includes("security-audit"),
+    "core-dev+security-audit must list security-audit as a base profile"
+  );
+  assert.ok(
+    profile.includeServers.includes("semgrep-audit"),
+    "core-dev+security-audit must include semgrep-audit server"
+  );
+  assert.ok(
+    profile.allowedCategories.includes("security-scan-read"),
+    "core-dev+security-audit must allow security-scan-read category"
+  );
+  assert.ok(
+    profile.deniedCategories.includes("docker-write"),
+    "core-dev+security-audit must preserve core-dev denied category docker-write"
+  );
+});
+
+test("full profile includes semgrep-audit server and allows security-scan-read", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  assert.ok(
+    compiled.profiles["full"].includeServers.includes("semgrep-audit"),
+    "full profile must include semgrep-audit server"
+  );
+  assert.ok(
+    compiled.profiles["full"].allowedCategories.includes("security-scan-read"),
+    "full profile must allow security-scan-read category"
+  );
+  assert.ok(
+    compiled.profiles["full"].tools.some((t) => t.semanticCapabilityId.startsWith("security.semgrep.")),
+    "full profile must expose at least one security.semgrep.* tool"
+  );
+});
+
+test("security-audit intent targets security-audit profile with external-read trust and no approval", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  assert.ok(compiled.intents["security-audit"], "security-audit intent must exist");
+
+  const intent = compiled.intents["security-audit"];
+  assert.equal(
+    intent.targetProfile,
+    "security-audit",
+    "security-audit intent must target security-audit profile"
+  );
+  assert.equal(
+    intent.trustClass,
+    "external-read",
+    "security-audit intent must have trustClass external-read"
+  );
+  assert.equal(
+    intent.requiresApproval,
+    false,
+    "security-audit intent must not require approval"
+  );
+  assert.ok(
+    intent.allowedCategories.includes("security-scan-read"),
+    "security-audit intent must allow security-scan-read"
+  );
+  assert.ok(
+    intent.deniedCategories.includes("github-write"),
+    "security-audit intent must deny github-write"
+  );
+  assert.ok(
+    intent.deniedCategories.includes("docker-write"),
+    "security-audit intent must deny docker-write"
+  );
+  assert.ok(
+    intent.deniedCategories.includes("deployment"),
+    "security-audit intent must deny deployment"
+  );
+});
+
+test("security-scan-read is absent from docs-research, runtime-observe, runtime-admin, heavy-rag, and delivery-admin profiles and intents", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  for (const profileId of [
+    "docs-research",
+    "runtime-observe",
+    "runtime-admin",
+    "heavy-rag",
+    "delivery-admin"
+  ]) {
+    assert.ok(
+      !compiled.profiles[profileId].allowedCategories.includes("security-scan-read"),
+      `${profileId} profile must NOT allow security-scan-read category`
+    );
+    assert.ok(
+      !compiled.profiles[profileId].includeServers.includes("semgrep-audit"),
+      `${profileId} profile must NOT include semgrep-audit server`
+    );
+  }
+
+  for (const intentId of [
+    "docs-research",
+    "runtime-observe",
+    "runtime-admin",
+    "heavy-rag",
+    "delivery-admin"
+  ]) {
+    if (!compiled.intents[intentId]) continue;
+    assert.ok(
+      !compiled.intents[intentId].allowedCategories.includes("security-scan-read"),
+      `${intentId} intent must NOT allow security-scan-read`
+    );
+  }
 });

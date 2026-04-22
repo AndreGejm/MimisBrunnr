@@ -187,7 +187,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - session leases with revision-bound, audience-bound tokens; `toolbox_expired` audit events on expiry deactivation
 - Docker runtime planning (`docker:mcp:sync`) and installer audit (`audit-toolbox-assets.mjs`) surface `serverIds`, `profileIds`, and per-server Docker apply metadata; catalog peers can map policy ids to live catalog ids, while descriptor-only peers block live apply
 - client overlays declare `handoffStrategy` and `handoffPresetRef`; activation returns structured reconnect handoff data
-- category-owned peer curation: `runtime-observe`, `core-dev+runtime-observe` (via base-profile inheritance), `runtime-admin`, and `full` include the `kubernetes-read` peer band for read-only Kubernetes observation (`k8s-read`, `k8s-logs-read`, `k8s-events-read`); `docs-research`, `core-dev+docs-research` (via base-profile inheritance), and `full` include the `dockerhub-read` peer band for read-only container registry access (`container-registry-read`)
+- category-owned peer curation: `runtime-observe`, `core-dev+runtime-observe` (via base-profile inheritance), `runtime-admin`, and `full` include the `kubernetes-read` peer band for read-only Kubernetes observation (`k8s-read`, `k8s-logs-read`, `k8s-events-read`); `docs-research`, `core-dev+docs-research` (via base-profile inheritance), and `full` include the `dockerhub-read` peer band for read-only container registry access (`container-registry-read`); `security-audit`, `core-dev+security-audit` (via base-profile inheritance), and `full` include the `semgrep-audit` peer band for read-only security scanning and static analysis (`security-scan-read`)
 
 ## Partial Or Incomplete Areas
 
@@ -195,7 +195,7 @@ These areas have enabling structure but are not fully complete:
 
 - richer temporal-validity governance beyond validity windows, refresh-candidate reporting, bounded batch refresh-draft creation, idempotent refresh-draft reuse, explicit refresh-draft creation, freshness warnings, and stale ranking
 - hierarchical retrieval rollout beyond the current `flat` default, explicit opt-in strategy selection, trace metadata, packet-diff checks, and the documented rollback path back to `flat`
-- broader toolbox rollout beyond the current curated peer bands (docs-research, runtime-observe, runtime-admin, full); `dockerhub-read` (`container-registry-read`) is now live in docs-research and full; additional peer servers require their own category, server, and profile manifests plus test coverage
+- broader toolbox rollout beyond the current curated peer bands (docs-research, runtime-observe, runtime-admin, security-audit, full); `dockerhub-read` (`container-registry-read`) and `semgrep-audit` (`security-scan-read`) are now live in their bounded profiles; additional peer servers require their own category, server, and profile manifests plus test coverage
 - target-machine Docker Toolkit validation: `docker mcp profile` subcommand is not available in the current Docker MCP Toolkit build; even when profile support is available, live apply is blocked while selected profiles contain descriptor-only peers that need read-filtered wrappers or vetted catalog entries
 - future approval-gated Kubernetes mutation: no Kubernetes write or deployment tool is in v1; the workstream is blocked pending a separate governance decision
 

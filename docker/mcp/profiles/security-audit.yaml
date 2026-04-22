@@ -1,0 +1,18 @@
+profile:
+  id: security-audit
+  displayName: Security Audit
+  sessionMode: toolbox-activated
+  includeServers:
+    - mimir-control
+    - mimir-core
+    - semgrep-audit
+  allowedCategories:
+    - repo-read
+    - local-docs
+    - internal-memory
+    - security-scan-read
+  deniedCategories:
+    - github-write
+    - docker-write
+    - deployment
+  fallbackProfile: core-dev

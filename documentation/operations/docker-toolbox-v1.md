@@ -142,6 +142,8 @@ pnpm mcp:control
 - `core-dev+runtime-observe`
 - `runtime-admin`
 - `heavy-rag`
+- `security-audit`
+- `core-dev+security-audit`
 - `delivery-admin`
 - `full`
 
@@ -173,6 +175,28 @@ DockerHub apply caveat: the live Docker catalog server is named `dockerhub` and
 also exposes repository creation and metadata update tools. The curated
 `dockerhub-read` toolbox server is therefore `descriptor-only` until a
 read-filtered wrapper or catalog entry exists.
+
+## Semgrep read-only security audit band
+
+`security-audit`, `core-dev+security-audit` (inherits from `security-audit`), and `full` include the `semgrep-audit` peer server.
+
+Allowed categories for these profiles include `security-scan-read`.
+
+The current Semgrep tool ids are:
+
+- `semgrep.rule.schema`
+- `semgrep.languages.list`
+- `semgrep.findings.list`
+- `semgrep.scan.content`
+- `semgrep.scan.custom_rule`
+- `semgrep.scan.local`
+- `semgrep.security.check`
+- `semgrep.ast.get`
+
+All Semgrep tools are `mutationLevel: read`. This band is for static analysis, existing finding lookup, and security review support only. It does not publish findings, change repository files, or deploy workloads.
+
+Semgrep apply note: the live Docker catalog server is named `semgrep`, so the
+repo policy id `semgrep-audit` maps to catalog server `semgrep`.
 
 ## Enforcement notes
 

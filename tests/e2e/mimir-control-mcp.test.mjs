@@ -570,6 +570,51 @@ test("mimir-control MCP lists DockerHub read-only tools when docs-research is ac
   }
 });
 
+test("mimir-control MCP lists Semgrep read-only tools when security-audit is active", { timeout: 10000 }, async () => {
+  const child = spawnControlServer({ activeProfile: "security-audit", clientId: "codex" });
+  try {
+    const transport = createMessageCollector(child.stdout);
+    await initializeMcp(transport, child.stdin);
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
+      id: 220,
+      method: "tools/call",
+      params: {
+        name: "list_active_tools",
+        arguments: {}
+      }
+    });
+
+    const activeTools = await transport.next();
+
+    assert.ok(
+      activeTools.result.structuredContent.activeTools.some((t) =>
+        t.semanticCapabilityId?.startsWith("security.semgrep.")
+      ),
+      "security-audit must expose at least one security.semgrep.* tool as active"
+    );
+
+    const semgrepTools = activeTools.result.structuredContent.activeTools.filter((t) =>
+      t.semanticCapabilityId?.startsWith("security.semgrep.")
+    );
+    for (const tool of semgrepTools) {
+      assert.equal(tool.mutationLevel, "read", `${tool.toolId} must be read-only`);
+      assert.equal(tool.trustClass, "external-read", `${tool.toolId} must be external-read`);
+      assert.equal(tool.category, "security-scan-read", `${tool.toolId} must use security-scan-read category`);
+    }
+
+    assert.ok(
+      !activeTools.result.structuredContent.suppressedTools.some((t) =>
+        t.semanticCapabilityId?.startsWith("security.semgrep.")
+      ),
+      "Codex overlay must not suppress semgrep tools"
+    );
+  } finally {
+    await stopChild(child);
+  }
+});
+
 async function createTempSqlitePath() {
   const root = await mkdtemp(path.join(os.tmpdir(), "mimir-toolbox-"));
   return {

@@ -67,6 +67,10 @@ categories:
     description: Read-only access to container registry metadata and image search
     trustClass: external-read
     mutationLevel: read
+  security-scan-read:
+    description: Read-only security scanning and static analysis
+    trustClass: external-read
+    mutationLevel: read
   k8s-read:
     description: Inspect Kubernetes cluster state
     trustClass: ops-read

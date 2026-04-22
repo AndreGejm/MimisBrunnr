@@ -1,0 +1,24 @@
+profile:
+  id: core-dev+security-audit
+  displayName: Core Dev Plus Security Audit
+  sessionMode: toolbox-activated
+  baseProfiles:
+    - core-dev
+    - security-audit
+  compositeReason: repeated_workflow
+  includeServers:
+    - mimir-control
+    - mimir-core
+    - semgrep-audit
+  allowedCategories:
+    - repo-read
+    - repo-write
+    - local-docs
+    - internal-memory
+    - internal-memory-write
+    - security-scan-read
+  deniedCategories:
+    - github-write
+    - docker-write
+    - deployment
+  fallbackProfile: core-dev

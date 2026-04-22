@@ -380,6 +380,42 @@ test("mimir-cli list-active-tools when runtime-observe is active includes kubern
   }
 });
 
+test("mimir-cli list-active-tools when security-audit is active includes semgrep read-only tools", async () => {
+  const sqlitePath = await createTempSqlitePath();
+  const env = {
+    ...process.env,
+    MAB_NODE_ENV: "test",
+    MAB_TOOLBOX_MANIFEST_DIR: path.resolve("docker", "mcp"),
+    MAB_TOOLBOX_ACTIVE_PROFILE: "security-audit",
+    MAB_TOOLBOX_CLIENT_ID: "codex",
+    MAB_TOOLBOX_LEASE_ISSUER: "mimir-control",
+    MAB_TOOLBOX_LEASE_AUDIENCE: "mimir-core",
+    MAB_TOOLBOX_LEASE_ISSUER_SECRET: "toolbox-secret",
+    MAB_SQLITE_PATH: sqlitePath
+  };
+
+  const activeToolsResult = await runCliCommand(
+    ["list-active-tools", "--json", "{}", "--no-pretty"],
+    env
+  );
+  assert.equal(activeToolsResult.exitCode, 0, activeToolsResult.stderr);
+  const payload = JSON.parse(activeToolsResult.stdout);
+  assert.equal(payload.ok, true);
+
+  assert.ok(
+    payload.activeTools.some((t) => t.semanticCapabilityId?.startsWith("security.semgrep.")),
+    "security-audit active tools must include at least one security.semgrep.* tool"
+  );
+
+  const semgrepActive = payload.activeTools.filter((t) =>
+    t.semanticCapabilityId?.startsWith("security.semgrep.")
+  );
+  for (const tool of semgrepActive) {
+    assert.equal(tool.mutationLevel, "read", `${tool.toolId} must be read-only`);
+    assert.equal(tool.category, "security-scan-read", `${tool.toolId} must use security-scan-read category`);
+  }
+});
+
 function runCliCommand(args, env, cwd = process.cwd()) {
   const scriptPath = path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js");
   return new Promise((resolve, reject) => {

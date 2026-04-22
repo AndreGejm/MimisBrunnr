@@ -333,8 +333,16 @@ test("windows installer cli audit-toolbox-assets returns toolbox manifest and ru
   assert.ok(envelope.details.toolboxAssets.runtimePlan.profileCount > 0);
   assert.ok(Array.isArray(envelope.details.toolboxAssets.runtimePlan.serverIds));
   assert.ok(envelope.details.toolboxAssets.runtimePlan.serverIds.includes("kubernetes-read"));
+  assert.ok(
+    envelope.details.toolboxAssets.runtimePlan.serverIds.includes("semgrep-audit"),
+    "audit-toolbox-assets runtimePlan.serverIds must include semgrep-audit"
+  );
   assert.ok(Array.isArray(envelope.details.toolboxAssets.runtimePlan.profileIds));
   assert.ok(envelope.details.toolboxAssets.runtimePlan.profileIds.includes("runtime-observe"));
+  assert.ok(
+    envelope.details.toolboxAssets.runtimePlan.profileIds.includes("security-audit"),
+    "audit-toolbox-assets runtimePlan.profileIds must include security-audit"
+  );
   assert.equal(envelope.details.toolboxAssets.bootstrapProfilePresent, true);
   assert.equal(envelope.details.toolboxAssets.controlServerPresent, true);
 
@@ -383,8 +391,16 @@ test("windows installer cli prepare-toolbox-runtime writes a compiled runtime-pl
   assert.ok(envelope.details.toolboxRuntime.serverCount > 0);
   assert.ok(Array.isArray(envelope.details.toolboxRuntime.serverIds));
   assert.ok(envelope.details.toolboxRuntime.serverIds.includes("kubernetes-read"));
+  assert.ok(
+    envelope.details.toolboxRuntime.serverIds.includes("semgrep-audit"),
+    "prepare-toolbox-runtime serverIds must include semgrep-audit"
+  );
   assert.ok(Array.isArray(envelope.details.toolboxRuntime.profileIds));
   assert.ok(envelope.details.toolboxRuntime.profileIds.includes("runtime-observe"));
+  assert.ok(
+    envelope.details.toolboxRuntime.profileIds.includes("security-audit"),
+    "prepare-toolbox-runtime profileIds must include security-audit"
+  );
   assert.equal(envelope.details.toolboxRuntime.dryRun, true);
   assert.equal(envelope.details.toolboxRuntime.dockerApplyImplemented, false);
   assert.ok(envelope.artifactsWritten.includes(expectedOutputPath));
