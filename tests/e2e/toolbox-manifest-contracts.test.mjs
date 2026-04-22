@@ -1065,6 +1065,75 @@ test("dockerhub-read server manifest declares dockerRuntime descriptor-only with
   );
 });
 
+test("grafana-observe server manifest declares dockerRuntime descriptor-only with blockedReason and read-only observe tools", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  const server = compiled.servers["grafana-observe"];
+  assert.ok(server, "grafana-observe server must exist");
+  assert.equal(server.trustClass, "ops-read", "grafana-observe server must have trustClass ops-read");
+  assert.equal(server.mutationLevel, "read", "grafana-observe server must have mutationLevel read");
+  assert.equal(
+    server.dockerRuntime?.applyMode,
+    "descriptor-only",
+    "grafana-observe must declare dockerRuntime.applyMode: descriptor-only (live grafana catalog surface currently includes mutating/destructive tools)"
+  );
+  assert.ok(
+    typeof server.dockerRuntime?.blockedReason === "string" && server.dockerRuntime.blockedReason.length > 0,
+    "grafana-observe must declare a non-empty dockerRuntime.blockedReason"
+  );
+  assert.equal(
+    server.dockerRuntime?.catalogServerId,
+    undefined,
+    "grafana-observe must not declare a catalogServerId - descriptor-only servers have no safe catalog target"
+  );
+
+  const expectedTools = new Map([
+    ["grafana.logs.query", { category: "logs-read", semanticCapabilityId: "observe.logs.query" }],
+    ["grafana.metrics.query", { category: "metrics-read", semanticCapabilityId: "observe.metrics.query" }],
+    ["grafana.traces.query", { category: "traces-read", semanticCapabilityId: "observe.traces.query" }]
+  ]);
+  assert.equal(server.tools.length, expectedTools.size, "grafana-observe must expose only the curated read-only descriptor tools");
+
+  for (const tool of server.tools) {
+    const expected = expectedTools.get(tool.toolId);
+    assert.ok(expected, `unexpected grafana-observe tool '${tool.toolId}' in descriptor manifest`);
+    assert.equal(tool.category, expected.category, `${tool.toolId} category must remain read-only`);
+    assert.equal(tool.trustClass, "ops-read", `${tool.toolId} trustClass must remain ops-read`);
+    assert.equal(tool.mutationLevel, "read", `${tool.toolId} mutationLevel must remain read`);
+    assert.equal(tool.semanticCapabilityId, expected.semanticCapabilityId, `${tool.toolId} semantic capability must remain stable`);
+  }
+});
+
+test("runtime-observe profile keeps grafana-observe as descriptor-only read-only peer for intent/tool discovery", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  const profile = compiled.profiles["runtime-observe"];
+  assert.ok(profile.includeServers.includes("grafana-observe"), "runtime-observe must continue including grafana-observe in profile descriptors");
+  for (const category of ["logs-read", "metrics-read", "traces-read"]) {
+    assert.ok(
+      profile.allowedCategories.includes(category),
+      `runtime-observe must allow ${category} for grafana-observe descriptor tools`
+    );
+  }
+
+  const expectedTools = new Set([
+    "grafana.logs.query",
+    "grafana.metrics.query",
+    "grafana.traces.query"
+  ]);
+  const profileGrafanaTools = profile.tools.filter((tool) => tool.toolId.startsWith("grafana."));
+  assert.equal(
+    profileGrafanaTools.length,
+    expectedTools.size,
+    "runtime-observe must expose exactly the curated read-only grafana descriptor tools"
+  );
+  for (const tool of profileGrafanaTools) {
+    assert.ok(expectedTools.has(tool.toolId), `unexpected runtime-observe grafana tool '${tool.toolId}'`);
+    assert.equal(tool.trustClass, "ops-read", `${tool.toolId} must remain ops-read`);
+    assert.equal(tool.mutationLevel, "read", `${tool.toolId} must remain read-only`);
+  }
+});
+
 test("security-scan-read category has external-read trust class and read mutation level", () => {
   const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
 

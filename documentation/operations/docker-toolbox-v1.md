@@ -124,7 +124,8 @@ pnpm docker:mcp:sync:json
 Dry-run still succeeds when descriptor-only peers are present. Live apply is
 blocked before shelling out profile mutation commands if any selected profile
 contains descriptor-only peers. This prevents read-filtered policy surfaces such
-as `dockerhub-read` from being replaced by broader raw catalog servers.
+as `dockerhub-read` and `grafana-observe` from being replaced by broader raw
+catalog servers.
 
 When the local toolkit does not expose `docker mcp profile`, the compiled apply
 plan also emits deterministic diagnostic fallback commands:
@@ -163,6 +164,22 @@ Composite profiles are only allowed for repeated workflows with explicit fixture
 Allowed categories for these profiles include `k8s-read`, `k8s-logs-read`, and `k8s-events-read`.
 
 v1 is **read-only** for Kubernetes. No Kubernetes mutation, deployment, or admin tool is exposed by any v1 profile. Future approval-gated Kubernetes mutation is tracked in the backlog but is not part of the current implementation.
+
+## Grafana observe read-only peer band
+
+`runtime-observe`, `core-dev+runtime-observe` (inherits from `runtime-observe`), `runtime-admin`, and `full` include the `grafana-observe` peer server.
+
+Allowed categories for these profiles include `logs-read`, `metrics-read`, and `traces-read`.
+
+The current Grafana observe tool ids are:
+
+- `grafana.logs.query`
+- `grafana.metrics.query`
+- `grafana.traces.query`
+
+All three are `mutationLevel: read`.
+
+Grafana apply caveat: the live Docker catalog server is named `grafana` and currently includes mutating/destructive tools (for example `alerting_manage_rules`, `update_dashboard`, and `create_*`). The curated `grafana-observe` toolbox server is therefore `descriptor-only` until a read-filtered wrapper or catalog entry exists.
 
 ## DockerHub read-only peer band
 

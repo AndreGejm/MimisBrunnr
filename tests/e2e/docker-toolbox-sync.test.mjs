@@ -331,6 +331,10 @@ test("sync-mcp-profiles dry-run apply commands omit descriptor-only servers from
       !command.serverRefs.some((ref) => ref.includes("dockerhub-read")),
       `profile '${command.profileId}' must NOT emit a catalog ref for descriptor-only server 'dockerhub-read'`
     );
+    assert.ok(
+      !command.serverRefs.some((ref) => ref === "catalog://mcp/docker-mcp-catalog/grafana"),
+      `profile '${command.profileId}' must NOT emit a catalog ref for descriptor-only server 'grafana-observe'`
+    );
   }
 });
 
@@ -363,6 +367,85 @@ test("sync-mcp-profiles apply mode returns blocked when compiled plan contains d
       payload.apply.blockedServers.some((s) => s.id === "dockerhub-read"),
       "blockedServers must include dockerhub-read"
     );
+    assert.ok(
+      payload.apply.blockedServers.some((s) => s.id === "grafana-observe"),
+      "blockedServers must include grafana-observe"
+    );
+  } finally {
+    rmSync(stub.rootDir, { recursive: true, force: true });
+  }
+});
+
+test("runtime-observe/core-dev+runtime-observe/runtime-admin/full apply and fallback outputs exclude live grafana catalog server", async () => {
+  const result = await runSyncCommand(
+    ["--json", JSON.stringify({ generatedAt: "2026-01-01T00:00:00.000Z" }), "--no-pretty"],
+    { MIMIR_DOCKER_RUNTIME_GENERATED_AT: "2026-01-01T00:00:00.000Z" }
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+
+  for (const profileId of ["runtime-observe", "core-dev+runtime-observe", "runtime-admin", "full"]) {
+    const applyCommand = output.apply.commands.find((command) => command.profileId === profileId);
+    assert.ok(applyCommand, `${profileId} command must appear in dry-run apply plan`);
+    assert.ok(
+      !applyCommand.serverRefs.includes("catalog://mcp/docker-mcp-catalog/grafana"),
+      `${profileId} apply command must NOT include live grafana catalog server ref`
+    );
+  }
+
+  for (const profileId of ["runtime-observe", "core-dev+runtime-observe", "runtime-admin"]) {
+    const gatewayCommand = output.apply.gatewayRunCommands.find((command) => command.profileId === profileId);
+    assert.equal(
+      gatewayCommand,
+      undefined,
+      `${profileId} must not emit a gateway fallback command when it has no catalog-mode peers`
+    );
+  }
+
+  const fullGatewayCommand = output.apply.gatewayRunCommands.find((command) => command.profileId === "full");
+  assert.ok(fullGatewayCommand, "full gateway fallback command must exist");
+  assert.ok(
+    !fullGatewayCommand.serverNames.includes("grafana"),
+    "full gateway fallback command must NOT include grafana server name"
+  );
+  assert.ok(
+    fullGatewayCommand.omittedServers.some(
+      (entry) => entry.id === "grafana-observe" && /descriptor-only/i.test(entry.blockedReason)
+    ),
+    "full gateway fallback omittedServers must include descriptor-only grafana-observe"
+  );
+});
+
+test("runtime-observe/core-dev+runtime-observe/runtime-admin/full apply mode blocked servers include descriptor-only grafana-observe", async () => {
+  const stub = createDockerStub(true);
+  try {
+    const result = await runSyncCommand(
+      ["--apply", "--json", JSON.stringify({ generatedAt: "2026-01-01T00:00:00.000Z" }), "--no-pretty"],
+      {
+        MIMIR_DOCKER_EXECUTABLE: process.execPath,
+        MIMIR_DOCKER_EXECUTABLE_ARGS_JSON: JSON.stringify([stub.stubScript]),
+        MIMIR_DOCKER_RUNTIME_GENERATED_AT: "2026-01-01T00:00:00.000Z",
+        DOCKER_STUB_LOG: stub.logFile
+      }
+    );
+
+    assert.notEqual(result.exitCode, 0, result.stderr);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.apply.status, "blocked");
+    assert.ok(Array.isArray(payload.apply.blockedServers));
+
+    for (const profileId of ["runtime-observe", "core-dev+runtime-observe", "runtime-admin", "full"]) {
+      const profileCommand = payload.apply.plan.commands.find((command) => command.profileId === profileId);
+      assert.ok(profileCommand, `${profileId} apply command must exist in blocked plan`);
+      assert.ok(
+        profileCommand.blockedServers.some(
+          (entry) => entry.id === "grafana-observe" && /descriptor-only/i.test(entry.blockedReason)
+        ),
+        `${profileId} command.blockedServers must include descriptor-only grafana-observe`
+      );
+    }
   } finally {
     rmSync(stub.rootDir, { recursive: true, force: true });
   }

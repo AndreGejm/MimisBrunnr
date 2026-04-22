@@ -6,8 +6,11 @@ server:
   trustClass: ops-read
   mutationLevel: read
   dockerRuntime:
-    applyMode: catalog
-    catalogServerId: grafana
+    applyMode: descriptor-only
+    blockedReason: >
+      Live Docker MCP catalog server 'grafana' currently exposes mutating/destructive tools
+      (for example alerting_manage_rules, update_dashboard, create_*). Use descriptor-only
+      policy until a read-filtered Grafana wrapper/catalog entry is available.
   tools:
     - toolId: grafana.logs.query
       displayName: Query Logs
