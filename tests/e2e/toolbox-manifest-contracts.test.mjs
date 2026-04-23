@@ -596,6 +596,83 @@ test("compileToolboxPolicyFromDirectory rejects peer servers without dockerRunti
   }
 });
 
+test("compileToolboxPolicyFromDirectory rejects peer servers with kind control", () => {
+  const root = createFixtureRoot();
+  try {
+    seedBaseFixture(root);
+    writeUtf8(
+      root,
+      "servers/github-read.yaml",
+      [
+        "server:",
+        "  id: github-read",
+        "  displayName: GitHub Read",
+        "  source: peer",
+        "  kind: control",
+        "  trustClass: external-read",
+        "  mutationLevel: read",
+        "  dockerRuntime:",
+        "    applyMode: catalog",
+        "    catalogServerId: github-read",
+        "  tools:",
+        "    - toolId: github.search",
+        "      displayName: Search GitHub",
+        "      category: docs-search",
+        "      trustClass: external-read",
+        "      mutationLevel: read",
+        "      semanticCapabilityId: github.search"
+      ].join("\n")
+    );
+
+    assert.throws(
+      () => compileToolboxPolicyFromDirectory(root),
+      /source: peer.*kind: peer|kind: control.*source: peer/i
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("compileToolboxPolicyFromDirectory rejects owned servers with kind peer", () => {
+  const root = createFixtureRoot();
+  try {
+    seedBaseFixture(root);
+    writeUtf8(
+      root,
+      "servers/mimir-control.yaml",
+      [
+        "server:",
+        "  id: mimir-control",
+        "  displayName: Mimir Control",
+        "  source: owned",
+        "  kind: peer",
+        "  trustClass: local-read",
+        "  mutationLevel: read",
+        "  tools:",
+        "    - toolId: list_toolboxes",
+        "      displayName: List Toolboxes",
+        "      category: repo-read",
+        "      trustClass: local-read",
+        "      mutationLevel: read",
+        "      semanticCapabilityId: toolbox.discovery",
+        "    - toolId: request_toolbox_activation",
+        "      displayName: Request Toolbox Activation",
+        "      category: repo-read",
+        "      trustClass: local-read",
+        "      mutationLevel: read",
+        "      semanticCapabilityId: toolbox.activation"
+      ].join("\n")
+    );
+
+    assert.throws(
+      () => compileToolboxPolicyFromDirectory(root),
+      /source: owned.*kind: peer|kind: peer.*source: owned/i
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("compileToolboxPolicyFromDirectory rejects unsafeCatalogServerIds on catalog-mode servers", () => {
   const root = createFixtureRoot();
   try {

@@ -116,6 +116,16 @@ function validateToolboxManifestSet(manifests: ToolboxManifestSet): void {
   for (const [serverId, server] of Object.entries(manifests.servers)) {
     requireTrustClass(server.trustClass, trustClassIds, `server '${serverId}'`);
     requireMutationLevel(server.mutationLevel, `server '${serverId}'`);
+    if (server.source === "peer" && server.kind !== "peer") {
+      throw new Error(
+        `Server '${serverId}' with source: peer must have kind: peer, found kind: ${server.kind}.`
+      );
+    }
+    if (server.kind === "peer" && server.source !== "peer") {
+      throw new Error(
+        `Server '${serverId}' with kind: peer must have source: peer, found source: ${server.source}.`
+      );
+    }
     if (server.source === "peer" && !server.dockerRuntime) {
       throw new Error(
         `Peer server '${serverId}' must declare dockerRuntime apply metadata.`
