@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  buildDockerMcpRuntimeApplyPlan,
+  compileDockerMcpRuntimePlan,
   compileToolboxPolicyFromDirectory
 } from "../../packages/infrastructure/dist/index.js";
 
@@ -310,6 +312,124 @@ test("compileToolboxPolicyFromDirectory returns deterministic normalized IR", ()
     assert.equal(first.clients.codex.suppressedSemanticCapabilities[0], "github.search");
     assert.equal(first.clients.codex.handoffStrategy, "env-reconnect");
     assert.equal(first.clients.codex.handoffPresetRef, "codex.toolbox");
+    assert.deepEqual(first.servers["github-read"].runtimeBinding, {
+      kind: "docker-catalog",
+      catalogServerId: "github-read"
+    });
+    assert.deepEqual(first.servers["docker-read"].runtimeBinding, {
+      kind: "descriptor-only",
+      blockedReason: "Docker read fixture is descriptor-only"
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("compileToolboxPolicyFromDirectory accepts explicit runtimeBinding docker-catalog manifests", () => {
+  const root = createFixtureRoot();
+  try {
+    seedBaseFixture(root);
+    writeUtf8(
+      root,
+      "servers/github-read.yaml",
+      [
+        "server:",
+        "  id: github-read",
+        "  displayName: GitHub Read",
+        "  source: peer",
+        "  kind: peer",
+        "  trustClass: external-read",
+        "  mutationLevel: read",
+        "  runtimeBinding:",
+        "    kind: docker-catalog",
+        "    catalogServerId: github-read",
+        "  tools:",
+        "    - toolId: github.search",
+        "      displayName: Search GitHub",
+        "      category: docs-search",
+        "      trustClass: external-read",
+        "      mutationLevel: read",
+        "      semanticCapabilityId: github.search"
+      ].join("\n")
+    );
+
+    const compiled = compileToolboxPolicyFromDirectory(root);
+    assert.deepEqual(compiled.servers["github-read"].runtimeBinding, {
+      kind: "docker-catalog",
+      catalogServerId: "github-read"
+    });
+    assert.deepEqual(compiled.servers["github-read"].dockerRuntime, {
+      applyMode: "catalog",
+      catalogServerId: "github-read"
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("compileToolboxPolicyFromDirectory accepts local-stdio peer runtime bindings", () => {
+  const root = createFixtureRoot();
+  try {
+    seedBaseFixture(root);
+    writeUtf8(
+      root,
+      "servers/voltagent-docs.yaml",
+      [
+        "server:",
+        "  id: voltagent-docs",
+        "  displayName: VoltAgent Docs",
+        "  source: peer",
+        "  kind: peer",
+        "  trustClass: external-read",
+        "  mutationLevel: read",
+        "  runtimeBinding:",
+        "    kind: local-stdio",
+        "    command: npx",
+        "    args:",
+        "      - -y",
+        "      - '@voltagent/docs-mcp'",
+        "    configTarget: codex-mcp-json",
+        "  tools:",
+        "    - toolId: voltagent.docs.search",
+        "      displayName: Search VoltAgent Docs",
+        "      category: docs-search",
+        "      trustClass: external-read",
+        "      mutationLevel: read",
+        "      semanticCapabilityId: voltagent.docs.search"
+      ].join("\n")
+    );
+    writeUtf8(
+      root,
+      "profiles/docs-research.yaml",
+      [
+        "profile:",
+        "  id: docs-research",
+        "  displayName: Docs Research",
+        "  sessionMode: toolbox-activated",
+        "  includeServers:",
+        "    - mimir-control",
+        "    - mimir-core",
+        "    - github-read",
+        "    - voltagent-docs",
+        "  allowedCategories:",
+        "    - repo-read",
+        "    - docs-search",
+        "  deniedCategories:",
+        "    - docker-write"
+      ].join("\n")
+    );
+
+    const compiled = compileToolboxPolicyFromDirectory(root);
+    const runtimeBinding = JSON.parse(
+      JSON.stringify(compiled.servers["voltagent-docs"].runtimeBinding)
+    );
+    assert.deepEqual(runtimeBinding, {
+      kind: "local-stdio",
+      command: "npx",
+      args: ["-y", "@voltagent/docs-mcp"],
+      configTarget: "codex-mcp-json"
+    });
+    assert.equal(compiled.servers["voltagent-docs"].dockerRuntime, undefined);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -602,7 +722,7 @@ test("compileToolboxPolicyFromDirectory rejects peer servers without dockerRunti
 
     assert.throws(
       () => compileToolboxPolicyFromDirectory(root),
-      /must declare dockerRuntime apply metadata/i
+      /must declare runtimeBinding or dockerRuntime apply metadata/i
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -1198,13 +1318,13 @@ test("container-registry-read and repo-knowledge-read are absent from non-resear
   }
 });
 
-test("checked-in peer server manifests declare dockerRuntime apply metadata", () => {
+test("checked-in peer server manifests declare runtime metadata", () => {
   const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
 
   for (const server of Object.values(compiled.servers).filter((entry) => entry.source === "peer")) {
     assert.ok(
-      server.dockerRuntime,
-      `peer server ${server.id} must declare dockerRuntime apply metadata`
+      server.dockerRuntime || server.runtimeBinding,
+      `peer server ${server.id} must declare dockerRuntime or runtimeBinding metadata`
     );
   }
 });
@@ -1576,4 +1696,116 @@ test("security-scan-read is absent from docs-research, runtime-observe, runtime-
       `${intentId} intent must NOT allow security-scan-read`
     );
   }
+});
+
+test("compileDockerMcpRuntimePlan omits local-stdio peers from Docker apply blocking", () => {
+  const root = createFixtureRoot();
+  try {
+    seedBaseFixture(root);
+    writeUtf8(
+      root,
+      "servers/voltagent-docs.yaml",
+      [
+        "server:",
+        "  id: voltagent-docs",
+        "  displayName: VoltAgent Docs",
+        "  source: peer",
+        "  kind: peer",
+        "  trustClass: external-read",
+        "  mutationLevel: read",
+        "  runtimeBinding:",
+        "    kind: local-stdio",
+        "    command: npx",
+        "    args:",
+        "      - -y",
+        "      - \"@voltagent/docs-mcp\"",
+        "    configTarget: codex-mcp-json",
+        "  tools:",
+        "    - toolId: search_voltagent_docs",
+        "      displayName: Search VoltAgent Docs",
+        "      category: docs-search",
+        "      trustClass: external-read",
+        "      mutationLevel: read",
+        "      semanticCapabilityId: docs.voltagent.search"
+      ].join("\n")
+    );
+    writeUtf8(
+      root,
+      "profiles/voltagent-dev.yaml",
+      [
+        "profile:",
+        "  id: voltagent-dev",
+        "  displayName: VoltAgent Dev",
+        "  sessionMode: toolbox-activated",
+        "  includeServers:",
+        "    - mimir-control",
+        "    - mimir-core",
+        "    - github-read",
+        "    - voltagent-docs",
+        "  allowedCategories:",
+        "    - repo-read",
+        "    - docs-search",
+        "  deniedCategories:",
+        "    - docker-write"
+      ].join("\n")
+    );
+
+    const compiled = compileToolboxPolicyFromDirectory(root);
+    const plan = compileDockerMcpRuntimePlan(compiled, {
+      generatedAt: "2026-04-23T12:00:00.000Z"
+    });
+    const applyPlan = buildDockerMcpRuntimeApplyPlan(plan);
+    const voltagentCommand = applyPlan.commands.find(
+      (command) => command.profileId === "voltagent-dev"
+    );
+
+    assert.ok(voltagentCommand, "voltagent-dev profile must compile into the Docker sync plan");
+    assert.deepEqual(
+      [...voltagentCommand.serverRefs].sort(),
+      [
+        "catalog://mcp/docker-mcp-catalog/github-read",
+        "file://./docker/mcp/servers/mimir-control.yaml",
+        "file://./docker/mcp/servers/mimir-core.yaml"
+      ].sort(),
+      "Docker sync must only emit owned and catalog-backed peers for mixed profiles"
+    );
+    assert.ok(
+      !voltagentCommand.blockedServers?.some((server) => server.id === "voltagent-docs"),
+      "local-stdio peers must not be treated as Docker sync blockers"
+    );
+    assert.ok(
+      !applyPlan.blockedServers?.some((server) => server.id === "voltagent-docs"),
+      "plan-level blocked servers must exclude client-materialized peers"
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("checked-in VoltAgent toolbox manifests declare local-stdio Codex materialization", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  const server = compiled.servers["voltagent-docs"];
+  assert.ok(server, "voltagent-docs server must exist");
+  assert.equal(server.source, "peer");
+  assert.equal(server.kind, "peer");
+  assert.equal(server.runtimeBinding?.kind, "local-stdio");
+  assert.equal(server.runtimeBinding?.configTarget, "codex-mcp-json");
+  assert.equal(server.runtimeBinding?.command, "npx");
+  assert.deepEqual(server.runtimeBinding?.args, ["-y", "@voltagent/docs-mcp"]);
+
+  const profile = compiled.profiles["core-dev+voltagent-dev"];
+  assert.ok(profile, "core-dev+voltagent-dev profile must exist");
+  assert.ok(profile.baseProfiles.includes("core-dev+docs-research"));
+  assert.ok(profile.includeServers.includes("voltagent-docs"));
+  assert.ok(profile.allowedCategories.includes("docs-search"));
+  assert.ok(profile.allowedCategories.includes("repo-write"));
+  assert.equal(profile.fallbackProfile, "core-dev+docs-research");
+
+  const intent = compiled.intents["core-dev+voltagent-dev"];
+  assert.ok(intent, "core-dev+voltagent-dev intent must exist");
+  assert.equal(intent.targetProfile, "core-dev+voltagent-dev");
+  assert.equal(intent.requiresApproval, false);
+  assert.ok(intent.allowedCategories.includes("docs-search"));
+  assert.ok(intent.allowedCategories.includes("repo-write"));
 });

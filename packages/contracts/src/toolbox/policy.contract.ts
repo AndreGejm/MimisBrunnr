@@ -25,6 +25,41 @@ export interface ToolboxServerToolManifest {
   semanticCapabilityId: string;
 }
 
+export type ToolboxRuntimeBindingManifest =
+  | {
+      kind: "docker-catalog";
+      catalogServerId: string;
+      blockedReason?: never;
+      unsafeCatalogServerIds?: never;
+      command?: never;
+      args?: never;
+      env?: never;
+      workingDirectory?: never;
+      configTarget?: never;
+    }
+  | {
+      kind: "descriptor-only";
+      blockedReason: string;
+      catalogServerId?: never;
+      unsafeCatalogServerIds?: string[];
+      command?: never;
+      args?: never;
+      env?: never;
+      workingDirectory?: never;
+      configTarget?: never;
+    }
+  | {
+      kind: "local-stdio";
+      command: string;
+      args?: string[];
+      env?: Record<string, string>;
+      workingDirectory?: string;
+      configTarget?: "codex-mcp-json";
+      catalogServerId?: never;
+      blockedReason?: never;
+      unsafeCatalogServerIds?: never;
+    };
+
 export type ToolboxDockerRuntimeManifest =
   | {
       applyMode: "catalog";
@@ -47,6 +82,7 @@ export interface ToolboxServerManifest {
   trustClass: string;
   mutationLevel: ToolboxMutationLevel;
   tools: ToolboxServerToolManifest[];
+  runtimeBinding?: ToolboxRuntimeBindingManifest;
   dockerRuntime?: ToolboxDockerRuntimeManifest;
 }
 

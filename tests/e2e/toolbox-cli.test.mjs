@@ -396,6 +396,166 @@ test("mimir-cli check-mcp-profiles reports Docker MCP profile readiness", async 
   }
 });
 
+test("mimir-cli surfaces Codex client materialization metadata and sync-toolbox-client writes deterministic local-stdio config", async (t) => {
+  const sqlitePath = await createTempSqlitePath();
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "mimir-codex-client-"));
+  t.after(async () => {
+    await rm(workspaceRoot, { recursive: true, force: true });
+  });
+
+  const activationEnv = {
+    ...process.env,
+    MAB_NODE_ENV: "test",
+    MAB_TOOLBOX_MANIFEST_DIR: path.resolve("docker", "mcp"),
+    MAB_TOOLBOX_ACTIVE_PROFILE: "bootstrap",
+    MAB_TOOLBOX_CLIENT_ID: "codex",
+    MAB_TOOLBOX_LEASE_ISSUER: "mimir-control",
+    MAB_TOOLBOX_LEASE_AUDIENCE: "mimir-core",
+    MAB_TOOLBOX_LEASE_ISSUER_SECRET: "toolbox-secret",
+    MAB_SQLITE_PATH: sqlitePath
+  };
+  const expectedMaterializationPath = path.join(
+    workspaceRoot,
+    ".mimir",
+    "toolbox",
+    "codex.mcp.json"
+  );
+
+  const activationResult = await runCliCommand(
+    [
+      "request-toolbox-activation",
+      "--json",
+      JSON.stringify({
+        requestedToolbox: "core-dev+voltagent-dev",
+        taskSummary: "Need VoltAgent docs while editing the current repository"
+      }),
+      "--no-pretty"
+    ],
+    activationEnv,
+    workspaceRoot
+  );
+  assert.equal(activationResult.exitCode, 0, activationResult.stderr);
+  const activationPayload = JSON.parse(activationResult.stdout);
+  assert.equal(activationPayload.ok, true);
+  assert.equal(
+    activationPayload.activation.handoff.clientMaterialization.format,
+    "codex-mcp-json"
+  );
+  assert.equal(
+    activationPayload.activation.handoff.clientMaterialization.path,
+    expectedMaterializationPath
+  );
+
+  const activeToolboxResult = await runCliCommand(
+    ["list-active-toolbox", "--json", "{}", "--no-pretty"],
+    {
+      ...activationEnv,
+      MAB_TOOLBOX_ACTIVE_PROFILE: "core-dev+voltagent-dev"
+    },
+    workspaceRoot
+  );
+  assert.equal(activeToolboxResult.exitCode, 0, activeToolboxResult.stderr);
+  const activeToolboxPayload = JSON.parse(activeToolboxResult.stdout);
+  assert.equal(activeToolboxPayload.ok, true);
+  assert.equal(activeToolboxPayload.profile.id, "core-dev+voltagent-dev");
+  assert.deepEqual(activeToolboxPayload.client.clientMaterialization, {
+    format: "codex-mcp-json",
+    path: expectedMaterializationPath
+  });
+
+  const activeToolsResult = await runCliCommand(
+    ["list-active-tools", "--json", "{}", "--no-pretty"],
+    {
+      ...activationEnv,
+      MAB_TOOLBOX_ACTIVE_PROFILE: "core-dev+voltagent-dev"
+    },
+    workspaceRoot
+  );
+  assert.equal(activeToolsResult.exitCode, 0, activeToolsResult.stderr);
+  const activeToolsPayload = JSON.parse(activeToolsResult.stdout);
+  assert.equal(activeToolsPayload.ok, true);
+  assert.ok(
+    activeToolsPayload.activeTools.some(
+      (tool) =>
+        tool.serverId === "voltagent-docs" &&
+        tool.toolId === "voltagent.docs.search" &&
+        tool.category === "docs-search" &&
+        tool.availabilityState === "active"
+    ),
+    "VoltAgent docs tool must stay active when the dedicated toolbox profile is active"
+  );
+
+  const dockerSyncResult = await runCliCommand(
+    [
+      "sync-mcp-profiles",
+      "--json",
+      JSON.stringify({ generatedAt: "2026-04-23T12:00:00.000Z" }),
+      "--no-pretty"
+    ],
+    activationEnv,
+    workspaceRoot
+  );
+  assert.equal(dockerSyncResult.exitCode, 0, dockerSyncResult.stderr);
+  const dockerSyncPayload = JSON.parse(dockerSyncResult.stdout);
+  assert.equal(dockerSyncPayload.ok, true);
+  assert.ok(
+    dockerSyncPayload.apply.omittedServers.some(
+      (server) =>
+        server.id === "voltagent-docs" &&
+        server.blockedReason.includes("client-materialized local-stdio peer")
+    ),
+    "Docker sync must omit, not block, the VoltAgent local-stdio peer"
+  );
+  assert.ok(
+    !dockerSyncPayload.apply.blockedServers?.some(
+      (server) => server.id === "voltagent-docs"
+    ),
+    "VoltAgent local-stdio peer must not appear in blocked Docker servers"
+  );
+
+  const dryRunResult = await runCliCommand(
+    ["sync-toolbox-client", "--json", "{}", "--no-pretty"],
+    {
+      ...activationEnv,
+      MAB_TOOLBOX_ACTIVE_PROFILE: "core-dev+voltagent-dev"
+    },
+    workspaceRoot
+  );
+  assert.equal(dryRunResult.exitCode, 0, dryRunResult.stderr);
+  const dryRunPayload = JSON.parse(dryRunResult.stdout);
+  assert.equal(dryRunPayload.ok, true);
+  assert.equal(dryRunPayload.dryRun, true);
+  assert.equal(dryRunPayload.materialization.format, "codex-mcp-json");
+  assert.equal(dryRunPayload.materialization.path, expectedMaterializationPath);
+  assert.deepEqual(dryRunPayload.materialization.serverIds, ["voltagent-docs"]);
+  assert.deepEqual(dryRunPayload.materialization.content, {
+    mcpServers: {
+      "voltagent-docs": {
+        command: "npx",
+        args: ["-y", "@voltagent/docs-mcp"]
+      }
+    }
+  });
+
+  const applyResult = await runCliCommand(
+    ["sync-toolbox-client", "--apply", "--json", "{}", "--no-pretty"],
+    {
+      ...activationEnv,
+      MAB_TOOLBOX_ACTIVE_PROFILE: "core-dev+voltagent-dev"
+    },
+    workspaceRoot
+  );
+  assert.equal(applyResult.exitCode, 0, applyResult.stderr);
+  const applyPayload = JSON.parse(applyResult.stdout);
+  assert.equal(applyPayload.ok, true);
+  assert.equal(applyPayload.dryRun, false);
+  assert.equal(applyPayload.materialization.path, expectedMaterializationPath);
+  assert.deepEqual(
+    JSON.parse(readFileSync(expectedMaterializationPath, "utf8")),
+    dryRunPayload.materialization.content
+  );
+});
+
 test("mimir-cli sync-mcp-profiles apply is blocked before execution when descriptor-only servers are present", async () => {
   const stub = createDockerStub(true);
   try {

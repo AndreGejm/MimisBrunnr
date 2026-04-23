@@ -68,6 +68,30 @@ intents:
       - docker-write
       - deployment
     fallbackProfile: core-dev
+  core-dev+voltagent-dev:
+    displayName: Core Dev Plus VoltAgent Dev
+    summary: Code changes that need the normal development toolbox plus direct VoltAgent documentation access.
+    exampleTasks:
+      - Implement VoltAgent integration while consulting upstream VoltAgent docs
+      - Review VoltAgent behavior and patch the current repository in the same session
+    targetProfile: core-dev+voltagent-dev
+    trustClass: external-read
+    requiresApproval: false
+    activationMode: session-switch
+    allowedCategories:
+      - repo-read
+      - repo-write
+      - local-docs
+      - internal-memory
+      - internal-memory-write
+      - docs-search
+      - web-search
+      - github-read
+    deniedCategories:
+      - github-write
+      - docker-write
+      - deployment
+    fallbackProfile: core-dev+docs-research
   runtime-observe:
     displayName: Runtime Observe
     summary: Read-only runtime inspection across logs, metrics, traces, Docker, and Kubernetes state.

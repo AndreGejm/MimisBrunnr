@@ -15,6 +15,7 @@ import type {
   ToolboxIntentManifest,
   ToolboxMutationLevel,
   ToolboxProfileManifest,
+  ToolboxRuntimeBindingManifest,
   ToolboxServerManifest,
   ToolboxTrustClassManifest
 } from "@mimir/contracts";
@@ -35,6 +36,7 @@ const PROFILE_SESSION_MODES = new Set(["toolbox-bootstrap", "toolbox-activated"]
 const SERVER_KINDS = new Set(["control", "semantic", "peer"]);
 const SERVER_SOURCES = new Set(["owned", "peer"]);
 const DOCKER_APPLY_MODES = new Set(["catalog", "descriptor-only"]);
+const RUNTIME_BINDING_KINDS = new Set(["docker-catalog", "descriptor-only", "local-stdio"]);
 
 export function compileToolboxPolicyFromDirectory(
   sourceDirectory: string
@@ -126,9 +128,9 @@ function validateToolboxManifestSet(manifests: ToolboxManifestSet): void {
         `Server '${serverId}' with kind: peer must have source: peer, found source: ${server.source}.`
       );
     }
-    if (server.source === "peer" && !server.dockerRuntime) {
+    if (server.source === "peer" && !server.runtimeBinding && !server.dockerRuntime) {
       throw new Error(
-        `Peer server '${serverId}' must declare dockerRuntime apply metadata.`
+        `Peer server '${serverId}' must declare runtimeBinding or dockerRuntime apply metadata.`
       );
     }
 
@@ -376,37 +378,37 @@ function readTrustClasses(document: JsonRecord): Record<string, ToolboxTrustClas
 
 function readServer(document: JsonRecord, field: string): ToolboxServerManifest {
   const server = requireRecord(document[field], field);
+  const runtimeBindingRaw = server.runtimeBinding;
   const dockerRuntimeRaw = server.dockerRuntime;
+  let runtimeBinding: ToolboxRuntimeBindingManifest | undefined;
   let dockerRuntime: ToolboxDockerRuntimeManifest | undefined;
+  if (runtimeBindingRaw !== undefined) {
+    runtimeBinding = readRuntimeBinding(
+      requireRecord(runtimeBindingRaw, `${field}.runtimeBinding`),
+      `${field}.runtimeBinding`
+    );
+  }
   if (dockerRuntimeRaw !== undefined) {
-    const dr = requireRecord(dockerRuntimeRaw, `${field}.dockerRuntime`);
-    const applyMode = requireStringEnum(dr.applyMode, `${field}.dockerRuntime.applyMode`, DOCKER_APPLY_MODES) as "catalog" | "descriptor-only";
-    if (applyMode === "catalog") {
-      if (dr.blockedReason !== undefined) {
-        throw new Error(`${field}.dockerRuntime.blockedReason is only valid for descriptor-only mode.`);
-      }
-      if (dr.unsafeCatalogServerIds !== undefined) {
-        throw new Error(`${field}.dockerRuntime.unsafeCatalogServerIds is only valid for descriptor-only mode.`);
-      }
-      dockerRuntime = {
-        applyMode,
-        catalogServerId: requireString(dr.catalogServerId, `${field}.dockerRuntime.catalogServerId`)
-      };
-    } else {
-      if (dr.catalogServerId !== undefined) {
-        throw new Error(`${field}.dockerRuntime.catalogServerId is only valid for catalog mode.`);
-      }
-      const unsafeCatalogServerIds = optionalStringArray(
-        dr.unsafeCatalogServerIds,
-        `${field}.dockerRuntime.unsafeCatalogServerIds`
+    dockerRuntime = readDockerRuntime(
+      requireRecord(dockerRuntimeRaw, `${field}.dockerRuntime`),
+      `${field}.dockerRuntime`
+    );
+  }
+  if (!runtimeBinding && dockerRuntime) {
+    runtimeBinding = normalizeRuntimeBindingFromDockerRuntime(dockerRuntime);
+  }
+  if (runtimeBinding && !dockerRuntime) {
+    dockerRuntime = synthesizeLegacyDockerRuntime(runtimeBinding);
+  }
+  if (runtimeBinding && dockerRuntime) {
+    const normalizedDockerBinding = normalizeRuntimeBindingFromDockerRuntime(dockerRuntime);
+    if (
+      JSON.stringify(runtimeBinding) !== JSON.stringify(normalizedDockerBinding) &&
+      runtimeBinding.kind !== "local-stdio"
+    ) {
+      throw new Error(
+        `${field}.runtimeBinding must match ${field}.dockerRuntime when both are declared.`
       );
-      dockerRuntime = {
-        applyMode,
-        blockedReason: requireString(dr.blockedReason, `${field}.dockerRuntime.blockedReason`),
-        ...(unsafeCatalogServerIds !== undefined
-          ? { unsafeCatalogServerIds: uniqueSorted(unsafeCatalogServerIds) }
-          : {})
-      };
     }
   }
   return {
@@ -436,8 +438,142 @@ function readServer(document: JsonRecord, field: string): ToolboxServerManifest 
         )
       };
     }),
+    ...(runtimeBinding !== undefined ? { runtimeBinding } : {}),
     ...(dockerRuntime !== undefined ? { dockerRuntime } : {})
   };
+}
+
+function readRuntimeBinding(
+  runtimeBinding: JsonRecord,
+  field: string
+): ToolboxRuntimeBindingManifest {
+  const kind = requireStringEnum(
+    runtimeBinding.kind,
+    `${field}.kind`,
+    RUNTIME_BINDING_KINDS
+  ) as ToolboxRuntimeBindingManifest["kind"];
+
+  if (kind === "docker-catalog") {
+    return {
+      kind,
+      catalogServerId: requireString(runtimeBinding.catalogServerId, `${field}.catalogServerId`)
+    };
+  }
+
+  if (kind === "descriptor-only") {
+    const unsafeCatalogServerIds = optionalStringArray(
+      runtimeBinding.unsafeCatalogServerIds,
+      `${field}.unsafeCatalogServerIds`
+    );
+    return {
+      kind,
+      blockedReason: requireString(runtimeBinding.blockedReason, `${field}.blockedReason`),
+      ...(unsafeCatalogServerIds !== undefined
+        ? { unsafeCatalogServerIds: uniqueSorted(unsafeCatalogServerIds) }
+        : {})
+    };
+  }
+
+  const envRecord = runtimeBinding.env === undefined
+    ? undefined
+    : requireStringRecord(runtimeBinding.env, `${field}.env`);
+  const workingDirectory = optionalString(
+    runtimeBinding.workingDirectory,
+    `${field}.workingDirectory`
+  );
+  const configTarget = optionalStringEnum(
+    runtimeBinding.configTarget,
+    `${field}.configTarget`,
+    new Set(["codex-mcp-json"])
+  ) as "codex-mcp-json" | undefined;
+  return {
+    kind,
+    command: requireString(runtimeBinding.command, `${field}.command`),
+    args: optionalStringArray(runtimeBinding.args, `${field}.args`),
+    ...(envRecord !== undefined ? { env: envRecord } : {}),
+    ...(workingDirectory !== undefined ? { workingDirectory } : {}),
+    ...(configTarget !== undefined ? { configTarget } : {})
+  };
+}
+
+function readDockerRuntime(
+  dockerRuntime: JsonRecord,
+  field: string
+): ToolboxDockerRuntimeManifest {
+  const applyMode = requireStringEnum(
+    dockerRuntime.applyMode,
+    `${field}.applyMode`,
+    DOCKER_APPLY_MODES
+  ) as "catalog" | "descriptor-only";
+  if (applyMode === "catalog") {
+    if (dockerRuntime.blockedReason !== undefined) {
+      throw new Error(`${field}.blockedReason is only valid for descriptor-only mode.`);
+    }
+    if (dockerRuntime.unsafeCatalogServerIds !== undefined) {
+      throw new Error(`${field}.unsafeCatalogServerIds is only valid for descriptor-only mode.`);
+    }
+    return {
+      applyMode,
+      catalogServerId: requireString(dockerRuntime.catalogServerId, `${field}.catalogServerId`)
+    };
+  }
+
+  if (dockerRuntime.catalogServerId !== undefined) {
+    throw new Error(`${field}.catalogServerId is only valid for catalog mode.`);
+  }
+  const unsafeCatalogServerIds = optionalStringArray(
+    dockerRuntime.unsafeCatalogServerIds,
+    `${field}.unsafeCatalogServerIds`
+  );
+  return {
+    applyMode,
+    blockedReason: requireString(dockerRuntime.blockedReason, `${field}.blockedReason`),
+    ...(unsafeCatalogServerIds !== undefined
+      ? { unsafeCatalogServerIds: uniqueSorted(unsafeCatalogServerIds) }
+      : {})
+  };
+}
+
+function normalizeRuntimeBindingFromDockerRuntime(
+  dockerRuntime: ToolboxDockerRuntimeManifest
+): ToolboxRuntimeBindingManifest {
+  if (dockerRuntime.applyMode === "catalog") {
+    return {
+      kind: "docker-catalog",
+      catalogServerId: dockerRuntime.catalogServerId
+    };
+  }
+
+  return {
+    kind: "descriptor-only",
+    blockedReason: dockerRuntime.blockedReason,
+    ...(dockerRuntime.unsafeCatalogServerIds !== undefined
+      ? { unsafeCatalogServerIds: [...dockerRuntime.unsafeCatalogServerIds] }
+      : {})
+  };
+}
+
+function synthesizeLegacyDockerRuntime(
+  runtimeBinding: ToolboxRuntimeBindingManifest
+): ToolboxDockerRuntimeManifest | undefined {
+  if (runtimeBinding.kind === "docker-catalog") {
+    return {
+      applyMode: "catalog",
+      catalogServerId: runtimeBinding.catalogServerId
+    };
+  }
+
+  if (runtimeBinding.kind === "descriptor-only") {
+    return {
+      applyMode: "descriptor-only",
+      blockedReason: runtimeBinding.blockedReason,
+      ...(runtimeBinding.unsafeCatalogServerIds !== undefined
+        ? { unsafeCatalogServerIds: [...runtimeBinding.unsafeCatalogServerIds] }
+        : {})
+    };
+  }
+
+  return undefined;
 }
 
 function readProfile(document: JsonRecord, field: string): ToolboxProfileManifest {
@@ -568,6 +704,16 @@ function optionalString(value: unknown, field: string): string | undefined {
 function requireStringArray(value: unknown, field: string): string[] {
   return requireArray(value, field).map((entry, index) =>
     requireString(entry, `${field}[${index}]`)
+  );
+}
+
+function requireStringRecord(value: unknown, field: string): Record<string, string> {
+  const record = requireRecord(value, field);
+  return Object.fromEntries(
+    Object.entries(record).map(([key, entry]) => [
+      key,
+      requireString(entry, `${field}.${key}`)
+    ])
   );
 }
 

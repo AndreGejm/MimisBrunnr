@@ -74,7 +74,8 @@ const expectedSystemCommands = [
   "revoke-auth-token",
   "revoke-auth-tokens",
   "set-auth-issuer-state",
-  "sync-mcp-profiles"
+  "sync-mcp-profiles",
+  "sync-toolbox-client"
 ];
 const expectedAuthorizationRoles = new Map([
   ["execute_coding_task", ["operator", "system"]],

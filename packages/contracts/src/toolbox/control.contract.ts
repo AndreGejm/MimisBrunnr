@@ -25,6 +25,11 @@ export interface ToolboxHandoffLeaseDescriptor {
   sessionPolicyTokenEnvVar?: "MAB_TOOLBOX_SESSION_POLICY_TOKEN";
 }
 
+export interface ToolboxClientMaterializationDescriptor {
+  format: "codex-mcp-json";
+  path: string;
+}
+
 export interface ToolboxSessionHandoff {
   mode: "reconnect";
   targetProfileId: string;
@@ -35,12 +40,14 @@ export interface ToolboxSessionHandoff {
   handoffStrategy: "env-reconnect" | "manual-env-reconnect";
   handoffPresetRef?: string;
   clientPresetRef?: string;
+  clientMaterialization?: ToolboxClientMaterializationDescriptor;
   client: {
     id: string;
     displayName: string;
     handoffStrategy: "env-reconnect" | "manual-env-reconnect";
     handoffPresetRef?: string;
     clientPresetRef?: string;
+    clientMaterialization?: ToolboxClientMaterializationDescriptor;
   };
   manifestRevision: string;
   profileRevision?: string;
@@ -208,6 +215,7 @@ export interface ToolboxActiveClientSummary {
   handoffStrategy: "env-reconnect" | "manual-env-reconnect";
   handoffPresetRef?: string;
   clientPresetRef?: string;
+  clientMaterialization?: ToolboxClientMaterializationDescriptor;
   suppressServerIds: string[];
   suppressToolIds: string[];
   suppressCategories: string[];
