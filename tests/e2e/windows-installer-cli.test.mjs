@@ -876,6 +876,122 @@ test("windows installer cli plan-docker-mcp-toolkit-apply reports a blocked dry-
   assert.equal(persistedReport.operationId, "plan-docker-mcp-toolkit-apply");
 });
 
+test("windows installer cli plan-docker-mcp-toolkit-apply remains blocked when profile support exists but descriptor-only servers are present", async (t) => {
+  if (process.platform !== "win32") {
+    t.skip("Windows-only installer contract");
+    return;
+  }
+
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-installer-"));
+  const binDir = path.join(root, "bin");
+  const stateRoot = path.join(root, "state");
+  await mkdir(binDir, { recursive: true });
+  await writeFile(
+    path.join(binDir, "docker.cmd"),
+    [
+      "@echo off",
+      "if \"%~1 %~2\"==\"mcp version\" (",
+      "  echo v0.40.3",
+      "  exit /b 0",
+      ")",
+      "if \"%~1 %~2 %~3 %~4\"==\"mcp server ls --json\" (",
+      "  echo [{\"name\":\"mimir-control\",\"description\":\"Control server\",\"secrets\":\"none\",\"config\":\"done\",\"oauth\":\"none\"},{\"name\":\"mimir-core\",\"description\":\"Core server\",\"secrets\":\"none\",\"config\":\"done\",\"oauth\":\"none\"}]",
+      "  exit /b 0",
+      ")",
+      "if \"%~1 %~2 %~3 %~4\"==\"mcp client ls --json\" (",
+      "  echo {\"codex\":{\"displayName\":\"Codex\",\"dockerMCPCatalogConnected\":false,\"profile\":\"bootstrap\",\"error\":null,\"Cfg\":null,\"isConfigured\":true}}",
+      "  exit /b 0",
+      ")",
+      "if \"%~1 %~2 %~3\"==\"mcp config read\" (",
+      "  echo filesystem:",
+      "  echo   paths:",
+      "  echo     - F:\\Dev",
+      "  exit /b 0",
+      ")",
+      "if \"%~1 %~2 %~3\"==\"mcp feature ls\" (",
+      "  echo dynamic-tools enabled",
+      "  exit /b 0",
+      ")",
+      "if \"%~1 %~2 %~3\"==\"mcp profile --help\" (",
+      "  echo Usage: docker mcp profile [COMMAND]",
+      "  echo.",
+      "  echo Commands:",
+      "  echo   create    Create a profile",
+      "  exit /b 0",
+      ")",
+      "echo unexpected docker args: %* 1>&2",
+      "exit /b 1"
+    ].join("\r\n"),
+    "utf8"
+  );
+
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const result = await runInstallerCommand(
+    [
+      "-Operation",
+      "plan-docker-mcp-toolkit-apply",
+      "-RepoRoot",
+      process.cwd(),
+      "-StateRoot",
+      stateRoot,
+      "-Json"
+    ],
+    {
+      env: {
+        ...process.env,
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`
+      }
+    }
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const envelope = JSON.parse(result.stdout);
+  assert.equal(envelope.operationId, "plan-docker-mcp-toolkit-apply");
+  assert.equal(envelope.mode, "plan_only");
+  assert.equal(envelope.status, "user_action_required");
+  assert.equal(envelope.reasonCode, "docker_mcp_toolkit_apply_plan_blocked");
+  const report = envelope.details.dockerMcpToolkitApplyPlan;
+  assert.equal(report.mutationAllowed, false);
+  assert.equal(report.reviewRequired, true);
+  assert.equal(report.dockerProfileSubcommandAvailable, true);
+  assert.equal(report.compatibleWithCurrentToolkit, false);
+  assert.ok(
+    report.blockedReasons.some((reason) => /descriptor-only/i.test(reason) && /blocked/i.test(reason)),
+    "blockedReasons must explain descriptor-only blocking"
+  );
+  assert.ok(Array.isArray(report.blockedServers), "report must include structured blockedServers");
+  assert.ok(
+    report.blockedServers.some(
+      (entry) => entry.id === "dockerhub-read" && /descriptor-only/i.test(entry.blockedReason)
+    ),
+    "blockedServers must include descriptor-only dockerhub-read"
+  );
+  assert.ok(
+    report.blockedServers.some(
+      (entry) => entry.id === "grafana-observe" && /descriptor-only/i.test(entry.blockedReason)
+    ),
+    "blockedServers must include descriptor-only grafana-observe"
+  );
+  const runtimeObserveCommand = report.commands.find(
+    (entry) => entry.profileId === "runtime-observe"
+  );
+  assert.ok(runtimeObserveCommand, "runtime-observe command must be included");
+  assert.ok(
+    runtimeObserveCommand.blockedServers.some(
+      (entry) => entry.id === "grafana-observe" && /descriptor-only/i.test(entry.blockedReason)
+    ),
+    "profile command must include structured descriptor-only grafana-observe blocker"
+  );
+
+  const persistedReport = JSON.parse(
+    await readFile(path.join(stateRoot, "last-report.json"), "utf8")
+  );
+  assert.equal(persistedReport.operationId, "plan-docker-mcp-toolkit-apply");
+});
+
 test("windows installer cli show-state reads the persisted installer state", async (t) => {
   if (process.platform !== "win32") {
     t.skip("Windows-only installer contract");

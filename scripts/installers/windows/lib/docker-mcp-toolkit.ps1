@@ -297,12 +297,54 @@ function Invoke-InstallerDockerMcpToolkitApplyPlan {
     }
   ).Count -gt 0
 
+  $descriptorOnlyBlockedById = @{}
+  foreach ($entry in $applyCommands) {
+    $profileId = [string]$entry.profileId
+    $entryBlockedServers = if ($entry.PSObject.Properties.Name -contains "blockedServers" -and $null -ne $entry.blockedServers) {
+      @($entry.blockedServers)
+    } else {
+      @()
+    }
+
+    foreach ($server in $entryBlockedServers) {
+      $id = [string]$server.id
+      $blockedReason = [string]$server.blockedReason
+      if (-not $id -or $blockedReason -notmatch "descriptor-only") {
+        continue
+      }
+
+      if (-not $descriptorOnlyBlockedById.ContainsKey($id)) {
+        $descriptorOnlyBlockedById[$id] = [pscustomobject]@{
+          id = $id
+          blockedReason = $blockedReason
+          profileIds = @()
+        }
+      }
+
+      if ($profileId -and @($descriptorOnlyBlockedById[$id].profileIds) -notcontains $profileId) {
+        $descriptorOnlyBlockedById[$id].profileIds = @($descriptorOnlyBlockedById[$id].profileIds) + @($profileId)
+      }
+    }
+  }
+  $descriptorOnlyBlockedServers = @(
+    $descriptorOnlyBlockedById.Values | Sort-Object id | ForEach-Object {
+      [pscustomobject]@{
+        id = $_.id
+        blockedReason = $_.blockedReason
+        profileIds = @($_.profileIds | Sort-Object)
+      }
+    }
+  )
+
   $blockedReasons = @()
   if ($applyCommands.Count -eq 0) {
     $blockedReasons += "The compiled toolbox runtime plan did not emit any Docker MCP apply commands."
   }
   if ($requiresDockerProfile -and -not $profileSupport.available) {
     $blockedReasons += "The prepared toolbox runtime apply commands target docker mcp profile create, but this Docker MCP Toolkit exposes no profile subcommand."
+  }
+  if ($descriptorOnlyBlockedServers.Count -gt 0) {
+    $blockedReasons += "The compiled toolbox runtime apply plan is blocked because selected Docker profiles contain descriptor-only peer servers with no safe Docker MCP catalog apply target."
   }
 
   $compatibleWithCurrentToolkit = ($blockedReasons.Count -eq 0)
@@ -320,10 +362,23 @@ function Invoke-InstallerDockerMcpToolkitApplyPlan {
 
   $compactCommands = @(
     foreach ($entry in $applyCommands) {
+      $entryBlockedServers = if ($entry.PSObject.Properties.Name -contains "blockedServers" -and $null -ne $entry.blockedServers) {
+        @(
+          $entry.blockedServers | ForEach-Object {
+            [pscustomobject]@{
+              id = $_.id
+              blockedReason = $_.blockedReason
+            }
+          }
+        )
+      } else {
+        @()
+      }
       [pscustomobject]@{
         description = $entry.description
         profileId = $entry.profileId
         argv = @($entry.argv)
+        blockedServers = @($entryBlockedServers)
       }
     }
   )
@@ -365,6 +420,8 @@ function Invoke-InstallerDockerMcpToolkitApplyPlan {
       dockerProfileSubcommandAvailable = [bool]$profileSupport.available
       compatibleWithCurrentToolkit = [bool]$compatibleWithCurrentToolkit
       blockedReasons = @($blockedReasons)
+      blockedServers = @($descriptorOnlyBlockedServers)
+      descriptorOnlyBlockedServers = @($descriptorOnlyBlockedServers)
       toolkit = $toolkitAudit.report
     }
   }
