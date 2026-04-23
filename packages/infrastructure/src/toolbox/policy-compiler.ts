@@ -375,6 +375,9 @@ function readServer(document: JsonRecord, field: string): ToolboxServerManifest 
       if (dr.blockedReason !== undefined) {
         throw new Error(`${field}.dockerRuntime.blockedReason is only valid for descriptor-only mode.`);
       }
+      if (dr.unsafeCatalogServerIds !== undefined) {
+        throw new Error(`${field}.dockerRuntime.unsafeCatalogServerIds is only valid for descriptor-only mode.`);
+      }
       dockerRuntime = {
         applyMode,
         catalogServerId: requireString(dr.catalogServerId, `${field}.dockerRuntime.catalogServerId`)
@@ -383,9 +386,16 @@ function readServer(document: JsonRecord, field: string): ToolboxServerManifest 
       if (dr.catalogServerId !== undefined) {
         throw new Error(`${field}.dockerRuntime.catalogServerId is only valid for catalog mode.`);
       }
+      const unsafeCatalogServerIds = optionalStringArray(
+        dr.unsafeCatalogServerIds,
+        `${field}.dockerRuntime.unsafeCatalogServerIds`
+      );
       dockerRuntime = {
         applyMode,
-        blockedReason: requireString(dr.blockedReason, `${field}.dockerRuntime.blockedReason`)
+        blockedReason: requireString(dr.blockedReason, `${field}.dockerRuntime.blockedReason`),
+        ...(unsafeCatalogServerIds !== undefined
+          ? { unsafeCatalogServerIds: uniqueSorted(unsafeCatalogServerIds) }
+          : {})
       };
     }
   }

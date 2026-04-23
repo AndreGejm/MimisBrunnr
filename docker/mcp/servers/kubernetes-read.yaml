@@ -12,6 +12,8 @@ server:
       kubernetes-read surface is a descriptor-only, read-filtered wrapper;
       a dedicated catalog server must be published before it can be used in
       catalog profile references.
+    unsafeCatalogServerIds:
+      - kubernetes
   tools:
     - toolId: kubernetes.context.inspect
       displayName: Inspect Kubernetes Context

@@ -15,6 +15,7 @@ export interface DockerMcpRuntimeServerPlan {
   dockerApplyMode?: "catalog" | "descriptor-only";
   catalogServerId?: string;
   blockedReason?: string;
+  unsafeCatalogServerIds?: string[];
 }
 
 export interface DockerMcpRuntimeProfilePlan {
@@ -102,6 +103,7 @@ export function compileDockerMcpRuntimePlan(
     const dockerApplyMode = server.dockerRuntime?.applyMode;
     const catalogServerId = server.dockerRuntime?.catalogServerId;
     const blockedReason = server.dockerRuntime?.blockedReason;
+    const unsafeCatalogServerIds = server.dockerRuntime?.unsafeCatalogServerIds;
 
     return {
       id: server.id,
@@ -111,7 +113,10 @@ export function compileDockerMcpRuntimePlan(
       toolIds: server.tools.map((tool) => tool.toolId).sort(),
       ...(dockerApplyMode !== undefined ? { dockerApplyMode } : {}),
       ...(catalogServerId !== undefined ? { catalogServerId } : {}),
-      ...(blockedReason !== undefined ? { blockedReason } : {})
+      ...(blockedReason !== undefined ? { blockedReason } : {}),
+      ...(unsafeCatalogServerIds !== undefined
+        ? { unsafeCatalogServerIds: [...unsafeCatalogServerIds].sort() }
+        : {})
     } satisfies DockerMcpRuntimeServerPlan;
   });
 

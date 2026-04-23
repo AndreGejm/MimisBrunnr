@@ -11,6 +11,8 @@ server:
       Live Docker MCP catalog server 'grafana' currently exposes mutating/destructive tools
       (for example alerting_manage_rules, update_dashboard, create_*). Use descriptor-only
       policy until a read-filtered Grafana wrapper/catalog entry is available.
+    unsafeCatalogServerIds:
+      - grafana
   tools:
     - toolId: grafana.logs.query
       displayName: Query Logs

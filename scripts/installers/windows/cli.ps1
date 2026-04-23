@@ -276,7 +276,9 @@ switch ($Operation) {
   }
 
   "audit-docker-mcp-toolkit" {
-    $adapter = Invoke-InstallerDockerMcpToolkitAudit -RepoRoot $RepoRoot
+    $adapter = Invoke-InstallerDockerMcpToolkitAudit `
+      -RepoRoot $RepoRoot `
+      -ToolboxManifestDir $ToolboxManifestDir
 
     $nextActions = @()
     if ($adapter.report.connectedClientCount -eq 0) {

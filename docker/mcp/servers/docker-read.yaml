@@ -12,6 +12,8 @@ server:
       No standalone read-only Docker runtime catalog entry exists; the live
       catalog server includes mutation capabilities and cannot be safely
       referenced for read-only profiles.
+    unsafeCatalogServerIds:
+      - docker
   tools:
     - toolId: docker.inspect
       displayName: Inspect Docker Runtime

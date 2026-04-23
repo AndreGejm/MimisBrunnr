@@ -658,8 +658,8 @@ test("windows installer cli audit-docker-mcp-toolkit reports Docker MCP toolkit 
       "  exit /b 0",
       ")",
       "if \"%~1 %~2 %~3 %~4\"==\"mcp server ls --json\" (",
-      "  echo [{\"name\":\"mimir-control\",\"description\":\"Control server\",\"secrets\":\"none\",\"config\":\"done\",\"oauth\":\"none\"},{\"name\":\"mimir-core\",\"description\":\"Core server\",\"secrets\":\"none\",\"config\":\"done\",\"oauth\":\"none\"}]",
-        "  exit /b 0",
+      "  echo [{\"name\":\"mimir-control\",\"description\":\"Control server\",\"secrets\":\"none\",\"config\":\"done\",\"oauth\":\"none\"},{\"name\":\"brave\",\"description\":\"Brave Search\",\"secrets\":\"done\",\"config\":\"done\",\"oauth\":\"none\"},{\"name\":\"grafana\",\"description\":\"Grafana\",\"secrets\":\"done\",\"config\":\"done\",\"oauth\":\"none\"},{\"name\":\"github\",\"description\":\"GitHub\",\"secrets\":\"done\",\"config\":\"done\",\"oauth\":\"none\"},{\"name\":\"filesystem\",\"description\":\"Filesystem\",\"secrets\":\"none\",\"config\":\"done\",\"oauth\":\"none\"},{\"name\":\"rtk-codex\",\"description\":\"RTK Codex\",\"secrets\":\"none\",\"config\":\"done\",\"oauth\":\"none\"}]",
+      "  exit /b 0",
       ")",
       "if \"%~1 %~2 %~3 %~4\"==\"mcp client ls --json\" (",
       "  echo {\"codex\":{\"displayName\":\"Codex\",\"dockerMCPCatalogConnected\":true,\"profile\":\"workspace\",\"error\":null,\"Cfg\":null,\"isConfigured\":true}}",
@@ -709,17 +709,50 @@ test("windows installer cli audit-docker-mcp-toolkit reports Docker MCP toolkit 
   assert.equal(envelope.mode, "audit_only");
   assert.equal(envelope.status, "success");
   assert.equal(envelope.reasonCode, "docker_mcp_toolkit_audited");
-  assert.equal(envelope.commandsRun.length, 5);
+  assert.equal(envelope.commandsRun.length, 6);
   assert.equal(envelope.details.dockerMcpToolkit.available, true);
   assert.equal(envelope.details.dockerMcpToolkit.version, "v0.40.3");
-  assert.equal(envelope.details.dockerMcpToolkit.enabledServerCount, 2);
+  assert.equal(envelope.details.dockerMcpToolkit.enabledServerCount, 6);
   assert.equal(envelope.details.dockerMcpToolkit.configuredClientCount, 1);
   assert.equal(envelope.details.dockerMcpToolkit.connectedClientCount, 1);
   assert.equal(envelope.details.dockerMcpToolkit.servers[0].name, "mimir-control");
-  assert.equal(envelope.details.dockerMcpToolkit.servers[1].name, "mimir-core");
+  assert.equal(envelope.details.dockerMcpToolkit.servers[1].name, "brave");
   assert.equal(envelope.details.dockerMcpToolkit.clients[0].name, "codex");
   assert.match(envelope.details.dockerMcpToolkit.configText, /filesystem:/);
   assert.match(envelope.details.dockerMcpToolkit.featureText, /dynamic-tools enabled/);
+  assert.equal(envelope.details.dockerMcpToolkit.governanceStatus, "drift_detected");
+  assert.deepEqual(
+    envelope.details.dockerMcpToolkit.governedEnabledServers.map((entry) => entry.name),
+    ["brave", "mimir-control"]
+  );
+  assert.deepEqual(
+    envelope.details.dockerMcpToolkit.unsafeEnabledServers.map((entry) => ({
+      name: entry.name,
+      policyServerId: entry.policyServerId,
+      policyServerIds: entry.policyServerIds
+    })),
+    [
+      {
+        name: "github",
+        policyServerId: "github-read",
+        policyServerIds: ["github-read", "github-write"]
+      },
+      {
+        name: "grafana",
+        policyServerId: "grafana-observe",
+        policyServerIds: ["grafana-observe"]
+      }
+    ]
+  );
+  assert.deepEqual(
+    envelope.details.dockerMcpToolkit.unmanagedEnabledServers.map((entry) => entry.name),
+    ["filesystem", "rtk-codex"]
+  );
+  assert.deepEqual(envelope.details.dockerMcpToolkit.governanceSummaryCounts, {
+    governedEnabledServerCount: 2,
+    unsafeEnabledServerCount: 2,
+    unmanagedEnabledServerCount: 2
+  });
 
   const persistedReport = JSON.parse(
     await readFile(path.join(stateRoot, "last-report.json"), "utf8")

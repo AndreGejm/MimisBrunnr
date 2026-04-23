@@ -11,6 +11,8 @@ server:
       docker-admin is a descriptor-only surface. The live Docker catalog
       admin server must be separately vetted and approved before it can be
       referenced in catalog profiles.
+    unsafeCatalogServerIds:
+      - docker
   tools:
     - toolId: docker.restart
       displayName: Restart Container

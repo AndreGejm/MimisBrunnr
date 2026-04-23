@@ -294,6 +294,29 @@ test("compileDockerMcpRuntimePlan marks descriptor-only peer servers with blocke
     undefined,
     "descriptor-only server dockerhub-read must not expose a catalogServerId"
   );
+  assert.deepEqual(
+    dockerhubServer.unsafeCatalogServerIds,
+    ["dockerhub"],
+    "descriptor-only server dockerhub-read must expose unsafeCatalogServerIds for live Docker governance drift diagnostics"
+  );
+});
+
+test("compileDockerMcpRuntimePlan carries unsafeCatalogServerIds for descriptor-only peers only", () => {
+  const policy = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+  const plan = compileDockerMcpRuntimePlan(policy);
+
+  const grafanaServer = plan.servers.find((s) => s.id === "grafana-observe");
+  assert.ok(grafanaServer, "grafana-observe must appear in the runtime plan");
+  assert.equal(grafanaServer.dockerApplyMode, "descriptor-only");
+  assert.deepEqual(grafanaServer.unsafeCatalogServerIds, ["grafana"]);
+
+  const braveServer = plan.servers.find((s) => s.id === "brave-search");
+  assert.ok(braveServer, "brave-search must appear in the runtime plan");
+  assert.equal(
+    braveServer.unsafeCatalogServerIds,
+    undefined,
+    "catalog-mode peer servers must not expose unsafeCatalogServerIds"
+  );
 });
 
 test("sync-mcp-profiles dry-run apply commands use catalogServerId for catalog-mode peer server refs", async () => {
@@ -488,6 +511,11 @@ test("sync-mcp-profiles dry-run succeeds and reports dockerApplyMode metadata pe
   assert.ok(
     typeof dockerhubServer.blockedReason === "string" && dockerhubServer.blockedReason.length > 0,
     "dockerhub-read must report a non-empty blockedReason in dry-run plan output"
+  );
+  assert.deepEqual(
+    dockerhubServer.unsafeCatalogServerIds,
+    ["dockerhub"],
+    "dockerhub-read must report unsafeCatalogServerIds in dry-run plan output"
   );
 });
 

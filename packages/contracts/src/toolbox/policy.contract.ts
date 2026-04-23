@@ -26,8 +26,18 @@ export interface ToolboxServerToolManifest {
 }
 
 export type ToolboxDockerRuntimeManifest =
-  | { applyMode: "catalog"; catalogServerId: string; blockedReason?: never }
-  | { applyMode: "descriptor-only"; blockedReason: string; catalogServerId?: never };
+  | {
+      applyMode: "catalog";
+      catalogServerId: string;
+      blockedReason?: never;
+      unsafeCatalogServerIds?: never;
+    }
+  | {
+      applyMode: "descriptor-only";
+      blockedReason: string;
+      catalogServerId?: never;
+      unsafeCatalogServerIds?: string[];
+    };
 
 export interface ToolboxServerManifest {
   id: string;

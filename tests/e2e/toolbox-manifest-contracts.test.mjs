@@ -596,6 +596,86 @@ test("compileToolboxPolicyFromDirectory rejects peer servers without dockerRunti
   }
 });
 
+test("compileToolboxPolicyFromDirectory rejects unsafeCatalogServerIds on catalog-mode servers", () => {
+  const root = createFixtureRoot();
+  try {
+    seedBaseFixture(root);
+    writeUtf8(
+      root,
+      "servers/github-read.yaml",
+      [
+        "server:",
+        "  id: github-read",
+        "  displayName: GitHub Read",
+        "  source: peer",
+        "  kind: peer",
+        "  trustClass: external-read",
+        "  mutationLevel: read",
+        "  dockerRuntime:",
+        "    applyMode: catalog",
+        "    catalogServerId: github",
+        "    unsafeCatalogServerIds:",
+        "      - github",
+        "  tools:",
+        "    - toolId: github.search",
+        "      displayName: Search GitHub",
+        "      category: docs-search",
+        "      trustClass: external-read",
+        "      mutationLevel: read",
+        "      semanticCapabilityId: github.search"
+      ].join("\n")
+    );
+
+    assert.throws(
+      () => compileToolboxPolicyFromDirectory(root),
+      /unsafeCatalogServerIds is only valid for descriptor-only mode/i
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("compileToolboxPolicyFromDirectory preserves descriptor-only unsafeCatalogServerIds", () => {
+  const root = createFixtureRoot();
+  try {
+    seedBaseFixture(root);
+    writeUtf8(
+      root,
+      "servers/github-read.yaml",
+      [
+        "server:",
+        "  id: github-read",
+        "  displayName: GitHub Read",
+        "  source: peer",
+        "  kind: peer",
+        "  trustClass: external-read",
+        "  mutationLevel: read",
+        "  dockerRuntime:",
+        "    applyMode: descriptor-only",
+        "    blockedReason: live catalog server exposes write tools",
+        "    unsafeCatalogServerIds:",
+        "      - github",
+        "  tools:",
+        "    - toolId: github.search",
+        "      displayName: Search GitHub",
+        "      category: docs-search",
+        "      trustClass: external-read",
+        "      mutationLevel: read",
+        "      semanticCapabilityId: github.search"
+      ].join("\n")
+    );
+
+    const compiled = compileToolboxPolicyFromDirectory(root);
+
+    assert.deepEqual(
+      compiled.servers["github-read"].dockerRuntime?.unsafeCatalogServerIds,
+      ["github"]
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("runtime-observe profile exposes kubernetes-read server with k8s categories and read-only tools", () => {
   const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
 
@@ -1023,6 +1103,30 @@ test("checked-in peer server manifests declare dockerRuntime apply metadata", ()
     assert.ok(
       server.dockerRuntime,
       `peer server ${server.id} must declare dockerRuntime apply metadata`
+    );
+  }
+});
+
+test("checked-in descriptor-only peer server manifests declare unsafe catalog server ids", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+  const expectedUnsafeIds = new Map([
+    ["dockerhub-read", ["dockerhub"]],
+    ["grafana-observe", ["grafana"]],
+    ["docker-read", ["docker"]],
+    ["docker-admin", ["docker"]],
+    ["github-read", ["github"]],
+    ["github-write", ["github"]],
+    ["kubernetes-read", ["kubernetes"]]
+  ]);
+
+  for (const [serverId, unsafeCatalogServerIds] of expectedUnsafeIds) {
+    const server = compiled.servers[serverId];
+    assert.ok(server, `${serverId} server must exist`);
+    assert.equal(server.dockerRuntime?.applyMode, "descriptor-only");
+    assert.deepEqual(
+      server.dockerRuntime?.unsafeCatalogServerIds,
+      unsafeCatalogServerIds,
+      `${serverId} must map unsafe live catalog server ids for governance drift diagnostics`
     );
   }
 });

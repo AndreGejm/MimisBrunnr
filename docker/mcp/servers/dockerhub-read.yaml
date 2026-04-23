@@ -11,6 +11,8 @@ server:
       The live Docker catalog 'dockerhub' server exposes mutation tools
       (repository creation and repository metadata updates). A read-filtered wrapper is required
       before this server can be safely emitted as a catalog profile reference.
+    unsafeCatalogServerIds:
+      - dockerhub
   tools:
     - toolId: dockerhub.image.search
       displayName: Search DockerHub Images
