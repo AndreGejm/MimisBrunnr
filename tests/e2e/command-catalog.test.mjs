@@ -22,6 +22,12 @@ import {
   getSupportedRuntimeDispatchCommandNames,
   getSupportedTransportCommandNames
 } from "../../packages/infrastructure/dist/index.js";
+import {
+  CLI_COMMAND_NAMES,
+  SYSTEM_COMMAND_NAMES,
+  getCliCommandSurfaceDefinitions
+} from "../../apps/mimir-cli/dist/command-surface.js";
+import { buildCommandSurfaceReport } from "../../scripts/lib/command-surface-report.mjs";
 
 const expectedCommands = [
   ["execute_coding_task", "execute-coding-task", "coding", "coding", "operator"],
@@ -49,6 +55,26 @@ const expectedCommands = [
   ["import_resource", "import-resource", "mimisbrunnr", "mimisbrunnr_memory_update", "operator"],
   ["query_history", "query-history", "mimisbrunnr", "mimisbrunnr_history", "operator"],
   ["create_session_archive", "create-session-archive", "mimisbrunnr", "mimisbrunnr_memory_update", "operator"]
+];
+const expectedSystemCommands = [
+  "version",
+  "auth-issuers",
+  "auth-status",
+  "auth-issued-tokens",
+  "auth-introspect-token",
+  "check-mcp-profiles",
+  "deactivate-toolbox",
+  "describe-toolbox",
+  "freshness-status",
+  "issue-auth-token",
+  "list-active-toolbox",
+  "list-active-tools",
+  "list-toolboxes",
+  "request-toolbox-activation",
+  "revoke-auth-token",
+  "revoke-auth-tokens",
+  "set-auth-issuer-state",
+  "sync-mcp-profiles"
 ];
 const expectedAuthorizationRoles = new Map([
   ["execute_coding_task", ["operator", "system"]],
@@ -172,6 +198,29 @@ test("HTTP and MCP adapter command surfaces stay aligned with the runtime catalo
     assert.equal(tool.defaultActorRole, expectedDefaultRolesByRuntimeName.get(tool.name));
   }
 });
+test("CLI adapter exposes a deterministic system/runtime command surface", () => {
+  assert.deepEqual(SYSTEM_COMMAND_NAMES, expectedSystemCommands);
+  assert.deepEqual(CLI_COMMAND_NAMES, [
+    ...expectedSystemCommands,
+    ...expectedCommands.map(([, cliName]) => cliName)
+  ]);
+
+  const surface = getCliCommandSurfaceDefinitions();
+  assert.deepEqual(
+    surface.filter((command) => command.kind === "system").map((command) => command.name),
+    expectedSystemCommands
+  );
+  assert.deepEqual(
+    surface.filter((command) => command.kind === "runtime").map((command) => command.name),
+    expectedCommands.map(([, cliName]) => cliName)
+  );
+  assert.deepEqual(
+    surface
+      .filter((command) => command.kind === "runtime")
+      .map((command) => [command.name, command.defaultActorRole]),
+    expectedCommands.map(([, cliName, , , defaultActorRole]) => [cliName, defaultActorRole])
+  );
+});
 test("transport validators expose support for every runtime catalog command", () => {
   const expectedCliCommands = expectedCommands.map(([, cliName]) => cliName);
 
@@ -233,4 +282,16 @@ test("runtime dispatcher covers every cataloged runtime command", async () => {
       request
     });
   }
+});
+
+test("command surface inventory reports a fully aligned runtime surface", () => {
+  const report = buildCommandSurfaceReport();
+
+  assert.equal(report.ok, true);
+  assert.deepEqual(report.systemCommands, expectedSystemCommands);
+  assert.deepEqual(
+    report.runtimeCommands.map((command) => command.cliName),
+    expectedCommands.map(([, cliName]) => cliName)
+  );
+  assert.deepEqual(report.mismatches, []);
 });

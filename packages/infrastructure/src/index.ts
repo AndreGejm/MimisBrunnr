@@ -49,6 +49,8 @@ export * from "./toolbox/docker-runtime-plan.js";
 export * from "./transport/auth-control-audit.js";
 export * from "./transport/auth-control-bulk-revocation.js";
 export * from "./transport/auth-control-issuer-lifecycle.js";
+export * from "./transport/administrative-command-inputs.js";
+export * from "./transport/administrative-command-operations.js";
 export * from "./toolbox/session-lease.js";
 export * from "./transport/auth-control-validation.js";
 export * from "./transport/coding-request-validation.js";

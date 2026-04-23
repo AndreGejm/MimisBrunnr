@@ -3,38 +3,37 @@
 import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import process from "node:process";
-import {
-  CLI_RUNTIME_COMMAND_NAMES,
-  RUNTIME_COMMAND_DEFINITIONS,
-  type RuntimeCliCommandName
-} from "@mimir/contracts";
+import { type RuntimeCliCommandName } from "@mimir/contracts";
 import type {
   ActorContext,
   ActorRole,
   TransportKind
 } from "@mimir/contracts";
-import type { AdministrativeAction } from "@mimir/orchestration";
 import {
   ActorAuthorizationError,
-  ActorAuthorizationPolicy,
-  AuthIssuerLifecycleService,
   buildMimirControlSurface,
+  buildCliAdministrativeActorContext,
   buildServiceContainer,
   applyDockerMcpRuntimePlan,
   buildDockerMcpRuntimeApplyPlan,
   compileDockerMcpRuntimePlan,
   compileToolboxPolicyFromDirectory,
   dispatchRuntimeCommand,
-  executeBulkIssuedTokenRevocation,
-  FileIssuedTokenRevocationStore,
-  issueActorAccessToken,
+  extractAdministrativeActor,
+  getAdministrativeAuthStatus,
+  getAdministrativeFreshnessStatus,
+  inspectAdministrativeAuthToken,
+  issueAdministrativeAuthToken,
   loadEnvironment,
   probeDockerMcpGatewayProfileSupport,
   probeDockerMcpProfileSupport,
-  recordIssuedAuthTokenAudit,
-  recordRevokedAuthTokenAudit,
-  SqliteAuthIssuerControlStore,
   SqliteToolboxSessionLeaseStore,
+  listAdministrativeAuthIssuers,
+  listAdministrativeIssuedTokens,
+  revokeAdministrativeAuthToken,
+  revokeAdministrativeAuthTokens,
+  setAdministrativeAuthIssuerState,
+  validateAdministrativeFreshnessStatusRequest,
   validateListIssuedActorTokensControlRequest,
   validateInspectActorTokenControlRequest,
   validateIssueActorTokenControlRequest,
@@ -44,32 +43,16 @@ import {
   TransportValidationError,
   validateTransportRequest
 } from "@mimir/infrastructure";
-
-type SystemCommandName =
-  | "version"
-  | "auth-issuers"
-  | "auth-status"
-  | "auth-issued-tokens"
-  | "auth-introspect-token"
-  | "check-mcp-profiles"
-  | "deactivate-toolbox"
-  | "describe-toolbox"
-  | "freshness-status"
-  | "issue-auth-token"
-  | "list-active-toolbox"
-  | "list-active-tools"
-  | "list-toolboxes"
-  | "request-toolbox-activation"
-  | "revoke-auth-token"
-  | "revoke-auth-tokens"
-  | "set-auth-issuer-state"
-  | "sync-mcp-profiles";
-
-type CommandName = SystemCommandName | RuntimeCliCommandName;
+import {
+  CLI_COMMAND_NAMES,
+  CLI_DEFAULT_RUNTIME_ACTOR_ROLE,
+  SYSTEM_COMMAND_NAMES,
+  type CliCommandName
+} from "./command-surface.js";
 type JsonRecord = Record<string, unknown>;
 
 interface ParsedCli {
-  command?: CommandName;
+  command?: CliCommandName;
   options: {
     help: boolean;
     version: boolean;
@@ -81,38 +64,11 @@ interface ParsedCli {
   };
 }
 
-const SYSTEM_COMMANDS: ReadonlyArray<SystemCommandName> = [
-  "version",
-  "auth-issuers",
-  "auth-status",
-  "auth-issued-tokens",
-  "auth-introspect-token",
-  "check-mcp-profiles",
-  "deactivate-toolbox",
-  "describe-toolbox",
-  "freshness-status",
-  "issue-auth-token",
-  "list-active-toolbox",
-  "list-active-tools",
-  "list-toolboxes",
-  "request-toolbox-activation",
-  "revoke-auth-token",
-  "revoke-auth-tokens",
-  "set-auth-issuer-state",
-  "sync-mcp-profiles"
-];
-const COMMANDS: ReadonlyArray<CommandName> = [
-  ...SYSTEM_COMMANDS,
-  ...CLI_RUNTIME_COMMAND_NAMES
-];
+const SYSTEM_COMMANDS = SYSTEM_COMMAND_NAMES;
+const COMMANDS = CLI_COMMAND_NAMES;
 
 const DEFAULT_ACTOR_ROLE: Record<RuntimeCliCommandName, ActorRole> = {
-  ...(Object.fromEntries(
-    RUNTIME_COMMAND_DEFINITIONS.map((command) => [
-      command.cliName,
-      command.defaultActorRole
-    ])
-  ) as Record<RuntimeCliCommandName, ActorRole>),
+  ...CLI_DEFAULT_RUNTIME_ACTOR_ROLE
 };
 const ACTOR_ROLES: ReadonlyArray<ActorRole> = [
   "retrieval",
@@ -128,28 +84,6 @@ const TRANSPORTS: ReadonlyArray<TransportKind> = [
   "mcp",
   "automation"
 ];
-type CliCorpusId = "mimisbrunnr" | "general_notes";
-
-const CORPORA: ReadonlyArray<CliCorpusId> = [
-  "mimisbrunnr",
-  "general_notes"
-];
-const CLI_CORPUS_ALIASES: ReadonlyMap<string, CliCorpusId> = new Map([
-  ["brain", "mimisbrunnr"],
-  ["context_brain", "mimisbrunnr"],
-  ["mimir_brunnr", "mimisbrunnr"],
-  ["mimir-brunnr", "mimisbrunnr"],
-  ["mimirbrunnr", "mimisbrunnr"],
-  ["mimirsbrunn", "mimisbrunnr"],
-  ["mimirsbrunnr", "mimisbrunnr"],
-  ["mimis", "mimisbrunnr"],
-  ["mimisbrunn", "mimisbrunnr"],
-  ["multi agent brain", "mimisbrunnr"],
-  ["multiagent brain", "mimisbrunnr"],
-  ["multiagentbrain", "mimisbrunnr"],
-  ["multiagent-brain", "mimisbrunnr"],
-  ["multi-agent-brain", "mimisbrunnr"]
-]);
 async function main(): Promise<void> {
   const parsed = parseCli(process.argv.slice(2));
 
@@ -405,19 +339,14 @@ async function main(): Promise<void> {
     const container = buildServiceContainer(loadEnvironment());
     try {
       const payload = await loadOptionalCommandPayload(parsed.options);
-      container.authPolicy.authorizeAdministrativeAction(
-        "view_auth_status",
-        buildAdministrativeActorContext(
-          "view_auth_status",
-          extractAdministrativeActor(payload)
-        )
-      );
       writeJson(
-        {
-          ok: true,
-          auth: container.authPolicy.getRegistrySummary(),
-          issuedTokens: container.ports.issuedTokenStore.getIssuedTokenSummary()
-        },
+        getAdministrativeAuthStatus(
+          container,
+          buildCliAdministrativeActorContext(
+            "view_auth_status",
+            extractAdministrativeActor(payload)
+          )
+        ),
         parsed.options.pretty
       );
       process.exitCode = 0;
@@ -433,28 +362,16 @@ async function main(): Promise<void> {
 
   if (parsed.command === "auth-issuers") {
     const container = buildServiceContainer(loadEnvironment());
-    const issuerControlStore = new SqliteAuthIssuerControlStore(
-      container.env.sqlitePath
-    );
-    const issuerLifecycleService = new AuthIssuerLifecycleService(
-      container.authPolicy,
-      issuerControlStore,
-      container.services.auditHistoryService
-    );
     try {
       const payload = await loadOptionalCommandPayload(parsed.options);
-      container.authPolicy.authorizeAdministrativeAction(
-        "view_auth_issuers",
-        buildAdministrativeActorContext(
-          "view_auth_issuers",
-          extractAdministrativeActor(payload)
-        )
-      );
       writeJson(
-        {
-          ok: true,
-          ...issuerLifecycleService.listIssuerControls()
-        },
+        await listAdministrativeAuthIssuers(
+          container,
+          buildCliAdministrativeActorContext(
+            "view_auth_issuers",
+            extractAdministrativeActor(payload)
+          )
+        ),
         parsed.options.pretty
       );
       process.exitCode = 0;
@@ -464,7 +381,6 @@ async function main(): Promise<void> {
       process.exitCode = 1;
       return;
     } finally {
-      issuerControlStore.close();
       container.dispose();
     }
   }
@@ -473,22 +389,15 @@ async function main(): Promise<void> {
     const container = buildServiceContainer(loadEnvironment());
     try {
       const payload = await loadOptionalCommandPayload(parsed.options);
-      container.authPolicy.authorizeAdministrativeAction(
-        "view_issued_tokens",
-        buildAdministrativeActorContext(
-          "view_issued_tokens",
-          extractAdministrativeActor(payload)
-        )
-      );
-      const request = validateListIssuedActorTokensControlRequest(
-        payload
-      );
       writeJson(
-        {
-          ok: true,
-          issuedTokens: container.ports.issuedTokenStore.listIssuedTokens(request),
-          summary: container.ports.issuedTokenStore.getIssuedTokenSummary(request)
-        },
+        listAdministrativeIssuedTokens(
+          container,
+          buildCliAdministrativeActorContext(
+            "view_issued_tokens",
+            extractAdministrativeActor(payload)
+          ),
+          validateListIssuedActorTokensControlRequest(payload)
+        ),
         parsed.options.pretty
       );
       process.exitCode = 0;
@@ -506,24 +415,15 @@ async function main(): Promise<void> {
     const container = buildServiceContainer(loadEnvironment());
     try {
       const payload = await loadCommandPayload(parsed.options);
-      container.authPolicy.authorizeAdministrativeAction(
-        "inspect_auth_token",
-        buildAdministrativeActorContext(
-          "inspect_auth_token",
-          extractAdministrativeActor(payload)
-        )
-      );
-      const request = validateInspectActorTokenControlRequest(payload);
       writeJson(
-        {
-          ok: true,
-          inspection: container.authPolicy.inspectToken(request.token, {
-            asOf: request.asOf,
-            expectedTransport: request.expectedTransport,
-            expectedCommand: request.expectedCommand,
-            expectedAdministrativeAction: request.expectedAdministrativeAction
-          })
-        },
+        inspectAdministrativeAuthToken(
+          container,
+          buildCliAdministrativeActorContext(
+            "inspect_auth_token",
+            extractAdministrativeActor(payload)
+          ),
+          validateInspectActorTokenControlRequest(payload)
+        ),
         parsed.options.pretty
       );
       process.exitCode = 0;
@@ -540,16 +440,18 @@ async function main(): Promise<void> {
   if (parsed.command === "freshness-status") {
     const container = buildServiceContainer(loadEnvironment());
     try {
-      const request = validateFreshnessStatusRequest(
-        await loadOptionalCommandPayload(parsed.options)
-      );
+      const payload = await loadOptionalCommandPayload(parsed.options);
       writeJson(
-        {
-          ok: true,
-          freshness: await container.ports.metadataControlStore.getTemporalValidityReport(
-            request
-          )
-        },
+        await getAdministrativeFreshnessStatus(
+          container,
+          buildCliAdministrativeActorContext(
+            "view_freshness_status",
+            extractAdministrativeActor(payload)
+          ),
+          validateAdministrativeFreshnessStatusRequest(payload, {
+            allowCorpusAliases: true
+          })
+        ),
         parsed.options.pretty
       );
       process.exitCode = 0;
@@ -565,98 +467,20 @@ async function main(): Promise<void> {
 
   if (parsed.command === "issue-auth-token") {
     const container = buildServiceContainer(loadEnvironment());
-    const issuerControlStore = new SqliteAuthIssuerControlStore(
-      container.env.sqlitePath
-    );
-    const issuerLifecycleService = new AuthIssuerLifecycleService(
-      container.authPolicy,
-      issuerControlStore,
-      container.services.auditHistoryService
-    );
     try {
-      if (!container.env.auth.issuerSecret) {
-        throw new Error(
-          "MAB_AUTH_ISSUER_SECRET must be configured to issue actor access tokens."
-        );
-      }
-
       const payload = await loadCommandPayload(parsed.options);
-      const administrativeActor = buildAdministrativeActorContext(
-        "issue_auth_token",
-        extractAdministrativeActor(payload)
-      );
-      container.authPolicy.authorizeAdministrativeAction(
-        "issue_auth_token",
-        administrativeActor
-      );
-      issuerLifecycleService.assertAdministrativeActionAllowed(
-        administrativeActor,
-        "issue_auth_token"
-      );
-      const request = validateIssueActorTokenControlRequest(
-        payload
-      );
-      const issuedAt = new Date().toISOString();
-      const validUntil =
-        request.validUntil ??
-        (request.ttlMinutes !== undefined
-          ? new Date(Date.now() + request.ttlMinutes * 60_000).toISOString()
-          : undefined);
-      const issuedToken = issueActorAccessToken(
-        {
-          actorId: request.actorId,
-          actorRole: request.actorRole,
-          source: request.source,
-          allowedTransports: request.allowedTransports,
-          allowedCommands: request.allowedCommands,
-          allowedAdminActions: request.allowedAdminActions,
-          allowedCorpora: request.allowedCorpora,
-          validFrom: request.validFrom,
-          validUntil,
-          issuedAt
-        },
-        container.env.auth.issuerSecret
-      );
-      const warnings: string[] = [];
-      const inspection = container.authPolicy.inspectToken(issuedToken);
-      if (inspection.tokenKind === "issued" && inspection.claims?.tokenId) {
-        container.ports.issuedTokenStore.recordIssuedToken(inspection.claims, {
-          issuedBy: {
-            actorId: administrativeActor.actorId,
-            actorRole: administrativeActor.actorRole,
-            source: administrativeActor.source,
-            transport: administrativeActor.transport
-          }
-        });
-        warnings.push(
-          ...(await recordIssuedAuthTokenAudit({
-            auditHistoryService: container.services.auditHistoryService,
-            administrativeActor,
-            tokenId: inspection.claims.tokenId,
-            targetActorId: request.actorId,
-            targetActorRole: request.actorRole,
-            targetSource: request.source,
-            command: "issue-auth-token",
-            validFrom: request.validFrom,
-            validUntil,
-            hasAllowedCommands: (request.allowedCommands?.length ?? 0) > 0,
-            hasAllowedAdminActions: (request.allowedAdminActions?.length ?? 0) > 0,
-            hasAllowedCorpora: (request.allowedCorpora?.length ?? 0) > 0
-          })).warnings
-        );
-      }
-
       writeJson(
-        {
-          ok: true,
-          issuedToken,
-          claims: {
-            ...request,
-            issuedAt,
-            validUntil
-          },
-          ...(warnings.length > 0 ? { warnings } : {})
-        },
+        await issueAdministrativeAuthToken(
+          container,
+          buildCliAdministrativeActorContext(
+            "issue_auth_token",
+            extractAdministrativeActor(payload)
+          ),
+          validateIssueActorTokenControlRequest(payload),
+          {
+            commandLabel: "issue-auth-token"
+          }
+        ),
         parsed.options.pretty
       );
       process.exitCode = 0;
@@ -666,86 +490,26 @@ async function main(): Promise<void> {
       process.exitCode = 1;
       return;
     } finally {
-      issuerControlStore.close();
       container.dispose();
     }
   }
 
   if (parsed.command === "revoke-auth-token") {
     const container = buildServiceContainer(loadEnvironment());
-    const issuerControlStore = new SqliteAuthIssuerControlStore(
-      container.env.sqlitePath
-    );
-    const issuerLifecycleService = new AuthIssuerLifecycleService(
-      container.authPolicy,
-      issuerControlStore,
-      container.services.auditHistoryService
-    );
     try {
-      if (!container.env.auth.issuedTokenRevocationPath) {
-        throw new Error(
-          "MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_PATH must be configured to revoke actor access tokens."
-        );
-      }
-
       const payload = await loadCommandPayload(parsed.options);
-      const administrativeActor = buildAdministrativeActorContext(
-        "revoke_auth_token",
-        extractAdministrativeActor(payload)
-      );
-      container.authPolicy.authorizeAdministrativeAction(
-        "revoke_auth_token",
-        administrativeActor
-      );
-      issuerLifecycleService.assertAdministrativeActionAllowed(
-        administrativeActor,
-        "revoke_auth_token"
-      );
-      const request = validateRevokeActorTokenControlRequest(
-        payload
-      );
-      const revocationStore = await FileIssuedTokenRevocationStore.create(
-        container.env.auth.issuedTokenRevocationPath,
-        container.authPolicy.getRevokedIssuedTokenIds()
-      );
-      const tokenId = resolveIssuedTokenIdForRevocation(request, container.authPolicy);
-      const revocation = await revocationStore.revokeTokenId(tokenId);
-      container.authPolicy.revokeIssuedTokenId(tokenId);
-      const ledgerRevocation = container.ports.issuedTokenStore.markTokenRevoked(
-        tokenId,
-        {
-          reason: request.reason,
-          revokedBy: {
-            actorId: administrativeActor.actorId,
-            actorRole: administrativeActor.actorRole,
-            source: administrativeActor.source,
-            transport: administrativeActor.transport
-          }
-        }
-      );
-      const warnings = (
-        await recordRevokedAuthTokenAudit({
-          auditHistoryService: container.services.auditHistoryService,
-          administrativeActor,
-          tokenId,
-          command: "revoke-auth-token",
-          reason: request.reason,
-          alreadyRevoked: revocation.alreadyRevoked,
-          persisted: revocation.persisted,
-          recordedTokenFound: ledgerRevocation.found
-        })
-      ).warnings;
-
       writeJson(
-        {
-          ok: true,
-          revokedTokenId: tokenId,
-          alreadyRevoked: revocation.alreadyRevoked,
-          persisted: revocation.persisted,
-          recordedTokenFound: ledgerRevocation.found,
-          reason: request.reason,
-          ...(warnings.length > 0 ? { warnings } : {})
-        },
+        await revokeAdministrativeAuthToken(
+          container,
+          buildCliAdministrativeActorContext(
+            "revoke_auth_token",
+            extractAdministrativeActor(payload)
+          ),
+          validateRevokeActorTokenControlRequest(payload),
+          {
+            commandLabel: "revoke-auth-token"
+          }
+        ),
         parsed.options.pretty
       );
       process.exitCode = 0;
@@ -755,59 +519,26 @@ async function main(): Promise<void> {
       process.exitCode = 1;
       return;
     } finally {
-      issuerControlStore.close();
       container.dispose();
     }
   }
 
   if (parsed.command === "revoke-auth-tokens") {
     const container = buildServiceContainer(loadEnvironment());
-    const issuerControlStore = new SqliteAuthIssuerControlStore(
-      container.env.sqlitePath
-    );
-    const issuerLifecycleService = new AuthIssuerLifecycleService(
-      container.authPolicy,
-      issuerControlStore,
-      container.services.auditHistoryService
-    );
     try {
       const payload = await loadCommandPayload(parsed.options);
-      const administrativeActor = buildAdministrativeActorContext(
-        "revoke_auth_tokens",
-        extractAdministrativeActor(payload)
-      );
-      container.authPolicy.authorizeAdministrativeAction(
-        "revoke_auth_tokens",
-        administrativeActor
-      );
-      issuerLifecycleService.assertAdministrativeActionAllowed(
-        administrativeActor,
-        "revoke_auth_tokens"
-      );
-      const request = validateRevokeIssuedActorTokensControlRequest(payload);
-      const revocationStore = request.dryRun
-        ? undefined
-        : await FileIssuedTokenRevocationStore.create(
-            requireIssuedTokenRevocationPath(
-              container.env.auth.issuedTokenRevocationPath
-            ),
-            container.authPolicy.getRevokedIssuedTokenIds()
-          );
-      const result = await executeBulkIssuedTokenRevocation({
-        request,
-        issuedTokenStore: container.ports.issuedTokenStore,
-        authPolicy: container.authPolicy,
-        administrativeActor,
-        auditHistoryService: container.services.auditHistoryService,
-        command: "revoke-auth-tokens",
-        revocationStore
-      });
-
       writeJson(
-        {
-          ok: true,
-          ...result
-        },
+        await revokeAdministrativeAuthTokens(
+          container,
+          buildCliAdministrativeActorContext(
+            "revoke_auth_tokens",
+            extractAdministrativeActor(payload)
+          ),
+          validateRevokeIssuedActorTokensControlRequest(payload),
+          {
+            commandLabel: "revoke-auth-tokens"
+          }
+        ),
         parsed.options.pretty
       );
       process.exitCode = 0;
@@ -817,42 +548,23 @@ async function main(): Promise<void> {
       process.exitCode = 1;
       return;
     } finally {
-      issuerControlStore.close();
       container.dispose();
     }
   }
 
   if (parsed.command === "set-auth-issuer-state") {
     const container = buildServiceContainer(loadEnvironment());
-    const issuerControlStore = new SqliteAuthIssuerControlStore(
-      container.env.sqlitePath
-    );
-    const issuerLifecycleService = new AuthIssuerLifecycleService(
-      container.authPolicy,
-      issuerControlStore,
-      container.services.auditHistoryService
-    );
     try {
       const payload = await loadCommandPayload(parsed.options);
-      const administrativeActor = buildAdministrativeActorContext(
-        "manage_auth_issuers",
-        extractAdministrativeActor(payload)
-      );
-      container.authPolicy.authorizeAdministrativeAction(
-        "manage_auth_issuers",
-        administrativeActor
-      );
-      const request = validateSetAuthIssuerStateControlRequest(payload);
-      const issuer = await issuerLifecycleService.setIssuerState(
-        request,
-        administrativeActor
-      );
-
       writeJson(
-        {
-          ok: true,
-          issuer
-        },
+        await setAdministrativeAuthIssuerState(
+          container,
+          buildCliAdministrativeActorContext(
+            "manage_auth_issuers",
+            extractAdministrativeActor(payload)
+          ),
+          validateSetAuthIssuerStateControlRequest(payload)
+        ),
         parsed.options.pretty
       );
       process.exitCode = 0;
@@ -862,7 +574,6 @@ async function main(): Promise<void> {
       process.exitCode = 1;
       return;
     } finally {
-      issuerControlStore.close();
       container.dispose();
     }
   }
@@ -904,7 +615,7 @@ function parseCli(argv: string[]): ParsedCli {
     apply: false
   };
 
-  let command: CommandName | undefined;
+  let command: CliCommandName | undefined;
 
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index];
@@ -965,8 +676,8 @@ function parseCli(argv: string[]): ParsedCli {
     }
 
     if (!command) {
-      if (COMMANDS.includes(value as CommandName)) {
-        command = value as CommandName;
+      if (COMMANDS.includes(value as CliCommandName)) {
+        command = value as CliCommandName;
         continue;
       }
 
@@ -1156,52 +867,6 @@ function buildActorContext(command: RuntimeCliCommandName, actor: unknown): Acto
       input.toolboxProfileId ??
       activeProfile
   };
-}
-
-function buildAdministrativeActorContext(
-  administrativeAction: AdministrativeAction,
-  actor: unknown
-): ActorContext {
-  const input = actor && typeof actor === "object" ? actor as Partial<ActorContext> : {};
-  const now = new Date().toISOString();
-  const activeProfile = process.env.MAB_TOOLBOX_ACTIVE_PROFILE?.trim() || undefined;
-  const sessionPolicyToken =
-    input.sessionPolicyToken ??
-    process.env.MAB_TOOLBOX_SESSION_POLICY_TOKEN?.trim() ??
-    undefined;
-
-  return {
-    actorId: input.actorId ?? `${administrativeAction}-cli`,
-    actorRole: input.actorRole ?? "operator",
-    transport: "cli",
-    source: input.source ?? "mimir-cli-admin",
-    requestId: input.requestId ?? randomUUID(),
-    initiatedAt: input.initiatedAt ?? now,
-    toolName: input.toolName ?? administrativeAction,
-    authToken: input.authToken,
-    sessionPolicyToken,
-    toolboxSessionMode:
-      input.toolboxSessionMode ??
-      (process.env.MAB_TOOLBOX_SESSION_MODE?.trim() as ActorContext["toolboxSessionMode"] | undefined) ??
-      (activeProfile
-        ? (activeProfile === "bootstrap" ? "toolbox-bootstrap" : "toolbox-activated")
-        : undefined),
-    toolboxClientId:
-      input.toolboxClientId ??
-      process.env.MAB_TOOLBOX_CLIENT_ID?.trim() ??
-      undefined,
-    toolboxProfileId:
-      input.toolboxProfileId ??
-      activeProfile
-  };
-}
-
-function extractAdministrativeActor(payload: unknown): unknown {
-  if (!payload || typeof payload !== "object") {
-    return undefined;
-  }
-
-  return (payload as JsonRecord).actor;
 }
 
 function normalizeCommandRequest(command: RuntimeCliCommandName, request: JsonRecord): JsonRecord {
@@ -1453,73 +1118,4 @@ function optionalCliInteger(
   }
 
   return value;
-}
-
-function validateFreshnessStatusRequest(payload: JsonRecord): {
-  asOf?: string;
-  expiringWithinDays?: number;
-  corpusId?: "mimisbrunnr" | "general_notes";
-  limitPerCategory?: number;
-} {
-  const corpusId =
-    payload.corpusId === undefined
-      ? undefined
-      : requireCliCorpus(payload.corpusId, "corpusId");
-
-  return {
-    asOf: optionalCliString(payload.asOf, "asOf"),
-    expiringWithinDays: optionalCliInteger(
-      payload.expiringWithinDays,
-      "expiringWithinDays",
-      1
-    ),
-    corpusId,
-    limitPerCategory: optionalCliInteger(
-      payload.limitPerCategory,
-      "limitPerCategory",
-      1
-    )
-  };
-}
-
-function requireCliCorpus(value: unknown, field: string): CliCorpusId {
-  const normalized = normalizeCliCorpus(requireCliString(value, field));
-  if (!CORPORA.includes(normalized as CliCorpusId)) {
-    throw new Error(
-      `Invalid freshness-status field '${field}': must be one of ${CORPORA.join(", ")}.`
-    );
-  }
-
-  return normalized as CliCorpusId;
-}
-
-function normalizeCliCorpus(value: string): string {
-  return CLI_CORPUS_ALIASES.get(value.trim().toLowerCase()) ?? value;
-}
-
-function resolveIssuedTokenIdForRevocation(
-  request: ReturnType<typeof validateRevokeActorTokenControlRequest>,
-  authPolicy: ActorAuthorizationPolicy
-): string {
-  if (request.tokenId) {
-    return request.tokenId;
-  }
-
-  const inspection = authPolicy.inspectToken(request.token ?? "");
-  if (inspection.tokenKind !== "issued" || !inspection.claims?.tokenId) {
-    throw new Error("revoke-auth-token requires a valid issued actor token or tokenId.");
-  }
-
-  return inspection.claims.tokenId;
-}
-
-function requireIssuedTokenRevocationPath(filePath?: string): string {
-  const normalized = filePath?.trim();
-  if (!normalized) {
-    throw new Error(
-      "MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_PATH must be configured to revoke actor access tokens."
-    );
-  }
-
-  return normalized;
 }
