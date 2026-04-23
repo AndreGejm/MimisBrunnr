@@ -1,6 +1,7 @@
 import type { LocalReasoningProvider } from "@mimir/application";
 import type {
   ContextCandidate,
+  PaidExecutionTelemetryDetails,
   PaidExecutionOutcomeClass,
   PaidExecutionTelemetry
 } from "@mimir/contracts";
@@ -20,6 +21,15 @@ import {
   findMissingVoltAgentCredentialForModels,
   parseVoltAgentProviderModel
 } from "./voltagent-provider-support.js";
+import {
+  VoltAgentRoleProfileGuardrailError,
+  assertPaidEscalationInputAllowed,
+  assertPaidEscalationOutputAllowed,
+  buildPaidEscalationVoltAgentProfile,
+  normalizePaidEscalationInput,
+  normalizePaidEscalationOutput,
+  normalizePaidEscalationPromptPayload
+} from "./voltagent-role-profile.js";
 
 type ReasoningTask = "intent" | "answerability" | "uncertainty";
 
@@ -60,6 +70,7 @@ export class VoltAgentReasoningAdapter implements LocalReasoningProvider {
   readonly providerId = "voltagent_agent";
 
   private readonly credentialEnv: NodeJS.ProcessEnv;
+  private readonly roleProfile = buildPaidEscalationVoltAgentProfile();
   private readonly runtime: VoltAgentHarnessRuntime;
   private lastTelemetry?: PaidExecutionTelemetry;
 
@@ -73,6 +84,12 @@ export class VoltAgentReasoningAdapter implements LocalReasoningProvider {
       temperature: options.temperature ?? 0,
       maxOutputTokens: options.maxOutputTokens,
       maxRetries: 1,
+      hooks: this.roleProfile.hooks,
+      inputMiddlewares: this.roleProfile.inputMiddlewares,
+      outputMiddlewares: this.roleProfile.outputMiddlewares,
+      inputGuardrails: this.roleProfile.inputGuardrails,
+      outputGuardrails: this.roleProfile.outputGuardrails,
+      telemetryDetails: this.roleProfile.telemetryDetails,
       createAgent: options.createAgent
     });
   }
@@ -84,6 +101,7 @@ export class VoltAgentReasoningAdapter implements LocalReasoningProvider {
   }
 
   async classifyIntent(query: string): Promise<QueryIntent> {
+    const prompt = this.preparePromptOrThrow(normalizePaidEscalationInput(`Query: ${query}`));
     return this.executeTask<QueryIntent>({
       task: "intent",
       fallback: async () =>
@@ -94,7 +112,7 @@ export class VoltAgentReasoningAdapter implements LocalReasoningProvider {
         const result = await this.runtime.generateObject({
           taskName: "mimir-paid-intent",
           instructions: instructionsForTask("intent"),
-          prompt: `Query: ${query}`,
+          prompt,
           schema: z.object({
             intent: z.enum(QUERY_INTENT_VALUES)
           }),
@@ -111,6 +129,26 @@ export class VoltAgentReasoningAdapter implements LocalReasoningProvider {
     intent: QueryIntent;
     candidates: ContextCandidate[];
   }): Promise<AnswerabilityDisposition> {
+    const prompt = this.preparePromptOrThrow(
+      normalizePaidEscalationInput(
+        JSON.stringify(
+          normalizePaidEscalationPromptPayload({
+            query: input.query,
+            intent: input.intent,
+            evidence: input.candidates.slice(0, 4).map((candidate) => ({
+              noteType: candidate.noteType,
+              score: Number(candidate.score.toFixed(3)),
+              summary: candidate.summary,
+              scope: candidate.scope,
+              stalenessClass: candidate.stalenessClass,
+              notePath: candidate.provenance.notePath
+            }))
+          }),
+          null,
+          2
+        )
+      )
+    );
     return this.executeTask<AnswerabilityDisposition>({
       task: "answerability",
       fallback: async () =>
@@ -121,22 +159,7 @@ export class VoltAgentReasoningAdapter implements LocalReasoningProvider {
         const result = await this.runtime.generateObject({
           taskName: "mimir-paid-answerability",
           instructions: instructionsForTask("answerability"),
-          prompt: JSON.stringify(
-            {
-              query: input.query,
-              intent: input.intent,
-              evidence: input.candidates.slice(0, 4).map((candidate) => ({
-                noteType: candidate.noteType,
-                score: Number(candidate.score.toFixed(3)),
-                summary: candidate.summary,
-                scope: candidate.scope,
-                stalenessClass: candidate.stalenessClass,
-                notePath: candidate.provenance.notePath
-              }))
-            },
-            null,
-            2
-          ),
+          prompt,
           schema: z.object({
             answerability: z.enum(ANSWERABILITY_VALUES)
           }),
@@ -149,6 +172,18 @@ export class VoltAgentReasoningAdapter implements LocalReasoningProvider {
   }
 
   async summarizeUncertainty(query: string, evidence: string[]): Promise<string> {
+    const prompt = this.preparePromptOrThrow(
+      normalizePaidEscalationInput(
+        JSON.stringify(
+          normalizePaidEscalationPromptPayload({
+            query,
+            evidence: evidence.slice(0, 5)
+          }),
+          null,
+          2
+        )
+      )
+    );
     return this.executeTask<string>({
       task: "uncertainty",
       fallback: async () =>
@@ -159,21 +194,16 @@ export class VoltAgentReasoningAdapter implements LocalReasoningProvider {
         const result = await this.runtime.generateObject({
           taskName: "mimir-paid-uncertainty",
           instructions: instructionsForTask("uncertainty"),
-          prompt: JSON.stringify(
-            {
-              query,
-              evidence: evidence.slice(0, 5)
-            },
-            null,
-            2
-          ),
+          prompt,
           schema: z.object({
             summary: z.string().trim().min(1)
           }),
           maxOutputTokens: TASK_TOKEN_BUDGET.uncertainty
         });
 
-        return result.summary;
+        const output = normalizePaidEscalationOutput({ summary: result.summary });
+        assertPaidEscalationOutputAllowed(output);
+        return output.summary ?? "";
       }
     });
   }
@@ -226,6 +256,21 @@ export class VoltAgentReasoningAdapter implements LocalReasoningProvider {
       this.lastTelemetry = this.runtime.consumePaidExecutionTelemetry();
       return result;
     } catch (error) {
+      if (error instanceof VoltAgentRoleProfileGuardrailError) {
+        return this.failOrFallback<T>({
+          message: error.message,
+          telemetry: this.createTelemetry(
+            "provider_error",
+            false,
+            0,
+            error.code,
+            { blockedByGuardrail: error.blockedBy }
+          ),
+          fallback: input.fallback,
+          cause: error
+        });
+      }
+
       const harnessTelemetry =
         error instanceof VoltAgentHarnessRuntimeError
           ? error.telemetry
@@ -271,7 +316,8 @@ export class VoltAgentReasoningAdapter implements LocalReasoningProvider {
     outcomeClass: PaidExecutionOutcomeClass,
     fallbackApplied: boolean,
     retryCount: number,
-    errorCode?: string
+    errorCode?: string,
+    details?: PaidExecutionTelemetryDetails
   ): PaidExecutionTelemetry {
     return createVoltAgentTelemetry({
       providerId: this.providerId,
@@ -280,8 +326,56 @@ export class VoltAgentReasoningAdapter implements LocalReasoningProvider {
       outcomeClass,
       fallbackApplied,
       retryCount,
-      errorCode
+      errorCode,
+      details: {
+        ...this.roleProfile.telemetryDetails,
+        ...details
+      }
     });
+  }
+
+  private preparePromptOrThrow(
+    prompt: string | unknown[] | Record<string, unknown>[]
+  ): string {
+    if (typeof prompt !== "string") {
+      const telemetry = this.createTelemetry(
+        "provider_error",
+        false,
+        0,
+        "voltagent_input_guardrail_blocked",
+        { blockedByGuardrail: "input" }
+      );
+      this.lastTelemetry = telemetry;
+      throw new VoltAgentProviderError(
+        telemetry.errorCode ?? "voltagent_input_guardrail_blocked",
+        telemetry,
+        "Paid escalation input must be normalized to a string prompt before invocation."
+      );
+    }
+
+    try {
+      assertPaidEscalationInputAllowed(prompt);
+      return prompt;
+    } catch (error) {
+      if (error instanceof VoltAgentRoleProfileGuardrailError) {
+        const telemetry = this.createTelemetry(
+          "provider_error",
+          false,
+          0,
+          error.code,
+          { blockedByGuardrail: error.blockedBy }
+        );
+        this.lastTelemetry = telemetry;
+        throw new VoltAgentProviderError(
+          telemetry.errorCode ?? "voltagent_input_guardrail_blocked",
+          telemetry,
+          error.message,
+          { cause: error }
+        );
+      }
+
+      throw error;
+    }
   }
 }
 

@@ -3,6 +3,7 @@ import type {
   CodingAdvisoryResult,
   ExecuteCodingTaskRequest,
   ExecuteCodingTaskResponse,
+  PaidExecutionTelemetryDetails,
   PaidExecutionTelemetry
 } from "@mimir/contracts";
 import { z } from "zod";
@@ -17,6 +18,14 @@ import {
   findMissingVoltAgentCredentialForModels,
   parseVoltAgentProviderModel
 } from "./voltagent-provider-support.js";
+import {
+  VoltAgentRoleProfileGuardrailError,
+  assertCodingAdvisoryInputAllowed,
+  assertCodingAdvisoryOutputAllowed,
+  buildCodingAdvisoryVoltAgentProfile,
+  normalizeCodingAdvisoryOutput,
+  normalizeCodingAdvisoryPromptPayload
+} from "./voltagent-role-profile.js";
 
 const CODING_ADVISORY_ACTIONS = [
   "retry_local",
@@ -38,6 +47,7 @@ export class VoltAgentCodingAdvisoryAdapter implements CodingAdvisoryProvider {
   readonly providerId = "voltagent_agent";
 
   private readonly credentialEnv: NodeJS.ProcessEnv;
+  private readonly roleProfile = buildCodingAdvisoryVoltAgentProfile();
   private readonly runtime: VoltAgentHarnessRuntime;
   private lastTelemetry?: PaidExecutionTelemetry;
 
@@ -51,6 +61,12 @@ export class VoltAgentCodingAdvisoryAdapter implements CodingAdvisoryProvider {
       temperature: options.temperature ?? 0,
       maxOutputTokens: options.maxOutputTokens,
       maxRetries: 1,
+      hooks: this.roleProfile.hooks,
+      inputMiddlewares: this.roleProfile.inputMiddlewares,
+      outputMiddlewares: this.roleProfile.outputMiddlewares,
+      inputGuardrails: this.roleProfile.inputGuardrails,
+      outputGuardrails: this.roleProfile.outputGuardrails,
+      telemetryDetails: this.roleProfile.telemetryDetails,
       createAgent: options.createAgent
     });
   }
@@ -103,6 +119,15 @@ export class VoltAgentCodingAdvisoryAdapter implements CodingAdvisoryProvider {
     }
 
     try {
+      const prompt = JSON.stringify(
+        normalizeCodingAdvisoryPromptPayload(
+          buildCodingAdvisoryPrompt(input.request, input.localResponse)
+        ),
+        null,
+        2
+      );
+      assertCodingAdvisoryInputAllowed(prompt);
+
       const result = await this.runtime.generateObject({
         taskName: "mimir-coding-advisory",
         instructions: [
@@ -112,32 +137,34 @@ export class VoltAgentCodingAdvisoryAdapter implements CodingAdvisoryProvider {
           "Recommend exactly one next action.",
           "Keep the summary concise and the suggested checks concrete."
         ].join(" "),
-        prompt: JSON.stringify(
-          buildCodingAdvisoryPrompt(input.request, input.localResponse),
-          null,
-          2
-        ),
+        prompt,
         schema: z.object({
           recommendedAction: z.enum(CODING_ADVISORY_ACTIONS),
           summary: z.string().trim().min(1),
-          suggestedChecks: z.array(z.string().trim().min(1)).max(5)
+          suggestedChecks: z.array(z.string().trim().min(1)).min(1).max(5)
         }),
         maxOutputTokens: 220
       });
 
       this.lastTelemetry = this.runtime.consumePaidExecutionTelemetry();
+      const advisory = normalizeCodingAdvisoryOutput(result);
+      assertCodingAdvisoryOutputAllowed(advisory);
       return {
         invoked: true,
         modelRole: "coding_advisory",
         providerId: this.providerId,
         modelId: this.options.model,
-        recommendedAction: result.recommendedAction,
-        summary: result.summary,
-        suggestedChecks: result.suggestedChecks
+        recommendedAction: advisory.recommendedAction,
+        summary: advisory.summary,
+        suggestedChecks: advisory.suggestedChecks
       };
     } catch (error) {
       const telemetry =
-        error instanceof VoltAgentHarnessRuntimeError
+        error instanceof VoltAgentRoleProfileGuardrailError
+          ? this.createTelemetry("provider_error", error.code, {
+              blockedByGuardrail: error.blockedBy
+            })
+          : error instanceof VoltAgentHarnessRuntimeError
           ? error.telemetry
           : this.runtime.consumePaidExecutionTelemetry() ??
             this.createTelemetry("provider_error", "voltagent_unknown");
@@ -157,7 +184,8 @@ export class VoltAgentCodingAdvisoryAdapter implements CodingAdvisoryProvider {
 
   private createTelemetry(
     outcomeClass: PaidExecutionTelemetry["outcomeClass"],
-    errorCode?: string
+    errorCode?: string,
+    details?: PaidExecutionTelemetryDetails
   ): PaidExecutionTelemetry {
     return createVoltAgentTelemetry({
       providerId: this.providerId,
@@ -166,7 +194,11 @@ export class VoltAgentCodingAdvisoryAdapter implements CodingAdvisoryProvider {
       outcomeClass,
       fallbackApplied: false,
       retryCount: 0,
-      errorCode
+      errorCode,
+      details: {
+        ...this.roleProfile.telemetryDetails,
+        ...details
+      }
     });
   }
 }

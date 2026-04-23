@@ -10,6 +10,7 @@ import {
 } from "@voltagent/core";
 import { classifyProviderError } from "@mimir/application";
 import type {
+  PaidExecutionTelemetryDetails,
   PaidExecutionOutcomeClass,
   PaidExecutionTelemetry
 } from "@mimir/contracts";
@@ -64,6 +65,7 @@ export interface VoltAgentHarnessRuntimeOptions {
   outputMiddlewares?: OutputMiddleware<any>[];
   inputGuardrails?: InputGuardrail[];
   outputGuardrails?: OutputGuardrail<any>[];
+  telemetryDetails?: PaidExecutionTelemetryDetails;
   createAgent?: VoltAgentHarnessAgentFactory;
 }
 
@@ -79,6 +81,8 @@ export interface VoltAgentHarnessObjectRequest<TSchema extends z.ZodType> {
 interface HarnessTelemetryState {
   retryCount: number;
   fallbackApplied: boolean;
+  retrySources: Set<"llm" | "middleware">;
+  fallbackModelId?: string;
 }
 
 export class VoltAgentHarnessRuntimeError extends Error {
@@ -112,7 +116,8 @@ export class VoltAgentHarnessRuntime {
   ): Promise<z.infer<TSchema>> {
     const telemetryState: HarnessTelemetryState = {
       retryCount: 0,
-      fallbackApplied: false
+      fallbackApplied: false,
+      retrySources: new Set()
     };
     const maxRetries = this.options.maxRetries ?? 1;
     const agent = this.createAgent({
@@ -174,10 +179,13 @@ export class VoltAgentHarnessRuntime {
           state.retryCount,
           args.source === "llm" ? args.nextAttempt : args.retryCount
         );
+        state.retrySources.add(args.source);
         await external?.onRetry?.(args);
       },
       onFallback: async (args) => {
         state.fallbackApplied = true;
+        state.fallbackModelId =
+          typeof args.nextModel === "string" ? args.nextModel : undefined;
         await external?.onFallback?.(args);
       },
       onError: async (args) => {
@@ -217,6 +225,16 @@ export class VoltAgentHarnessRuntime {
     state: HarnessTelemetryState,
     errorCode?: string
   ): PaidExecutionTelemetry {
+    const details = compactTelemetryDetails({
+      ...this.options.telemetryDetails,
+      ...(state.retrySources.size > 0
+        ? { retrySources: [...state.retrySources] }
+        : {}),
+      ...(state.fallbackModelId
+        ? { fallbackModelId: state.fallbackModelId }
+        : {})
+    });
+
     return {
       providerId: this.options.providerId,
       modelId:
@@ -225,7 +243,8 @@ export class VoltAgentHarnessRuntime {
       outcomeClass,
       fallbackApplied: state.fallbackApplied,
       retryCount: state.retryCount,
-      ...(errorCode ? { errorCode } : {})
+      ...(errorCode ? { errorCode } : {}),
+      ...(details ? { details } : {})
     };
   }
 
@@ -294,4 +313,20 @@ function mapClassifierToErrorCode(
     default:
       return "voltagent_unknown";
   }
+}
+
+function compactTelemetryDetails(
+  details: PaidExecutionTelemetryDetails
+): PaidExecutionTelemetryDetails | undefined {
+  const compacted = Object.fromEntries(
+    Object.entries(details).filter(([, value]) => {
+      if (value === undefined) {
+        return false;
+      }
+
+      return !Array.isArray(value) || value.length > 0;
+    })
+  ) as PaidExecutionTelemetryDetails;
+
+  return Object.keys(compacted).length > 0 ? compacted : undefined;
 }

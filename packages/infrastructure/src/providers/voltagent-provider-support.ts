@@ -1,4 +1,5 @@
 import type {
+  PaidExecutionTelemetryDetails,
   PaidExecutionOutcomeClass,
   PaidExecutionTelemetry
 } from "@mimir/contracts";
@@ -91,6 +92,7 @@ export function createVoltAgentTelemetry(input: {
   fallbackApplied: boolean;
   retryCount: number;
   errorCode?: string;
+  details?: PaidExecutionTelemetryDetails;
 }): PaidExecutionTelemetry {
   return {
     providerId: input.providerId,
@@ -99,6 +101,7 @@ export function createVoltAgentTelemetry(input: {
     outcomeClass: input.outcomeClass,
     fallbackApplied: input.fallbackApplied,
     retryCount: input.retryCount,
-    ...(input.errorCode ? { errorCode: input.errorCode } : {})
+    ...(input.errorCode ? { errorCode: input.errorCode } : {}),
+    ...(input.details ? { details: input.details } : {})
   };
 }

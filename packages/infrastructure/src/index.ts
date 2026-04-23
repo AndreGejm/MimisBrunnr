@@ -32,6 +32,7 @@ export * from "./providers/openai-compatible-local-reasoning-provider.js";
 export * from "./providers/provider-factory-registry.js";
 export * from "./providers/voltagent-coding-advisory-adapter.js";
 export * from "./providers/voltagent-harness-runtime.js";
+export * from "./providers/voltagent-role-profile.js";
 export * from "./providers/voltagent-reasoning-adapter.js";
 export * from "./sqlite/sqlite-audit-log.js";
 export * from "./sqlite/sqlite-context-namespace-store.js";

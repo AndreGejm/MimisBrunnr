@@ -8,6 +8,13 @@ export type PaidExecutionOutcomeClass =
   | "provider_error"
   | "degraded_fallback";
 
+export interface PaidExecutionTelemetryDetails {
+  roleProfile?: string;
+  blockedByGuardrail?: "input" | "output";
+  retrySources?: Array<"llm" | "middleware">;
+  fallbackModelId?: string;
+}
+
 export interface PaidExecutionTelemetry {
   providerId: string;
   modelId?: string;
@@ -16,4 +23,5 @@ export interface PaidExecutionTelemetry {
   fallbackApplied: boolean;
   retryCount: number;
   errorCode?: string;
+  details?: PaidExecutionTelemetryDetails;
 }
