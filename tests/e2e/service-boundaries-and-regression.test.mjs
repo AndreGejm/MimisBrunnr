@@ -38,9 +38,9 @@ test("default launcher compatibility includes old and shorthand aliases", () => 
   assert.ok(COMPATIBILITY_LAUNCHER_NAMES.includes("mab"));
 });
 
-test("cleanup runner is tracked in canonical scripts and targets mimir", async () => {
+test("maintenance runner is tracked in canonical scripts and targets mimir", async () => {
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-  const cleanupScriptPath = path.join(repoRoot, "scripts", "run-mimisbrunnr-cleanup.ps1");
+  const cleanupScriptPath = path.join(repoRoot, "scripts", "run-mimir-maintenance.mjs");
   const script = await fsReadFile(cleanupScriptPath, "utf8");
 
   assert.match(script, /launch-mimir-cli\.mjs/);

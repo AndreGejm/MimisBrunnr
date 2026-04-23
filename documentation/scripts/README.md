@@ -15,7 +15,7 @@ This directory contains narrow operator and launcher helpers. These scripts are 
 - `installers/windows/cli.ps1`: experimental headless Windows installer backend contract for `detect-environment`, `audit-install-surface`, `prepare-repo-workspace`, `audit-toolbox-assets`, `prepare-toolbox-runtime`, `audit-docker-mcp-toolkit`, `plan-docker-mcp-toolkit-apply`, `plan-client-access`, `apply-client-access`, and `show-state`.
 - `installers/windows/installer.ps1`: thin wrapper over `installers/windows/cli.ps1` reserved for later GUI work.
 - `review-note-gui.py`: local GUI helper for reviewing staged notes.
-- `run-mimisbrunnr-cleanup.ps1`: governed maintenance wrapper that inspects the review queue and freshness status, and can create refresh drafts through mimir without editing memory files directly.
+- `run-mimir-maintenance.mjs`: governed maintenance wrapper that inspects the review queue and freshness status, and can create refresh drafts through mimir without editing memory files directly.
 
 ## What these scripts are not
 
