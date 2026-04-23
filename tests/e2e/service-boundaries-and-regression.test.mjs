@@ -7,9 +7,11 @@ import process from "node:process";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import * as application from "../../packages/application/dist/index.js";
+const orchestration = await import("../../packages/orchestration/dist/index.js");
 import {
   SqliteAuditLog,
   SqliteFtsIndex,
+  SqliteLocalAgentTraceStore,
   SqliteMetadataControlStore,
   buildServiceContainer,
   runRuntimeHealthChecks,
@@ -1371,6 +1373,7 @@ test("retrieve context uses the paid escalation provider to enrich uncertainty w
     vectorIndex: container.ports.vectorIndex,
     embeddingProvider: container.ports.embeddingProvider,
     localReasoningProvider: container.ports.localReasoningProvider,
+    auditHistoryService: container.services.auditHistoryService,
     paidEscalationProvider: {
       providerId: "paid-escalation-test",
       async classifyIntent() {
@@ -1383,6 +1386,16 @@ test("retrieve context uses the paid escalation provider to enrich uncertainty w
         assert.equal(query, "unmapped query with no local evidence");
         assert.deepEqual(evidence, []);
         return "Escalate to the paid provider for authoritative synthesis.";
+      },
+      consumePaidExecutionTelemetry() {
+        return {
+          providerId: "voltagent_agent",
+          modelId: "openai/gpt-4.1-mini",
+          timeoutMs: 12_000,
+          outcomeClass: "success",
+          fallbackApplied: false,
+          retryCount: 0
+        };
       }
     },
     rerankerProvider: container.ports.rerankerProvider
@@ -1413,6 +1426,22 @@ test("retrieve context uses the paid escalation provider to enrich uncertainty w
       "Paid escalation provider enriched the uncertainty summary."
     )
   );
+
+  const history = await container.services.auditHistoryService.queryHistory({
+    actor: actor("operator"),
+    limit: 10
+  });
+  assert.equal(history.ok, true);
+  const retrieveEntry = history.data.entries.find((entry) => entry.actionType === "retrieve_context");
+  assert.ok(retrieveEntry);
+  assert.deepEqual(retrieveEntry.detail.paidEscalation.telemetry, {
+    providerId: "voltagent_agent",
+    modelId: "openai/gpt-4.1-mini",
+    timeoutMs: 12_000,
+    outcomeClass: "success",
+    fallbackApplied: false,
+    retryCount: 0
+  });
 });
 
 test("retrieve context surfaces degraded vector mode explicitly while continuing lexical retrieval", async (t) => {
@@ -1788,6 +1817,298 @@ test("root orchestrator passes repoRoot into the vendored runtime for bounded co
 
   assert.equal(result.status, "fail");
   assert.doesNotMatch(result.reason, /allowed_patch_root|LOCAL_EXPERT_REPO_ROOT/i);
+});
+
+test("coding domain controller enriches escalations with coding advisory and records audit plus trace metadata", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-coding-advisory-success-"));
+  const sqlitePath = path.join(root, "state", "mimisbrunnr.sqlite");
+  const auditLog = new SqliteAuditLog(sqlitePath);
+  const localAgentTraceStore = new SqliteLocalAgentTraceStore(sqlitePath);
+  const auditHistoryService = new application.AuditHistoryService(auditLog);
+  const advisoryProvider = {
+    providerId: "voltagent_agent",
+    async adviseOnEscalation() {
+      return {
+        invoked: true,
+        modelRole: "coding_advisory",
+        providerId: "voltagent_agent",
+        modelId: "openai/gpt-4.1-mini",
+        recommendedAction: "manual_followup",
+        summary: "Inspect the patch-root guard and retry the local coding task.",
+        suggestedChecks: [
+          "Confirm repoRoot points at the intended checkout.",
+          "Retry the local coding task after narrowing the target file."
+        ]
+      };
+    },
+    consumePaidExecutionTelemetry() {
+      return {
+        providerId: "voltagent_agent",
+        modelId: "openai/gpt-4.1-mini",
+        timeoutMs: 18_000,
+        outcomeClass: "success",
+        fallbackApplied: false,
+        retryCount: 0
+      };
+    }
+  };
+  const advisoryService = new orchestration.CodingAdvisoryService(advisoryProvider);
+  const controller = new orchestration.CodingDomainController(
+    {
+      async executeTask() {
+        return {
+          status: "escalate",
+          reason: "Local runtime could not determine a safe patch root.",
+          attempts: 1,
+          escalationMetadata: {
+            providerErrorKind: "transport",
+            retryCount: 0
+          }
+        };
+      }
+    },
+    auditHistoryService,
+    localAgentTraceStore,
+    {
+      modelRole: "coding_primary",
+      modelId: "qwen3-coder"
+    },
+    undefined,
+    advisoryService
+  );
+  const request = {
+    actor: actor("operator"),
+    taskType: "propose_fix",
+    task: "Fix the writer promotion bug.",
+    context: "The local runtime could not apply a safe patch.",
+    repoRoot: "F:\\repo",
+    filePath: "src/foo.py"
+  };
+
+  t.after(async () => {
+    localAgentTraceStore.close();
+    auditLog.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const response = await controller.executeTask(request);
+
+  assert.equal(response.status, "escalate");
+  assert.deepEqual(response.codingAdvisory, {
+    invoked: true,
+    modelRole: "coding_advisory",
+    providerId: "voltagent_agent",
+    modelId: "openai/gpt-4.1-mini",
+    recommendedAction: "manual_followup",
+    summary: "Inspect the patch-root guard and retry the local coding task.",
+    suggestedChecks: [
+      "Confirm repoRoot points at the intended checkout.",
+      "Retry the local coding task after narrowing the target file."
+    ],
+    telemetry: {
+      providerId: "voltagent_agent",
+      modelId: "openai/gpt-4.1-mini",
+      timeoutMs: 18_000,
+      outcomeClass: "success",
+      fallbackApplied: false,
+      retryCount: 0
+    }
+  });
+
+  const traces = await controller.listTraces(request.actor.requestId);
+  assert.equal(traces.length, 2);
+  assert.equal(traces.at(-1).advisoryInvoked, true);
+  assert.equal(traces.at(-1).advisoryProviderId, "voltagent_agent");
+  assert.equal(traces.at(-1).advisoryOutcomeClass, "success");
+  assert.equal(traces.at(-1).advisoryRecommendedAction, "manual_followup");
+
+  const history = await auditHistoryService.queryHistory({
+    actor: actor("operator"),
+    limit: 10
+  });
+  assert.equal(history.ok, true);
+  const entry = history.data.entries.find((candidate) => candidate.actionType === "execute_coding_task");
+  assert.ok(entry);
+  assert.deepEqual(entry.detail.codingAdvisory, {
+    invoked: true,
+    advisoryReturned: true,
+    recommendedAction: "manual_followup",
+    summary: "Inspect the patch-root guard and retry the local coding task.",
+    suggestedChecks: [
+      "Confirm repoRoot points at the intended checkout.",
+      "Retry the local coding task after narrowing the target file."
+    ],
+    telemetry: {
+      providerId: "voltagent_agent",
+      modelId: "openai/gpt-4.1-mini",
+      timeoutMs: 18_000,
+      outcomeClass: "success",
+      fallbackApplied: false,
+      retryCount: 0
+    }
+  });
+});
+
+test("coding domain controller preserves local escalation semantics when coding advisory fails", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-coding-advisory-timeout-"));
+  const sqlitePath = path.join(root, "state", "mimisbrunnr.sqlite");
+  const auditLog = new SqliteAuditLog(sqlitePath);
+  const localAgentTraceStore = new SqliteLocalAgentTraceStore(sqlitePath);
+  const auditHistoryService = new application.AuditHistoryService(auditLog);
+  const advisoryProvider = {
+    providerId: "voltagent_agent",
+    async adviseOnEscalation() {
+      throw Object.assign(new Error("Timed out while waiting for advisory model output."), {
+        code: "voltagent_timeout"
+      });
+    },
+    consumePaidExecutionTelemetry() {
+      return {
+        providerId: "voltagent_agent",
+        modelId: "openai/gpt-4.1-mini",
+        timeoutMs: 18_000,
+        outcomeClass: "timeout",
+        fallbackApplied: false,
+        retryCount: 0,
+        errorCode: "voltagent_timeout"
+      };
+    }
+  };
+  const advisoryService = new orchestration.CodingAdvisoryService(advisoryProvider);
+  const controller = new orchestration.CodingDomainController(
+    {
+      async executeTask() {
+        return {
+          status: "escalate",
+          reason: "Local runtime could not determine a safe patch root.",
+          attempts: 1,
+          escalationMetadata: {
+            providerErrorKind: "transport",
+            retryCount: 0
+          }
+        };
+      }
+    },
+    auditHistoryService,
+    localAgentTraceStore,
+    {
+      modelRole: "coding_primary",
+      modelId: "qwen3-coder"
+    },
+    undefined,
+    advisoryService
+  );
+  const request = {
+    actor: actor("operator"),
+    taskType: "propose_fix",
+    task: "Fix the writer promotion bug.",
+    context: "The local runtime could not apply a safe patch.",
+    repoRoot: "F:\\repo",
+    filePath: "src/foo.py"
+  };
+
+  t.after(async () => {
+    localAgentTraceStore.close();
+    auditLog.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const response = await controller.executeTask(request);
+
+  assert.equal(response.status, "escalate");
+  assert.equal(response.reason, "Local runtime could not determine a safe patch root.");
+  assert.equal("codingAdvisory" in response, false);
+
+  const traces = await controller.listTraces(request.actor.requestId);
+  assert.equal(traces.length, 2);
+  assert.equal(traces.at(-1).advisoryInvoked, true);
+  assert.equal(traces.at(-1).advisoryOutcomeClass, "timeout");
+  assert.equal(traces.at(-1).advisoryErrorCode, "voltagent_timeout");
+
+  const history = await auditHistoryService.queryHistory({
+    actor: actor("operator"),
+    limit: 10
+  });
+  assert.equal(history.ok, true);
+  const entry = history.data.entries.find((candidate) => candidate.actionType === "execute_coding_task");
+  assert.ok(entry);
+  assert.deepEqual(entry.detail.codingAdvisory, {
+    invoked: true,
+    advisoryReturned: false,
+    telemetry: {
+      providerId: "voltagent_agent",
+      modelId: "openai/gpt-4.1-mini",
+      timeoutMs: 18_000,
+      outcomeClass: "timeout",
+      fallbackApplied: false,
+      retryCount: 0,
+      errorCode: "voltagent_timeout"
+    }
+  });
+});
+
+test("coding advisory is not invoked for non-escalation local coding outcomes", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-coding-advisory-invariants-"));
+  const sqlitePath = path.join(root, "state", "mimisbrunnr.sqlite");
+  const auditLog = new SqliteAuditLog(sqlitePath);
+  const localAgentTraceStore = new SqliteLocalAgentTraceStore(sqlitePath);
+  const auditHistoryService = new application.AuditHistoryService(auditLog);
+  let advisoryCalls = 0;
+  const advisoryProvider = {
+    providerId: "voltagent_agent",
+    async adviseOnEscalation() {
+      advisoryCalls += 1;
+      throw new Error("Coding advisory should not be invoked for non-escalation outcomes.");
+    }
+  };
+  const advisoryService = new orchestration.CodingAdvisoryService(advisoryProvider);
+
+  t.after(async () => {
+    localAgentTraceStore.close();
+    auditLog.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  for (const [status, reason] of [
+    ["success", "Local coding task completed."],
+    ["fail", "Local coding task failed validation."]
+  ]) {
+    const controller = new orchestration.CodingDomainController(
+      {
+        async executeTask() {
+          return {
+            status,
+            reason,
+            attempts: 1
+          };
+        }
+      },
+      auditHistoryService,
+      localAgentTraceStore,
+      {
+        modelRole: "coding_primary",
+        modelId: "qwen3-coder"
+      },
+      undefined,
+      advisoryService
+    );
+    const request = {
+      actor: actor("operator"),
+      taskType: "propose_fix",
+      task: `Handle ${status} outcome.`,
+      context: "Non-escalation invariants should skip advisory invocation.",
+      repoRoot: "F:\\repo",
+      filePath: "src/foo.py"
+    };
+
+    const response = await controller.executeTask(request);
+
+    assert.equal(response.status, status);
+    assert.equal(response.reason, reason);
+    assert.equal("codingAdvisory" in response, false);
+  }
+
+  assert.equal(advisoryCalls, 0);
 });
 
 async function createHarness(t, overrides = {}) {

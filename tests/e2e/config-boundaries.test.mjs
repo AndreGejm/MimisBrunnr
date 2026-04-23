@@ -96,6 +96,35 @@ test("loadProviderConfig preserves alias precedence and role-bound model overrid
   assert.equal(provider.ollamaDraftingModel, "current-model");
 });
 
+test("loadProviderConfig adds a disabled coding_advisory role binding by default", () => {
+  const provider = loadProviderConfig(envFixture());
+
+  assert.equal(provider.roleBindings.coding_advisory.role, "coding_advisory");
+  assert.equal(provider.roleBindings.coding_advisory.providerId, "disabled");
+});
+
+test("loadProviderConfig parses role-scoped VoltAgent fallback model bindings", () => {
+  const provider = loadProviderConfig(envFixture({
+    MAB_ROLE_PAID_ESCALATION_PROVIDER: "voltagent_agent",
+    MAB_ROLE_PAID_ESCALATION_MODEL: "openai/gpt-4.1-mini",
+    MAB_ROLE_PAID_ESCALATION_FALLBACK_MODEL: "anthropic/claude-sonnet-4",
+    MAB_ROLE_CODING_ADVISORY_PROVIDER: "voltagent_agent",
+    MAB_ROLE_CODING_ADVISORY_MODEL: "openai/gpt-4.1-mini",
+    MAB_ROLE_CODING_ADVISORY_FALLBACK_MODELS_JSON: JSON.stringify([
+      "anthropic/claude-sonnet-4",
+      "anthropic/claude-3-5-sonnet"
+    ])
+  }));
+
+  assert.deepEqual(provider.roleBindings.paid_escalation.fallbackModelIds, [
+    "anthropic/claude-sonnet-4"
+  ]);
+  assert.deepEqual(provider.roleBindings.coding_advisory.fallbackModelIds, [
+    "anthropic/claude-sonnet-4",
+    "anthropic/claude-3-5-sonnet"
+  ]);
+});
+
 test("loadAuthConfig merges file-backed and inline registry state", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "mimir-auth-config-"));
   const actorRegistryPath = path.join(root, "actors.json");

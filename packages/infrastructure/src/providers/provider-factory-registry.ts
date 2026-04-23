@@ -1,4 +1,5 @@
 import type {
+  CodingAdvisoryProvider,
   DraftingProvider,
   EmbeddingProvider,
   LocalReasoningProvider,
@@ -9,11 +10,14 @@ import type { AppEnvironment } from "../config/env.js";
 import { HashEmbeddingProvider } from "./hash-embedding-provider.js";
 import { HeuristicLocalReasoningProvider } from "./heuristic-local-reasoning-provider.js";
 import { HeuristicRerankerProvider } from "./heuristic-reranker-provider.js";
+import { InternalTestCodingAdvisoryProvider } from "./internal-test-coding-advisory-provider.js";
 import { OpenAiCompatibleLocalReasoningProvider } from "./openai-compatible-local-reasoning-provider.js";
 import { OllamaDraftingProvider } from "./ollama-drafting-provider.js";
 import { OllamaEmbeddingProvider } from "./ollama-embedding-provider.js";
 import { OllamaLocalReasoningProvider } from "./ollama-local-reasoning-provider.js";
 import { OllamaRerankerProvider } from "./ollama-reranker-provider.js";
+import { VoltAgentCodingAdvisoryAdapter } from "./voltagent-coding-advisory-adapter.js";
+import { VoltAgentReasoningAdapter } from "./voltagent-reasoning-adapter.js";
 
 export interface ProviderFactoryContext {
   env: AppEnvironment;
@@ -29,11 +33,19 @@ export type ReasoningProviderFactory = (
 export type DraftingProviderFactory = (
   context: ProviderFactoryContext
 ) => DraftingProvider | undefined;
+export type CodingAdvisoryProviderFactory = (
+  context: ProviderFactoryContext
+) => CodingAdvisoryProvider | undefined;
 export type RerankerProviderFactory = (
   context: ProviderFactoryContext
 ) => RerankerProvider | undefined;
 
-type ProviderFamily = "embedding" | "reasoning" | "drafting" | "reranker";
+type ProviderFamily =
+  | "embedding"
+  | "reasoning"
+  | "drafting"
+  | "coding advisory"
+  | "reranker";
 
 type ProviderFactory<TProvider> = (
   context: ProviderFactoryContext
@@ -43,6 +55,7 @@ export class ProviderFactoryRegistry {
   private readonly embeddingFactories = new Map<string, EmbeddingProviderFactory>();
   private readonly reasoningFactories = new Map<string, ReasoningProviderFactory>();
   private readonly draftingFactories = new Map<string, DraftingProviderFactory>();
+  private readonly codingAdvisoryFactories = new Map<string, CodingAdvisoryProviderFactory>();
   private readonly rerankerFactories = new Map<string, RerankerProviderFactory>();
 
   registerEmbedding(
@@ -66,6 +79,14 @@ export class ProviderFactoryRegistry {
     factory: DraftingProviderFactory
   ): this {
     this.draftingFactories.set(providerId, factory);
+    return this;
+  }
+
+  registerCodingAdvisory(
+    providerId: string,
+    factory: CodingAdvisoryProviderFactory
+  ): this {
+    this.codingAdvisoryFactories.set(providerId, factory);
     return this;
   }
 
@@ -97,6 +118,16 @@ export class ProviderFactoryRegistry {
 
   createDrafting(context: ProviderFactoryContext): DraftingProvider | undefined {
     return this.draftingFactories.get(context.binding.providerId)?.(context);
+  }
+
+  createCodingAdvisory(
+    context: ProviderFactoryContext
+  ): CodingAdvisoryProvider | undefined {
+    return this.resolveFactory(
+      this.codingAdvisoryFactories,
+      context.binding.providerId,
+      "coding advisory"
+    )(context);
   }
 
   createReranker(context: ProviderFactoryContext): RerankerProvider | undefined {
@@ -170,6 +201,23 @@ export function buildDefaultProviderFactoryRegistry(): ProviderFactoryRegistry {
           : new HeuristicLocalReasoningProvider()
       });
     })
+    .registerReasoning("voltagent_agent", ({ binding, env }) => {
+      if (!binding.modelId) {
+        return undefined;
+      }
+
+      return new VoltAgentReasoningAdapter({
+        model: binding.modelId,
+        fallbackModelIds: binding.fallbackModelIds,
+        timeoutMs: binding.timeoutMs,
+        temperature: binding.temperature,
+        seed: binding.seed,
+        maxOutputTokens: binding.maxOutputTokens,
+        fallback: env.disableProviderFallbacks
+          ? undefined
+          : new HeuristicLocalReasoningProvider()
+      });
+    })
     .registerDrafting("disabled", () => undefined)
     .registerDrafting("docker_ollama", ({ binding, env }) =>
       new OllamaDraftingProvider({
@@ -181,6 +229,32 @@ export function buildDefaultProviderFactoryRegistry(): ProviderFactoryRegistry {
         timeoutMs: binding.timeoutMs
       })
     )
+    .registerCodingAdvisory("disabled", () => undefined)
+    .registerCodingAdvisory("internal_test_stub", ({ binding, env }) => {
+      if (env.nodeEnv !== "test") {
+        throw new Error(
+          "Provider 'internal_test_stub' is only available when MAB_NODE_ENV is set to 'test'."
+        );
+      }
+
+      return new InternalTestCodingAdvisoryProvider({
+        modelId: binding.modelId,
+        timeoutMs: binding.timeoutMs
+      });
+    })
+    .registerCodingAdvisory("voltagent_agent", ({ binding }) => {
+      if (!binding.modelId) {
+        return undefined;
+      }
+
+      return new VoltAgentCodingAdvisoryAdapter({
+        model: binding.modelId,
+        fallbackModelIds: binding.fallbackModelIds,
+        timeoutMs: binding.timeoutMs,
+        temperature: binding.temperature,
+        maxOutputTokens: binding.maxOutputTokens
+      });
+    })
     .registerReranker("disabled", () => undefined)
     .registerReranker(
       "internal_heuristic",

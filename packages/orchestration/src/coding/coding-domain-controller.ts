@@ -3,6 +3,7 @@ import type {
   AuditHistoryService,
   ToolOutputBudgetService
 } from "@mimir/application";
+import { buildPaidExecutionAuditDetail } from "@mimir/application";
 import type {
   CodingValidationResult,
   ExecuteCodingTaskRequest,
@@ -13,6 +14,10 @@ import type {
   LocalAgentTraceStore
 } from "@mimir/domain";
 import type { CodingControllerBridge } from "./coding-controller-bridge.js";
+import {
+  CodingAdvisoryService,
+  type CodingAdvisoryInvocation
+} from "./coding-advisory-service.js";
 
 export interface CodingTraceModelDefaults {
   modelRole?: string;
@@ -25,7 +30,8 @@ export class CodingDomainController {
     private readonly auditHistoryService?: AuditHistoryService,
     private readonly localAgentTraceStore?: LocalAgentTraceStore,
     private readonly traceModelDefaults: CodingTraceModelDefaults = {},
-    private readonly toolOutputBudgetService?: ToolOutputBudgetService
+    private readonly toolOutputBudgetService?: ToolOutputBudgetService,
+    private readonly codingAdvisoryService?: CodingAdvisoryService
   ) {}
 
   async executeTask(
@@ -47,6 +53,20 @@ export class CodingDomainController {
     }
 
     result = await this.prepareToolOutputs(request, result);
+    const advisoryInvocation =
+      (await this.codingAdvisoryService?.adviseOnEscalation({
+        request,
+        localResponse: result
+      })) ?? {
+        invoked: false,
+        advisoryReturned: false
+      };
+    if (advisoryInvocation.advisory) {
+      result = {
+        ...result,
+        codingAdvisory: advisoryInvocation.advisory
+      };
+    }
 
     await this.appendTrace(request, {
       status: result.status === "success" ? "succeeded" : "failed",
@@ -54,7 +74,16 @@ export class CodingDomainController {
       toolUsed: result.toolUsed,
       providerErrorKind: readStringMetadata(result.escalationMetadata, "providerErrorKind"),
       retryCount: readNumberMetadata(result.escalationMetadata, "retryCount"),
-      seedApplied: readBooleanMetadata(result.escalationMetadata, "seedApplied")
+      seedApplied: readBooleanMetadata(result.escalationMetadata, "seedApplied"),
+      advisoryInvoked: advisoryInvocation.invoked || undefined,
+      advisoryProviderId:
+        advisoryInvocation.telemetry?.providerId ??
+        advisoryInvocation.advisory?.providerId,
+      advisoryModelId:
+        advisoryInvocation.telemetry?.modelId ?? advisoryInvocation.advisory?.modelId,
+      advisoryOutcomeClass: advisoryInvocation.telemetry?.outcomeClass,
+      advisoryErrorCode: advisoryInvocation.telemetry?.errorCode,
+      advisoryRecommendedAction: advisoryInvocation.advisory?.recommendedAction
     });
 
     await this.auditHistoryService?.recordAction({
@@ -84,7 +113,10 @@ export class CodingDomainController {
         memoryContextTraceIncluded: request.memoryContextStatus?.traceIncluded,
         memoryContextTokenEstimate: request.memoryContextStatus?.tokenEstimate,
         memoryContextTruncated: request.memoryContextStatus?.truncated,
-        memoryContextErrorMessage: request.memoryContextStatus?.errorMessage
+        memoryContextErrorMessage: request.memoryContextStatus?.errorMessage,
+        ...(buildCodingAdvisoryAuditDetail(advisoryInvocation)
+          ? { codingAdvisory: buildCodingAdvisoryAuditDetail(advisoryInvocation) }
+          : {})
       }
     });
 
@@ -104,7 +136,22 @@ export class CodingDomainController {
   private async appendTrace(
     request: ExecuteCodingTaskRequest,
     fields: Pick<LocalAgentTraceRecord, "status"> &
-      Partial<Pick<LocalAgentTraceRecord, "reason" | "toolUsed" | "providerErrorKind" | "retryCount" | "seedApplied">>
+      Partial<
+        Pick<
+          LocalAgentTraceRecord,
+          | "reason"
+          | "toolUsed"
+          | "providerErrorKind"
+          | "retryCount"
+          | "seedApplied"
+          | "advisoryInvoked"
+          | "advisoryProviderId"
+          | "advisoryModelId"
+          | "advisoryOutcomeClass"
+          | "advisoryErrorCode"
+          | "advisoryRecommendedAction"
+        >
+      >
   ): Promise<void> {
     if (!this.localAgentTraceStore) {
       return;
@@ -125,6 +172,12 @@ export class CodingDomainController {
       providerErrorKind: fields.providerErrorKind,
       retryCount: fields.retryCount,
       seedApplied: fields.seedApplied,
+      advisoryInvoked: fields.advisoryInvoked,
+      advisoryProviderId: fields.advisoryProviderId,
+      advisoryModelId: fields.advisoryModelId,
+      advisoryOutcomeClass: fields.advisoryOutcomeClass,
+      advisoryErrorCode: fields.advisoryErrorCode,
+      advisoryRecommendedAction: fields.advisoryRecommendedAction,
       createdAt: new Date().toISOString()
     });
   }
@@ -311,4 +364,25 @@ function isOutputishKey(key: string): boolean {
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function buildCodingAdvisoryAuditDetail(
+  advisoryInvocation: CodingAdvisoryInvocation
+): Record<string, unknown> | undefined {
+  if (!advisoryInvocation.invoked) {
+    return undefined;
+  }
+
+  return {
+    invoked: true,
+    advisoryReturned: advisoryInvocation.advisoryReturned,
+    ...(advisoryInvocation.advisory
+      ? {
+          recommendedAction: advisoryInvocation.advisory.recommendedAction,
+          summary: advisoryInvocation.advisory.summary,
+          suggestedChecks: advisoryInvocation.advisory.suggestedChecks
+        }
+      : {}),
+    telemetry: buildPaidExecutionAuditDetail(advisoryInvocation.telemetry)
+  };
 }

@@ -136,6 +136,7 @@ function buildRoleBindingsFromProcessEnvironment(
 
   return mergeRoleBindings(legacy, {
     coding_primary: buildRoleBindingOverride(env, "coding_primary"),
+    coding_advisory: buildRoleBindingOverride(env, "coding_advisory"),
     mimisbrunnr_primary: buildRoleBindingOverride(env, "mimisbrunnr_primary", [
       "MAB_ROLE_MIMIR_BRUNNR_PRIMARY"
     ]),
@@ -163,10 +164,18 @@ function buildRoleBindingOverride(
   const timeoutMs = parseOptionalNumber(readValue("TIMEOUT_MS"));
   const maxInputChars = parseOptionalNumber(readValue("MAX_INPUT_CHARS"));
   const maxOutputTokens = parseOptionalNumber(readValue("MAX_OUTPUT_TOKENS"));
+  const fallbackModel = readValue("FALLBACK_MODEL");
+  const fallbackModelsJson = readValue("FALLBACK_MODELS_JSON");
+  const fallbackModelIds = normalizeFallbackModelIds(
+    fallbackModel,
+    fallbackModelsJson,
+    `${prefix}_FALLBACK_MODELS_JSON`
+  );
 
   if (
     !providerId &&
     !modelId &&
+    fallbackModelIds === undefined &&
     temperature === undefined &&
     seed === undefined &&
     timeoutMs === undefined &&
@@ -180,6 +189,7 @@ function buildRoleBindingOverride(
     role,
     providerId: providerId ?? "disabled",
     modelId,
+    fallbackModelIds,
     temperature: temperature ?? 0,
     seed,
     timeoutMs: timeoutMs ?? 30_000,
@@ -228,6 +238,13 @@ function buildRoleBindingsFromLegacy(
       timeoutMs: 120_000,
       maxInputChars: 30_000,
       maxOutputTokens: 4_000
+    },
+    coding_advisory: {
+      role: "coding_advisory",
+      providerId: "disabled",
+      modelId: undefined,
+      temperature: 0,
+      timeoutMs: 60_000
     },
     mimisbrunnr_primary: {
       role: "mimisbrunnr_primary",
@@ -292,4 +309,36 @@ function mergeRoleBindings(
   }
 
   return merged;
+}
+
+function normalizeFallbackModelIds(
+  fallbackModel: string | undefined,
+  fallbackModelsJson: string | undefined,
+  envName: string
+): string[] | undefined {
+  const values = [
+    ...(fallbackModel?.trim() ? [fallbackModel.trim()] : []),
+    ...parseOptionalStringArrayJson(fallbackModelsJson, envName)
+  ];
+  if (values.length === 0) {
+    return undefined;
+  }
+
+  return [...new Set(values)];
+}
+
+function parseOptionalStringArrayJson(
+  value: string | undefined,
+  envName: string
+): string[] {
+  if (!value?.trim()) {
+    return [];
+  }
+
+  const parsed = JSON.parse(value) as unknown;
+  if (!Array.isArray(parsed) || parsed.some((entry) => typeof entry !== "string")) {
+    throw new Error(`${envName} must be a JSON array of strings.`);
+  }
+
+  return parsed.map((entry) => entry.trim()).filter((entry) => entry.length > 0);
 }

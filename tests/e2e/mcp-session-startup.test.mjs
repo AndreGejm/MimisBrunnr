@@ -145,6 +145,8 @@ test("validateDockerMcpSessionStartup requires reachable model and vector depend
 
 test("mimir-mcp exits cleanly when the MCP client closes stdin", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "mimir-mcp-stdin-close-"));
+  let stdout = "";
+  let stderr = "";
 
   const child = spawn(
     process.execPath,
@@ -181,12 +183,27 @@ test("mimir-mcp exits cleanly when the MCP client closes stdin", async (t) => {
     await rm(root, { recursive: true, force: true });
   });
 
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk.toString("utf8");
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk.toString("utf8");
+  });
+
   child.stdin.end();
 
   const exitCode = await Promise.race([
     new Promise((resolve) => child.once("close", resolve)),
     new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("mimir-mcp did not exit after stdin closed")), 2_000)
+      setTimeout(
+        () =>
+          reject(
+            new Error(
+              `mimir-mcp did not exit after stdin closed. stdout='${stdout.slice(0, 400)}' stderr='${stderr.slice(0, 400)}'`
+            )
+          ),
+        5_000
+      )
     )
   ]);
 

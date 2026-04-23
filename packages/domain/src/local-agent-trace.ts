@@ -19,6 +19,12 @@ export interface LocalAgentTraceRecord {
   providerErrorKind?: string;
   retryCount?: number;
   seedApplied?: boolean;
+  advisoryInvoked?: boolean;
+  advisoryProviderId?: string;
+  advisoryModelId?: string;
+  advisoryOutcomeClass?: string;
+  advisoryErrorCode?: string;
+  advisoryRecommendedAction?: string;
   createdAt: string;
 }
 
