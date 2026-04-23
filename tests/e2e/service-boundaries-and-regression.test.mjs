@@ -1917,6 +1917,7 @@ test("coding domain controller enriches escalations with coding advisory and rec
 
   const traces = await controller.listTraces(request.actor.requestId);
   assert.equal(traces.length, 2);
+  assert.equal(traces.at(-1).status, "escalated");
   assert.equal(traces.at(-1).advisoryInvoked, true);
   assert.equal(traces.at(-1).advisoryProviderId, "voltagent_agent");
   assert.equal(traces.at(-1).advisoryOutcomeClass, "success");
@@ -2021,6 +2022,7 @@ test("coding domain controller preserves local escalation semantics when coding 
 
   const traces = await controller.listTraces(request.actor.requestId);
   assert.equal(traces.length, 2);
+  assert.equal(traces.at(-1).status, "escalated");
   assert.equal(traces.at(-1).advisoryInvoked, true);
   assert.equal(traces.at(-1).advisoryOutcomeClass, "timeout");
   assert.equal(traces.at(-1).advisoryErrorCode, "voltagent_timeout");
@@ -2045,6 +2047,37 @@ test("coding domain controller preserves local escalation semantics when coding 
       errorCode: "voltagent_timeout"
     }
   });
+});
+
+test("coding advisory service rethrows unexpected advisory exceptions when no telemetry is available", async () => {
+  const advisoryService = new orchestration.CodingAdvisoryService({
+    providerId: "voltagent_agent",
+    async adviseOnEscalation() {
+      throw new Error("unexpected advisory bug");
+    },
+    consumePaidExecutionTelemetry() {
+      return undefined;
+    }
+  });
+
+  await assert.rejects(
+    advisoryService.adviseOnEscalation({
+      request: {
+        actor: actor("operator"),
+        taskType: "propose_fix",
+        task: "Fix the writer promotion bug.",
+        context: "The local runtime could not apply a safe patch.",
+        repoRoot: "F:\\repo",
+        filePath: "src/foo.py"
+      },
+      localResponse: {
+        status: "escalate",
+        reason: "Local runtime could not determine a safe patch root.",
+        attempts: 1
+      }
+    }),
+    /unexpected advisory bug/
+  );
 });
 
 test("coding advisory is not invoked for non-escalation local coding outcomes", async (t) => {

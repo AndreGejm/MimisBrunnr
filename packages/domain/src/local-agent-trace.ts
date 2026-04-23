@@ -1,6 +1,7 @@
 export type LocalAgentTraceStatus =
   | "started"
   | "succeeded"
+  | "escalated"
   | "failed"
   | "retried";
 

@@ -1794,18 +1794,67 @@ test("checked-in VoltAgent toolbox manifests declare local-stdio Codex materiali
   assert.equal(server.runtimeBinding?.command, "npx");
   assert.deepEqual(server.runtimeBinding?.args, ["-y", "@voltagent/docs-mcp"]);
 
-  const profile = compiled.profiles["core-dev+voltagent-dev"];
-  assert.ok(profile, "core-dev+voltagent-dev profile must exist");
+  const profile = compiled.profiles["core-dev+voltagent-docs"];
+  assert.ok(profile, "core-dev+voltagent-docs profile must exist");
   assert.ok(profile.baseProfiles.includes("core-dev+docs-research"));
   assert.ok(profile.includeServers.includes("voltagent-docs"));
   assert.ok(profile.allowedCategories.includes("docs-search"));
   assert.ok(profile.allowedCategories.includes("repo-write"));
   assert.equal(profile.fallbackProfile, "core-dev+docs-research");
 
-  const intent = compiled.intents["core-dev+voltagent-dev"];
-  assert.ok(intent, "core-dev+voltagent-dev intent must exist");
-  assert.equal(intent.targetProfile, "core-dev+voltagent-dev");
+  const intent = compiled.intents["core-dev+voltagent-docs"];
+  assert.ok(intent, "core-dev+voltagent-docs intent must exist");
+  assert.equal(intent.targetProfile, "core-dev+voltagent-docs");
   assert.equal(intent.requiresApproval, false);
   assert.ok(intent.allowedCategories.includes("docs-search"));
   assert.ok(intent.allowedCategories.includes("repo-write"));
+  assert.match(
+    intent.summary,
+    /optional development-only.*docs convenience/i,
+    "VoltAgent toolbox intent must stay explicitly optional and docs-scoped"
+  );
+  assert.deepEqual(intent.exampleTasks, [
+    "Check upstream VoltAgent docs while patching the current repository",
+    "Confirm VoltAgent API behavior without routing Codex or Claude skills through Mimir"
+  ]);
+});
+
+test("checked-in VoltAgent toolbox keeps the legacy profile id as a compatibility alias", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  const legacyProfile = compiled.profiles["core-dev+voltagent-dev"];
+  assert.ok(legacyProfile, "core-dev+voltagent-dev legacy alias profile must exist");
+  assert.equal(legacyProfile.fallbackProfile, "core-dev+docs-research");
+  assert.ok(legacyProfile.includeServers.includes("voltagent-docs"));
+
+  const legacyIntent = compiled.intents["core-dev+voltagent-dev"];
+  assert.ok(legacyIntent, "core-dev+voltagent-dev legacy alias intent must exist");
+  assert.equal(
+    legacyIntent.targetProfile,
+    "core-dev+voltagent-docs",
+    "legacy alias requests should resolve onto the canonical profile id"
+  );
+  assert.match(legacyIntent.summary, /legacy alias/i);
+});
+
+test("checked-in VoltAgent toolbox manifests stay docs-only and exclude workspace skill surfaces", () => {
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+
+  const toolIds = Object.values(compiled.servers).flatMap((server) =>
+    server.tools.map((tool) => tool.toolId)
+  );
+  assert.ok(
+    toolIds.every((toolId) => !toolId.startsWith("workspace_")),
+    "Mimir toolbox manifests must not expose VoltAgent workspace skill tools"
+  );
+
+  const localStdioCommands = Object.values(compiled.servers)
+    .filter((server) => server.runtimeBinding?.kind === "local-stdio")
+    .map((server) =>
+      [server.runtimeBinding?.command, ...(server.runtimeBinding?.args ?? [])].join(" ")
+    );
+  assert.ok(
+    localStdioCommands.every((commandLine) => !commandLine.includes("@voltagent/skills")),
+    "local-stdio peers must not mount VoltAgent workspace skills through Mimir manifests"
+  );
 });

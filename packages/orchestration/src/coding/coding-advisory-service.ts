@@ -37,11 +37,16 @@ export class CodingAdvisoryService {
         advisory: telemetry ? { ...advisory, telemetry } : advisory,
         telemetry: telemetry ?? advisory.telemetry
       };
-    } catch {
+    } catch (error) {
+      const telemetry = this.provider.consumePaidExecutionTelemetry?.();
+      if (!telemetry) {
+        throw error;
+      }
+
       return {
         invoked: true,
         advisoryReturned: false,
-        telemetry: this.provider.consumePaidExecutionTelemetry?.()
+        telemetry
       };
     }
   }

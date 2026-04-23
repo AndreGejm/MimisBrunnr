@@ -69,7 +69,7 @@ export class CodingDomainController {
     }
 
     await this.appendTrace(request, {
-      status: result.status === "success" ? "succeeded" : "failed",
+      status: mapLocalAgentTraceStatus(result.status),
       reason: result.reason,
       toolUsed: result.toolUsed,
       providerErrorKind: readStringMetadata(result.escalationMetadata, "providerErrorKind"),
@@ -364,6 +364,19 @@ function isOutputishKey(key: string): boolean {
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function mapLocalAgentTraceStatus(
+  status: ExecuteCodingTaskResponse["status"]
+): LocalAgentTraceRecord["status"] {
+  switch (status) {
+    case "success":
+      return "succeeded";
+    case "escalate":
+      return "escalated";
+    default:
+      return "failed";
+  }
 }
 
 function buildCodingAdvisoryAuditDetail(

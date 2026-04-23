@@ -68,13 +68,37 @@ intents:
       - docker-write
       - deployment
     fallbackProfile: core-dev
-  core-dev+voltagent-dev:
-    displayName: Core Dev Plus VoltAgent Dev
-    summary: Code changes that need the normal development toolbox plus direct VoltAgent documentation access.
+  core-dev+voltagent-docs:
+    displayName: Core Dev Plus VoltAgent Docs
+    summary: Optional development-only VoltAgent docs convenience. Codex and Claude keep their own skills, subagents, and paid-agent quality outside Mimir.
     exampleTasks:
-      - Implement VoltAgent integration while consulting upstream VoltAgent docs
-      - Review VoltAgent behavior and patch the current repository in the same session
-    targetProfile: core-dev+voltagent-dev
+      - Check upstream VoltAgent docs while patching the current repository
+      - Confirm VoltAgent API behavior without routing Codex or Claude skills through Mimir
+    targetProfile: core-dev+voltagent-docs
+    trustClass: external-read
+    requiresApproval: false
+    activationMode: session-switch
+    allowedCategories:
+      - repo-read
+      - repo-write
+      - local-docs
+      - internal-memory
+      - internal-memory-write
+      - docs-search
+      - web-search
+      - github-read
+    deniedCategories:
+      - github-write
+      - docker-write
+      - deployment
+    fallbackProfile: core-dev+docs-research
+  core-dev+voltagent-dev:
+    displayName: Core Dev Plus VoltAgent Docs (Legacy Alias)
+    summary: Legacy alias for the optional development-only VoltAgent docs toolbox. Prefer `core-dev+voltagent-docs` for new automation and operator workflows.
+    exampleTasks:
+      - Migrate older automation or operator workflows onto the canonical VoltAgent docs toolbox id
+      - Reuse the old VoltAgent docs toolbox id without routing Codex or Claude skills through Mimir
+    targetProfile: core-dev+voltagent-docs
     trustClass: external-read
     requiresApproval: false
     activationMode: session-switch

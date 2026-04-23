@@ -426,7 +426,7 @@ test("mimir-cli surfaces Codex client materialization metadata and sync-toolbox-
       "request-toolbox-activation",
       "--json",
       JSON.stringify({
-        requestedToolbox: "core-dev+voltagent-dev",
+        requestedToolbox: "core-dev+voltagent-docs",
         taskSummary: "Need VoltAgent docs while editing the current repository"
       }),
       "--no-pretty"
@@ -450,14 +450,14 @@ test("mimir-cli surfaces Codex client materialization metadata and sync-toolbox-
     ["list-active-toolbox", "--json", "{}", "--no-pretty"],
     {
       ...activationEnv,
-      MAB_TOOLBOX_ACTIVE_PROFILE: "core-dev+voltagent-dev"
+      MAB_TOOLBOX_ACTIVE_PROFILE: "core-dev+voltagent-docs"
     },
     workspaceRoot
   );
   assert.equal(activeToolboxResult.exitCode, 0, activeToolboxResult.stderr);
   const activeToolboxPayload = JSON.parse(activeToolboxResult.stdout);
   assert.equal(activeToolboxPayload.ok, true);
-  assert.equal(activeToolboxPayload.profile.id, "core-dev+voltagent-dev");
+  assert.equal(activeToolboxPayload.profile.id, "core-dev+voltagent-docs");
   assert.deepEqual(activeToolboxPayload.client.clientMaterialization, {
     format: "codex-mcp-json",
     path: expectedMaterializationPath
@@ -467,7 +467,7 @@ test("mimir-cli surfaces Codex client materialization metadata and sync-toolbox-
     ["list-active-tools", "--json", "{}", "--no-pretty"],
     {
       ...activationEnv,
-      MAB_TOOLBOX_ACTIVE_PROFILE: "core-dev+voltagent-dev"
+      MAB_TOOLBOX_ACTIVE_PROFILE: "core-dev+voltagent-docs"
     },
     workspaceRoot
   );
@@ -517,7 +517,7 @@ test("mimir-cli surfaces Codex client materialization metadata and sync-toolbox-
     ["sync-toolbox-client", "--json", "{}", "--no-pretty"],
     {
       ...activationEnv,
-      MAB_TOOLBOX_ACTIVE_PROFILE: "core-dev+voltagent-dev"
+      MAB_TOOLBOX_ACTIVE_PROFILE: "core-dev+voltagent-docs"
     },
     workspaceRoot
   );
@@ -541,7 +541,7 @@ test("mimir-cli surfaces Codex client materialization metadata and sync-toolbox-
     ["sync-toolbox-client", "--apply", "--json", "{}", "--no-pretty"],
     {
       ...activationEnv,
-      MAB_TOOLBOX_ACTIVE_PROFILE: "core-dev+voltagent-dev"
+      MAB_TOOLBOX_ACTIVE_PROFILE: "core-dev+voltagent-docs"
     },
     workspaceRoot
   );
@@ -553,6 +553,48 @@ test("mimir-cli surfaces Codex client materialization metadata and sync-toolbox-
   assert.deepEqual(
     JSON.parse(readFileSync(expectedMaterializationPath, "utf8")),
     dryRunPayload.materialization.content
+  );
+});
+
+test("mimir-cli accepts the legacy VoltAgent docs toolbox id and resolves it to the canonical profile", async (t) => {
+  const sqlitePath = await createTempSqlitePath();
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "mimir-voltagent-alias-"));
+  t.after(async () => {
+    await rm(workspaceRoot, { recursive: true, force: true });
+  });
+
+  const activationResult = await runCliCommand(
+    [
+      "request-toolbox-activation",
+      "--json",
+      JSON.stringify({
+        requestedToolbox: "core-dev+voltagent-dev",
+        taskSummary: "Need VoltAgent docs while editing the current repository"
+      }),
+      "--no-pretty"
+    ],
+    {
+      ...process.env,
+      MAB_NODE_ENV: "test",
+      MAB_TOOLBOX_MANIFEST_DIR: path.resolve("docker", "mcp"),
+      MAB_TOOLBOX_ACTIVE_PROFILE: "bootstrap",
+      MAB_TOOLBOX_CLIENT_ID: "codex",
+      MAB_TOOLBOX_LEASE_ISSUER: "mimir-control",
+      MAB_TOOLBOX_LEASE_AUDIENCE: "mimir-core",
+      MAB_TOOLBOX_LEASE_ISSUER_SECRET: "toolbox-secret",
+      MAB_SQLITE_PATH: sqlitePath
+    },
+    workspaceRoot
+  );
+
+  assert.equal(activationResult.exitCode, 0, activationResult.stderr);
+  const activationPayload = JSON.parse(activationResult.stdout);
+  assert.equal(activationPayload.ok, true);
+  assert.equal(activationPayload.activation.approvedToolbox, "core-dev+voltagent-dev");
+  assert.equal(activationPayload.activation.approvedProfile, "core-dev+voltagent-docs");
+  assert.equal(
+    activationPayload.activation.handoff.targetProfileId,
+    "core-dev+voltagent-docs"
   );
 });
 

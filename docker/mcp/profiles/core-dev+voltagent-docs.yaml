@@ -1,6 +1,6 @@
 profile:
-  id: core-dev+voltagent-dev
-  displayName: Core Dev Plus VoltAgent Docs (Legacy Alias)
+  id: core-dev+voltagent-docs
+  displayName: Core Dev Plus VoltAgent Docs
   sessionMode: toolbox-activated
   baseProfiles:
     - core-dev+docs-research

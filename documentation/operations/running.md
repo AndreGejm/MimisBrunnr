@@ -39,9 +39,14 @@ corepack pnpm test:voltagent-smoke
 ```
 
 These focused lanes verify the Mimir-owned VoltAgent adapter seams, coding
-advisory transport parity, toolbox materialization, and the checked-in
-`voltagent-docs` local-stdio peer. Use them before and after upgrading
+advisory transport parity, toolbox materialization, and the optional
+`voltagent-docs` local-stdio docs peer. Use them before and after upgrading
 `@voltagent/core`, `ai`, or provider-specific model routing config.
+
+The external ownership split is documented in
+[external-client-boundary.md](/F:/Dev/scripts/Mimir/mimir/documentation/reference/external-client-boundary.md):
+Codex and Claude keep their own skills and subagents, while Mimir remains the
+memory, retrieval, and local-runtime system of record.
 
 The repository also includes a scheduled GitHub Actions canary,
 `voltagent-upstream-canary`, that temporarily upgrades `@voltagent/core` and

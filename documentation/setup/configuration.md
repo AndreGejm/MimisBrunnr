@@ -87,6 +87,11 @@ ids must be provider-prefixed, and the corresponding provider credentials must
 exist in the process environment. For the OpenAI-plus-Claude fallback path,
 that means both `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`.
 
+Architectural boundary: VoltAgent in this repository is only the paid-runtime
+harness for bounded Mimir roles. Codex and Claude keep their own skills and
+subagents outside Mimir. See
+[external-client-boundary.md](/F:/Dev/scripts/Mimir/mimir/documentation/reference/external-client-boundary.md).
+
 ## Auth configuration
 
 Auth is configured through `packages/infrastructure/src/config/env.ts` and enforced by `packages/orchestration/src/root/actor-authorization-policy.ts`.

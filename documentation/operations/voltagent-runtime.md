@@ -6,7 +6,31 @@ This document covers the supported Mimir-owned VoltAgent integration:
 - `coding_advisory` can use `voltagent_agent`
 - Claude fallback is configured inside the paid harness, not through a separate
   orchestration policy layer
-- `voltagent-docs` is exposed as a checked-in local-stdio toolbox peer for Codex
+- `voltagent-docs` is exposed as an optional development-only local-stdio docs
+  peer for Codex
+
+## Boundary
+
+Mimir owns only the bounded paid-runtime roles and the durable context layer:
+
+- memory and retrieval
+- local models and local-agent execution
+- audit and trace records for paid helper roles
+
+Codex and Claude remain responsible for their own:
+
+- skills
+- subagents
+- workspace skill roots
+- paid-agent quality orchestration outside these bounded Mimir roles
+
+`voltagent-docs` is a docs lookup convenience only. It is not the architectural
+path for routing VoltAgent skills, workspace tools, or subagent behavior
+through Mimir.
+
+See [external-client-boundary.md](/F:/Dev/scripts/Mimir/mimir/documentation/reference/external-client-boundary.md)
+for the supported split between Mimir-owned runtime responsibilities and
+Codex/Claude-owned skills and subagents.
 
 ## Supported configuration
 
@@ -56,16 +80,16 @@ This verifies:
 
 ## Toolbox activation for VoltAgent development
 
-Activate the checked-in VoltAgent development toolbox:
+Activate the optional development-only VoltAgent docs toolbox:
 
 ```bash
-corepack pnpm cli -- request-toolbox-activation --json "{\"requestedToolbox\":\"core-dev+voltagent-dev\",\"taskSummary\":\"Need VoltAgent docs while editing the current repository\"}"
+corepack pnpm cli -- request-toolbox-activation --json "{\"requestedToolbox\":\"core-dev+voltagent-docs\",\"taskSummary\":\"Need VoltAgent docs while editing the current repository\"}"
 ```
 
 Materialize the Codex MCP config:
 
 ```bash
-corepack pnpm cli -- sync-toolbox-client --apply --json "{\"activeProfileId\":\"core-dev+voltagent-dev\",\"clientId\":\"codex\"}"
+corepack pnpm cli -- sync-toolbox-client --apply --json "{\"activeProfileId\":\"core-dev+voltagent-docs\",\"clientId\":\"codex\"}"
 ```
 
 Expected file:
@@ -75,6 +99,12 @@ Expected file:
 Expected peer:
 
 - `voltagent-docs` via `npx -y @voltagent/docs-mcp`
+
+Legacy compatibility note:
+
+- `core-dev+voltagent-dev` remains accepted as a profile/id alias during the
+  current compatibility window, but new docs and automation should use
+  `core-dev+voltagent-docs`
 
 ## Failure modes
 
