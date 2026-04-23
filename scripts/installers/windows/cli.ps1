@@ -260,6 +260,8 @@ switch ($Operation) {
             generatedAt = $adapter.plan.generatedAt
             profileCount = @($adapter.plan.profiles).Count
             serverCount = @($adapter.plan.servers).Count
+            serverIds = @($adapter.plan.servers | ForEach-Object { $_.id })
+            profileIds = @($adapter.plan.profiles | ForEach-Object { $_.id })
             dryRun = $true
             dockerApplyImplemented = $false
           }
@@ -275,7 +277,9 @@ switch ($Operation) {
   }
 
   "audit-docker-mcp-toolkit" {
-    $adapter = Invoke-InstallerDockerMcpToolkitAudit -RepoRoot $RepoRoot
+    $adapter = Invoke-InstallerDockerMcpToolkitAudit `
+      -RepoRoot $RepoRoot `
+      -ToolboxManifestDir $ToolboxManifestDir
 
     $nextActions = @()
     if ($adapter.report.connectedClientCount -eq 0) {

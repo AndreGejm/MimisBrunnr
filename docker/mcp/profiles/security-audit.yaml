@@ -1,25 +1,16 @@
 profile:
-  id: docs-research
-  displayName: Docs Research
+  id: security-audit
+  displayName: Security Audit
   sessionMode: toolbox-activated
   includeServers:
     - mimir-control
     - mimir-core
-    - github-read
-    - brave-search
-    - docker-docs
-    - microsoft-learn
-    - dockerhub-read
-    - deepwiki-read
+    - semgrep-audit
   allowedCategories:
     - repo-read
     - local-docs
     - internal-memory
-    - docs-search
-    - web-search
-    - github-read
-    - container-registry-read
-    - repo-knowledge-read
+    - security-scan-read
   deniedCategories:
     - github-write
     - docker-write

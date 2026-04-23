@@ -11,6 +11,7 @@ import type {
   CompiledToolboxIntent,
   ToolboxCategoryManifest,
   ToolboxClientOverlayManifest,
+  ToolboxDockerRuntimeManifest,
   ToolboxIntentManifest,
   ToolboxMutationLevel,
   ToolboxProfileManifest,
@@ -33,6 +34,7 @@ const MUTATION_LEVELS = new Set<ToolboxMutationLevel>(["read", "write", "admin"]
 const PROFILE_SESSION_MODES = new Set(["toolbox-bootstrap", "toolbox-activated"]);
 const SERVER_KINDS = new Set(["control", "semantic", "peer"]);
 const SERVER_SOURCES = new Set(["owned", "peer"]);
+const DOCKER_APPLY_MODES = new Set(["catalog", "descriptor-only"]);
 
 export function compileToolboxPolicyFromDirectory(
   sourceDirectory: string
@@ -114,6 +116,21 @@ function validateToolboxManifestSet(manifests: ToolboxManifestSet): void {
   for (const [serverId, server] of Object.entries(manifests.servers)) {
     requireTrustClass(server.trustClass, trustClassIds, `server '${serverId}'`);
     requireMutationLevel(server.mutationLevel, `server '${serverId}'`);
+    if (server.source === "peer" && server.kind !== "peer") {
+      throw new Error(
+        `Server '${serverId}' with source: peer must have kind: peer, found kind: ${server.kind}.`
+      );
+    }
+    if (server.kind === "peer" && server.source !== "peer") {
+      throw new Error(
+        `Server '${serverId}' with kind: peer must have source: peer, found source: ${server.source}.`
+      );
+    }
+    if (server.source === "peer" && !server.dockerRuntime) {
+      throw new Error(
+        `Peer server '${serverId}' must declare dockerRuntime apply metadata.`
+      );
+    }
 
     for (const tool of server.tools) {
       requireCategory(tool.category, categoryIds, `tool '${tool.toolId}'`);
@@ -245,7 +262,16 @@ function compileProfiles(manifests: ToolboxManifestSet): Record<string, Compiled
     );
 
     const seenSemanticCapabilities = new Map<string, string>();
+    const seenToolIds = new Map<string, string>();
     for (const tool of tools) {
+      const previousToolServerId = seenToolIds.get(tool.toolId);
+      if (previousToolServerId) {
+        throw new Error(
+          `Profile '${profileId}' has duplicate toolId '${tool.toolId}' from '${previousToolServerId}' and '${tool.serverId}'.`
+        );
+      }
+      seenToolIds.set(tool.toolId, tool.serverId);
+
       const previous = seenSemanticCapabilities.get(tool.semanticCapabilityId);
       if (previous) {
         throw new Error(
@@ -350,6 +376,39 @@ function readTrustClasses(document: JsonRecord): Record<string, ToolboxTrustClas
 
 function readServer(document: JsonRecord, field: string): ToolboxServerManifest {
   const server = requireRecord(document[field], field);
+  const dockerRuntimeRaw = server.dockerRuntime;
+  let dockerRuntime: ToolboxDockerRuntimeManifest | undefined;
+  if (dockerRuntimeRaw !== undefined) {
+    const dr = requireRecord(dockerRuntimeRaw, `${field}.dockerRuntime`);
+    const applyMode = requireStringEnum(dr.applyMode, `${field}.dockerRuntime.applyMode`, DOCKER_APPLY_MODES) as "catalog" | "descriptor-only";
+    if (applyMode === "catalog") {
+      if (dr.blockedReason !== undefined) {
+        throw new Error(`${field}.dockerRuntime.blockedReason is only valid for descriptor-only mode.`);
+      }
+      if (dr.unsafeCatalogServerIds !== undefined) {
+        throw new Error(`${field}.dockerRuntime.unsafeCatalogServerIds is only valid for descriptor-only mode.`);
+      }
+      dockerRuntime = {
+        applyMode,
+        catalogServerId: requireString(dr.catalogServerId, `${field}.dockerRuntime.catalogServerId`)
+      };
+    } else {
+      if (dr.catalogServerId !== undefined) {
+        throw new Error(`${field}.dockerRuntime.catalogServerId is only valid for catalog mode.`);
+      }
+      const unsafeCatalogServerIds = optionalStringArray(
+        dr.unsafeCatalogServerIds,
+        `${field}.dockerRuntime.unsafeCatalogServerIds`
+      );
+      dockerRuntime = {
+        applyMode,
+        blockedReason: requireString(dr.blockedReason, `${field}.dockerRuntime.blockedReason`),
+        ...(unsafeCatalogServerIds !== undefined
+          ? { unsafeCatalogServerIds: uniqueSorted(unsafeCatalogServerIds) }
+          : {})
+      };
+    }
+  }
   return {
     id: requireString(server.id, `${field}.id`),
     displayName: requireString(server.displayName, `${field}.displayName`),
@@ -376,7 +435,8 @@ function readServer(document: JsonRecord, field: string): ToolboxServerManifest 
           `${field}.tools[${index}].semanticCapabilityId`
         )
       };
-    })
+    }),
+    ...(dockerRuntime !== undefined ? { dockerRuntime } : {})
   };
 }
 

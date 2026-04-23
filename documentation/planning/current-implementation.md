@@ -207,14 +207,16 @@ The running architecture is a local-first monorepo with clear boundaries:
 - `promote_note`
 - `query_history`
 
-### Toolbox control MCP tools
+### Toolbox control plane
 
-- `list_toolboxes`
-- `describe_toolbox`
-- `request_toolbox_activation`
-- `list_active_toolbox`
-- `list_active_tools`
-- `deactivate_toolbox`
+- compiled manifests under `docker/mcp` (categories, trust classes, intents, server descriptors, profiles, client overlays) define the runtime surface as checked-in policy
+- `mimir-control-mcp` exposes toolbox lifecycle tools (`list_toolboxes`, `describe_toolbox`, `request_toolbox_activation`, `list_active_toolbox`, `list_active_tools`, `deactivate_toolbox`)
+- session leases with revision-bound, audience-bound tokens; `toolbox_expired` audit events on expiry deactivation
+- Docker runtime planning (`docker:mcp:sync`) and installer audit (`audit-toolbox-assets.mjs`) surface `serverIds`, `profileIds`, and per-server Docker apply metadata; catalog peers can map policy ids to live catalog ids, descriptor-only peers block live apply, carry `unsafeCatalogServerIds` for raw-catalog drift diagnostics, and profileless `docker mcp gateway run --servers` fallback commands are emitted for catalog-mode peer subsets only
+- Windows installer Docker MCP audit reports governance drift by comparing live enabled Docker MCP servers against the compiled toolbox policy: governed live servers, unsafe raw catalog servers that correspond to descriptor-only wrappers, unmanaged live servers, summary counts, and `clean`/`drift_detected`/`unavailable` status
+- manifest compilation rejects duplicate semantic capabilities and duplicate active `toolId` values per compiled profile after base-profile inheritance
+- client overlays declare `handoffStrategy` and `handoffPresetRef`; activation returns structured reconnect handoff data
+- category-owned peer curation: `runtime-observe`, `core-dev+runtime-observe` (via base-profile inheritance), `runtime-admin`, and `full` include the `kubernetes-read` peer band for read-only Kubernetes observation (`k8s-read`, `k8s-logs-read`, `k8s-events-read`) and the `grafana-observe` peer band for read-only telemetry observation (`logs-read`, `metrics-read`, `traces-read`); `docs-research`, `core-dev+docs-research` (via base-profile inheritance), and `full` include the `dockerhub-read` peer band for read-only container registry access (`container-registry-read`) and the `deepwiki-read` peer band for generated repository documentation and Q&A (`repo-knowledge-read`); `security-audit`, `core-dev+security-audit` (via base-profile inheritance), and `full` include the `semgrep-audit` peer band for read-only security scanning and static analysis (`security-scan-read`)
 
 ## Partial Or Incomplete Areas
 
@@ -223,7 +225,9 @@ These areas have enabling structure but are not fully complete:
 - richer temporal-validity governance beyond validity windows, refresh-candidate reporting, bounded batch refresh-draft creation, idempotent refresh-draft reuse, explicit refresh-draft creation, freshness warnings, and stale ranking
 - hierarchical retrieval rollout beyond the current `flat` default, explicit opt-in strategy selection, trace metadata, packet-diff checks, and the documented rollback path back to `flat`
 - broader namespace coverage beyond canonical notes, staging drafts, imported artifacts, session archives, and the current contract-level authority invariants
-- broader toolbox rollout beyond the current curated peer bands, including target-machine Docker Toolkit validation and future approval-gated Kubernetes mutation
+- broader toolbox rollout beyond the current curated peer bands (docs-research, runtime-observe, runtime-admin, security-audit, full); `dockerhub-read` (`container-registry-read`), `deepwiki-read` (`repo-knowledge-read`), and `semgrep-audit` (`security-scan-read`) are now live in their bounded profiles; additional peer servers require their own category, server, and profile manifests plus test coverage
+- target-machine Docker Toolkit validation: `docker mcp profile` subcommand is not available in the current Docker MCP Toolkit build; diagnostic gateway fallback commands are available for catalog-mode peer subsets, but complete live apply is blocked while selected profiles contain descriptor-only peers (`github-read`, `dockerhub-read`, `kubernetes-read`, `grafana-observe`, and selected admin peers) that need read-filtered wrappers or vetted catalog entries
+- future approval-gated Kubernetes mutation: no Kubernetes write or deployment tool is in v1; the workstream is blocked pending a separate governance decision
 
 See [`backlog.md`](./backlog.md) for the linked backlog items.
 

@@ -1,0 +1,59 @@
+server:
+  id: semgrep-audit
+  displayName: Semgrep Audit
+  source: peer
+  kind: peer
+  trustClass: external-read
+  mutationLevel: read
+  dockerRuntime:
+    applyMode: catalog
+    catalogServerId: semgrep
+  tools:
+    - toolId: semgrep.rule.schema
+      displayName: Get Semgrep Rule Schema
+      category: security-scan-read
+      trustClass: external-read
+      mutationLevel: read
+      semanticCapabilityId: security.semgrep.rule.schema
+    - toolId: semgrep.languages.list
+      displayName: List Semgrep Supported Languages
+      category: security-scan-read
+      trustClass: external-read
+      mutationLevel: read
+      semanticCapabilityId: security.semgrep.languages.list
+    - toolId: semgrep.findings.list
+      displayName: List Semgrep Findings
+      category: security-scan-read
+      trustClass: external-read
+      mutationLevel: read
+      semanticCapabilityId: security.semgrep.findings.list
+    - toolId: semgrep.scan.content
+      displayName: Scan Code Content With Semgrep
+      category: security-scan-read
+      trustClass: external-read
+      mutationLevel: read
+      semanticCapabilityId: security.semgrep.scan.content
+    - toolId: semgrep.scan.custom_rule
+      displayName: Scan Code Content With Custom Semgrep Rule
+      category: security-scan-read
+      trustClass: external-read
+      mutationLevel: read
+      semanticCapabilityId: security.semgrep.scan.custom_rule
+    - toolId: semgrep.scan.local
+      displayName: Scan Local Files With Semgrep
+      category: security-scan-read
+      trustClass: external-read
+      mutationLevel: read
+      semanticCapabilityId: security.semgrep.scan.local
+    - toolId: semgrep.security.check
+      displayName: Run Semgrep Security Check
+      category: security-scan-read
+      trustClass: external-read
+      mutationLevel: read
+      semanticCapabilityId: security.semgrep.security.check
+    - toolId: semgrep.ast.get
+      displayName: Get Code Abstract Syntax Tree
+      category: security-scan-read
+      trustClass: external-read
+      mutationLevel: read
+      semanticCapabilityId: security.semgrep.ast.get

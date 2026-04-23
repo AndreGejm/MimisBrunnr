@@ -5,6 +5,15 @@ server:
   kind: peer
   trustClass: ops-read
   mutationLevel: read
+  dockerRuntime:
+    applyMode: descriptor-only
+    blockedReason: >-
+      The docker-read surface is a descriptor-only read-filtered wrapper.
+      No standalone read-only Docker runtime catalog entry exists; the live
+      catalog server includes mutation capabilities and cannot be safely
+      referenced for read-only profiles.
+    unsafeCatalogServerIds:
+      - docker
   tools:
     - toolId: docker.inspect
       displayName: Inspect Docker Runtime

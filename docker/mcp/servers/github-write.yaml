@@ -5,6 +5,14 @@ server:
   kind: peer
   trustClass: external-readwrite
   mutationLevel: write
+  dockerRuntime:
+    applyMode: descriptor-only
+    blockedReason: >-
+      github-write is a descriptor-only surface exposing write capabilities.
+      This server must not be emitted as a raw catalog profile reference until
+      a properly scoped and audited catalog entry is available.
+    unsafeCatalogServerIds:
+      - github
   tools:
     - toolId: github.issue.comment
       displayName: Comment On Issue

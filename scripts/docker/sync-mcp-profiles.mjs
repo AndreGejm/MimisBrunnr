@@ -115,7 +115,8 @@ if (options.json) {
           apply: {
             status: "dry-run",
             attempted: false,
-            commands: applyPlan.commands
+            commands: applyPlan.commands,
+            gatewayRunCommands: applyPlan.gatewayRunCommands
           }
         },
         null,

@@ -175,6 +175,18 @@ Current toolbox execution order:
 | BK-107 | Add client-resolution and richer multi-collection UX | Scaling and usability enhancement rather than a missing primitive | later |
 | BK-108 | Add batch ingest and update workflows | Operational scaling feature, not part of the current baseline | later |
 
+## Active Toolbox Workstream
+
+| ID | Work Item | Status | Notes |
+| --- | --- | --- | --- |
+| TB-001 | Compile and check-in Docker MCP manifests (categories, trust classes, intents, servers, profiles, clients) as policy source of truth | done | `docker/mcp` manifests compile deterministically; `check-mcp-profiles` validates them |
+| TB-002 | Implement toolbox control-plane MCP tools (list, describe, activate, deactivate, list-active-tools) | done | `mimir-control-mcp` exposes all six toolbox lifecycle tools with structured reconnect handoff |
+| TB-003 | Implement session leases and toolbox audit events | done | Revision-bound, audience-bound leases; `toolbox_expired` event on expiry deactivation |
+| TB-004 | Docker Toolkit apply: translate compiled plan into live `docker mcp profile` commands | partial | `docker:mcp:sync` produces the plan with catalog-vs-descriptor apply metadata and profileless `docker mcp gateway run --servers` diagnostic fallback commands for catalog-mode peer subsets; live apply remains blocked because `docker mcp profile` is absent from the current Toolkit build and selected profiles still contain descriptor-only peers that need read-filtered wrappers or vetted catalog entries |
+| TB-005 | Add Kubernetes read-only peer band to runtime observation profiles | done | `kubernetes-read` server with six read-only tools exposed in `runtime-observe`, `core-dev+runtime-observe`, `runtime-admin`, and `full`; no mutation tools in v1 |
+| TB-006 | Approval-gated Kubernetes mutation / deployment tooling | blocked | Depends on a separate governance decision and a future Kubernetes write server; no mutation tool is present in v1 |
+| TB-007 | Broader toolbox rollout beyond current curated peer bands | partial | `dockerhub-read` now adds read-only container registry discovery to `docs-research`, `core-dev+docs-research`, and `full`; `deepwiki-read` now adds generated repository documentation and Q&A to `docs-research`, `core-dev+docs-research`, and `full`; `semgrep-audit` now adds read-only security scanning to `security-audit`, `core-dev+security-audit`, and `full`; remaining peer bands still require manifest additions and test coverage |
+
 ## Not In The Current Stack
 
 | ID | Work Item | Why It Is Not In Stack | Status |

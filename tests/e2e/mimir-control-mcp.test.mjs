@@ -1423,6 +1423,206 @@ test("mimir-control MCP returns parse errors for malformed frames and stays aliv
   }
 });
 
+test("mimir-control MCP lists kubernetes read-only tools when runtime-observe is active", async () => {
+  const child = spawnControlServer({ activeProfile: "runtime-observe", clientId: "codex" });
+  try {
+    const transport = createMessageCollector(child.stdout);
+    await initializeMcp(transport, child.stdin);
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
+      id: 200,
+      method: "tools/call",
+      params: {
+        name: "list_active_tools",
+        arguments: {}
+      }
+    });
+
+    const activeTools = await transport.next();
+    const activeToolIds = activeTools.result.structuredContent.activeTools.map((t) => t.toolId);
+
+    assert.ok(
+      activeToolIds.includes("kubernetes.context.inspect"),
+      "runtime-observe must expose kubernetes.context.inspect as active tool"
+    );
+    assert.ok(
+      activeToolIds.includes("kubernetes.events.list"),
+      "runtime-observe must expose kubernetes.events.list as active tool"
+    );
+    assert.ok(
+      activeToolIds.includes("kubernetes.logs.query"),
+      "runtime-observe must expose kubernetes.logs.query as active tool"
+    );
+
+    const k8sTools = activeTools.result.structuredContent.activeTools.filter((t) =>
+      t.toolId.startsWith("kubernetes.")
+    );
+    for (const tool of k8sTools) {
+      assert.equal(tool.mutationLevel, "read", `${tool.toolId} must be read-only`);
+    }
+
+    // Codex overlay must not suppress kubernetes tools (no kubernetes semantic capability suppression)
+    assert.ok(
+      !activeTools.result.structuredContent.suppressedTools.some((t) =>
+        t.toolId.startsWith("kubernetes.")
+      ),
+      "Codex overlay must not suppress kubernetes tools"
+    );
+  } finally {
+    await stopChild(child);
+  }
+});
+
+test("mimir-control MCP lists DockerHub read-only tools when docs-research is active", async () => {
+  const child = spawnControlServer({ activeProfile: "docs-research", clientId: "codex" });
+  try {
+    const transport = createMessageCollector(child.stdout);
+    await initializeMcp(transport, child.stdin);
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
+      id: 210,
+      method: "tools/call",
+      params: {
+        name: "list_active_tools",
+        arguments: {}
+      }
+    });
+
+    const activeTools = await transport.next();
+    const activeToolIds = activeTools.result.structuredContent.activeTools.map((t) => t.toolId);
+
+    assert.ok(
+      activeToolIds.includes("dockerhub.image.search"),
+      "docs-research must expose dockerhub.image.search as active tool"
+    );
+    assert.ok(
+      activeToolIds.includes("dockerhub.image.tags.list"),
+      "docs-research must expose dockerhub.image.tags.list as active tool"
+    );
+    assert.ok(
+      activeToolIds.includes("dockerhub.image.inspect"),
+      "docs-research must expose dockerhub.image.inspect as active tool"
+    );
+
+    const dockerHubTools = activeTools.result.structuredContent.activeTools.filter((t) =>
+      t.toolId.startsWith("dockerhub.")
+    );
+    for (const tool of dockerHubTools) {
+      assert.equal(tool.category, "container-registry-read", `${tool.toolId} must use container-registry-read`);
+      assert.equal(tool.trustClass, "external-read", `${tool.toolId} must be external-read`);
+      assert.equal(tool.mutationLevel, "read", `${tool.toolId} must be read-only`);
+    }
+
+    assert.ok(
+      !activeTools.result.structuredContent.suppressedTools.some((t) =>
+        t.toolId.startsWith("dockerhub.")
+      ),
+      "Codex overlay must not suppress dockerhub tools"
+    );
+  } finally {
+    await stopChild(child);
+  }
+});
+
+test("mimir-control MCP lists DeepWiki read-only tools when docs-research is active", { timeout: 10000 }, async () => {
+  const child = spawnControlServer({ activeProfile: "docs-research", clientId: "codex" });
+  try {
+    const transport = createMessageCollector(child.stdout);
+    await initializeMcp(transport, child.stdin);
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
+      id: 221,
+      method: "tools/call",
+      params: {
+        name: "list_active_tools",
+        arguments: {}
+      }
+    });
+
+    const activeTools = await transport.next();
+    const activeToolIds = activeTools.result.structuredContent.activeTools.map((t) => t.toolId);
+
+    assert.ok(
+      activeToolIds.includes("read_wiki_structure"),
+      "docs-research must expose read_wiki_structure as active tool"
+    );
+    assert.ok(
+      activeToolIds.includes("read_wiki_contents"),
+      "docs-research must expose read_wiki_contents as active tool"
+    );
+    assert.ok(
+      activeToolIds.includes("ask_question"),
+      "docs-research must expose ask_question as active tool"
+    );
+
+    const deepwikiTools = activeTools.result.structuredContent.activeTools.filter((t) =>
+      t.semanticCapabilityId?.startsWith("repo.knowledge.")
+    );
+    for (const tool of deepwikiTools) {
+      assert.equal(tool.category, "repo-knowledge-read", `${tool.toolId} must use repo-knowledge-read`);
+      assert.equal(tool.trustClass, "external-read", `${tool.toolId} must be external-read`);
+      assert.equal(tool.mutationLevel, "read", `${tool.toolId} must be read-only`);
+    }
+
+    assert.ok(
+      !activeTools.result.structuredContent.suppressedTools.some((t) =>
+        t.semanticCapabilityId?.startsWith("repo.knowledge.")
+      ),
+      "Codex overlay must not suppress deepwiki tools"
+    );
+  } finally {
+    await stopChild(child);
+  }
+});
+
+test("mimir-control MCP lists Semgrep read-only tools when security-audit is active", { timeout: 10000 }, async () => {
+  const child = spawnControlServer({ activeProfile: "security-audit", clientId: "codex" });
+  try {
+    const transport = createMessageCollector(child.stdout);
+    await initializeMcp(transport, child.stdin);
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
+      id: 220,
+      method: "tools/call",
+      params: {
+        name: "list_active_tools",
+        arguments: {}
+      }
+    });
+
+    const activeTools = await transport.next();
+
+    assert.ok(
+      activeTools.result.structuredContent.activeTools.some((t) =>
+        t.semanticCapabilityId?.startsWith("security.semgrep.")
+      ),
+      "security-audit must expose at least one security.semgrep.* tool as active"
+    );
+
+    const semgrepTools = activeTools.result.structuredContent.activeTools.filter((t) =>
+      t.semanticCapabilityId?.startsWith("security.semgrep.")
+    );
+    for (const tool of semgrepTools) {
+      assert.equal(tool.mutationLevel, "read", `${tool.toolId} must be read-only`);
+      assert.equal(tool.trustClass, "external-read", `${tool.toolId} must be external-read`);
+      assert.equal(tool.category, "security-scan-read", `${tool.toolId} must use security-scan-read category`);
+    }
+
+    assert.ok(
+      !activeTools.result.structuredContent.suppressedTools.some((t) =>
+        t.semanticCapabilityId?.startsWith("security.semgrep.")
+      ),
+      "Codex overlay must not suppress semgrep tools"
+    );
+  } finally {
+    await stopChild(child);
+  }
+});
+
 async function createTempSqlitePath() {
   const root = await mkdtemp(path.join(os.tmpdir(), "mimir-toolbox-"));
   return {

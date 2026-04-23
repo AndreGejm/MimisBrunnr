@@ -5,6 +5,9 @@ server:
   kind: peer
   trustClass: external-read
   mutationLevel: read
+  dockerRuntime:
+    applyMode: catalog
+    catalogServerId: docker-docs
   tools:
     - toolId: docker.docs.search
       displayName: Search Docker Docs

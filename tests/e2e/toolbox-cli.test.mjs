@@ -396,7 +396,7 @@ test("mimir-cli check-mcp-profiles reports Docker MCP profile readiness", async 
   }
 });
 
-test("mimir-cli sync-mcp-profiles apply uses Docker MCP profile execution and reports command results", async () => {
+test("mimir-cli sync-mcp-profiles apply is blocked before execution when descriptor-only servers are present", async () => {
   const stub = createDockerStub(true);
   try {
     const env = {
@@ -419,13 +419,13 @@ test("mimir-cli sync-mcp-profiles apply uses Docker MCP profile execution and re
       env
     );
 
-    assert.equal(result.exitCode, 0, result.stderr);
+    assert.notEqual(result.exitCode, 0, result.stderr);
     const payload = JSON.parse(result.stdout);
-    assert.equal(payload.ok, true);
+    assert.equal(payload.ok, false);
     assert.equal(payload.dryRun, false);
     assert.equal(payload.plan.generatedAt, "2026-01-01T00:00:00.000Z");
-    assert.equal(payload.apply.status, "applied");
-    assert.equal(payload.apply.commandResults.length, payload.plan.profiles.length);
+    assert.equal(payload.apply.status, "blocked");
+    assert.ok(payload.apply.blockedServers.some((server) => server.id === "dockerhub-read"));
 
     const bootstrapCommand = payload.apply.plan.commands.find(
       (command) => command.profileId === "bootstrap"
@@ -436,8 +436,13 @@ test("mimir-cli sync-mcp-profiles apply uses Docker MCP profile execution and re
       "file://./docker/mcp/servers/mimir-core.yaml"
     ]);
 
-    const log = readFileSync(stub.logFile, "utf8").trim().split(/\r?\n/);
-    assert.equal(log.length, payload.plan.profiles.length);
+    let logLines = [];
+    try {
+      logLines = readFileSync(stub.logFile, "utf8").trim().split(/\r?\n/).filter(Boolean);
+    } catch {
+      // Apply was blocked before docker profile commands were executed.
+    }
+    assert.equal(logLines.length, 0);
   } finally {
     rmSync(stub.rootDir, { recursive: true, force: true });
   }
@@ -1319,6 +1324,129 @@ test("mimir-cli records toolbox_expired when deactivating an expired lease", asy
   const actionTypes = history.entries.map((entry) => entry.actionType);
   assert.ok(actionTypes.includes("toolbox_expired"));
   assert.ok(actionTypes.includes("toolbox_deactivated"));
+});
+
+test("mimir-cli list-active-tools when runtime-observe is active includes kubernetes read-only tools", async () => {
+  const sqlitePath = await createTempSqlitePath();
+  const env = {
+    ...process.env,
+    MAB_NODE_ENV: "test",
+    MAB_TOOLBOX_MANIFEST_DIR: path.resolve("docker", "mcp"),
+    MAB_TOOLBOX_ACTIVE_PROFILE: "runtime-observe",
+    MAB_TOOLBOX_CLIENT_ID: "codex",
+    MAB_TOOLBOX_LEASE_ISSUER: "mimir-control",
+    MAB_TOOLBOX_LEASE_AUDIENCE: "mimir-core",
+    MAB_TOOLBOX_LEASE_ISSUER_SECRET: "toolbox-secret",
+    MAB_SQLITE_PATH: sqlitePath
+  };
+
+  const activeToolsResult = await runCliCommand(
+    ["list-active-tools", "--json", "{}", "--no-pretty"],
+    env
+  );
+  assert.equal(activeToolsResult.exitCode, 0, activeToolsResult.stderr);
+  const payload = JSON.parse(activeToolsResult.stdout);
+  assert.equal(payload.ok, true);
+
+  const activeToolIds = payload.activeTools.map((t) => t.toolId);
+  assert.ok(
+    activeToolIds.includes("kubernetes.context.inspect"),
+    "runtime-observe active tools must include kubernetes.context.inspect"
+  );
+  assert.ok(
+    activeToolIds.includes("kubernetes.events.list"),
+    "runtime-observe active tools must include kubernetes.events.list"
+  );
+  assert.ok(
+    activeToolIds.includes("kubernetes.logs.query"),
+    "runtime-observe active tools must include kubernetes.logs.query"
+  );
+
+  const k8sActive = payload.activeTools.filter((t) => t.toolId.startsWith("kubernetes."));
+  for (const tool of k8sActive) {
+    assert.equal(tool.mutationLevel, "read", `${tool.toolId} must be read-only`);
+  }
+});
+
+test("mimir-cli list-active-tools when security-audit is active includes semgrep read-only tools", async () => {
+  const sqlitePath = await createTempSqlitePath();
+  const env = {
+    ...process.env,
+    MAB_NODE_ENV: "test",
+    MAB_TOOLBOX_MANIFEST_DIR: path.resolve("docker", "mcp"),
+    MAB_TOOLBOX_ACTIVE_PROFILE: "security-audit",
+    MAB_TOOLBOX_CLIENT_ID: "codex",
+    MAB_TOOLBOX_LEASE_ISSUER: "mimir-control",
+    MAB_TOOLBOX_LEASE_AUDIENCE: "mimir-core",
+    MAB_TOOLBOX_LEASE_ISSUER_SECRET: "toolbox-secret",
+    MAB_SQLITE_PATH: sqlitePath
+  };
+
+  const activeToolsResult = await runCliCommand(
+    ["list-active-tools", "--json", "{}", "--no-pretty"],
+    env
+  );
+  assert.equal(activeToolsResult.exitCode, 0, activeToolsResult.stderr);
+  const payload = JSON.parse(activeToolsResult.stdout);
+  assert.equal(payload.ok, true);
+
+  assert.ok(
+    payload.activeTools.some((t) => t.semanticCapabilityId?.startsWith("security.semgrep.")),
+    "security-audit active tools must include at least one security.semgrep.* tool"
+  );
+
+  const semgrepActive = payload.activeTools.filter((t) =>
+    t.semanticCapabilityId?.startsWith("security.semgrep.")
+  );
+  for (const tool of semgrepActive) {
+    assert.equal(tool.mutationLevel, "read", `${tool.toolId} must be read-only`);
+    assert.equal(tool.category, "security-scan-read", `${tool.toolId} must use security-scan-read category`);
+  }
+});
+
+test("mimir-cli list-active-tools when docs-research is active includes deepwiki read-only tools", async () => {
+  const sqlitePath = await createTempSqlitePath();
+  const env = {
+    ...process.env,
+    MAB_NODE_ENV: "test",
+    MAB_TOOLBOX_MANIFEST_DIR: path.resolve("docker", "mcp"),
+    MAB_TOOLBOX_ACTIVE_PROFILE: "docs-research",
+    MAB_TOOLBOX_CLIENT_ID: "codex",
+    MAB_TOOLBOX_LEASE_ISSUER: "mimir-control",
+    MAB_TOOLBOX_LEASE_AUDIENCE: "mimir-core",
+    MAB_TOOLBOX_LEASE_ISSUER_SECRET: "toolbox-secret",
+    MAB_SQLITE_PATH: sqlitePath
+  };
+
+  const activeToolsResult = await runCliCommand(
+    ["list-active-tools", "--json", "{}", "--no-pretty"],
+    env
+  );
+  assert.equal(activeToolsResult.exitCode, 0, activeToolsResult.stderr);
+  const payload = JSON.parse(activeToolsResult.stdout);
+  assert.equal(payload.ok, true);
+
+  const activeToolIds = payload.activeTools.map((t) => t.toolId);
+  assert.ok(
+    activeToolIds.includes("read_wiki_structure"),
+    "docs-research active tools must include read_wiki_structure"
+  );
+  assert.ok(
+    activeToolIds.includes("read_wiki_contents"),
+    "docs-research active tools must include read_wiki_contents"
+  );
+  assert.ok(
+    activeToolIds.includes("ask_question"),
+    "docs-research active tools must include ask_question"
+  );
+
+  const deepwikiActive = payload.activeTools.filter((t) =>
+    t.semanticCapabilityId?.startsWith("repo.knowledge.")
+  );
+  for (const tool of deepwikiActive) {
+    assert.equal(tool.category, "repo-knowledge-read", `${tool.toolId} must use repo-knowledge-read`);
+    assert.equal(tool.mutationLevel, "read", `${tool.toolId} must be read-only`);
+  }
 });
 
 test("mimir-cli deactivation returns the active profile fallback downgrade target", async () => {

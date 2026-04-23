@@ -177,12 +177,6 @@ Toolbox control commands are implemented through the shared control surface. The
 - `activeTools`: tools currently exposed to the session after overlay suppression
 - `suppressedTools`: declared tools hidden by overlay rules, including `suppressionReasons`
 
-Observation-oriented profiles may expose Kubernetes read-only descriptors
-through `list-active-tools` / `list_active_tools`, including
-`kubernetes.context.inspect`, `kubernetes.namespaces.list`,
-`kubernetes.workloads.list`, `kubernetes.events.list`, and
-`kubernetes.logs.query`. No Kubernetes mutation tool is part of v1.
-
 `describe-toolbox` returns structured workflow and composition metadata in
 addition to the intent-level categories and tool list. The discovery payload now
 includes:
@@ -208,6 +202,33 @@ sections:
 - `profile`: active profile identity, composition, category bounds, semantic
   capabilities, and profile revision
 - `client`: current overlay handoff metadata plus suppression lists
+
+`sync-mcp-profiles` includes Docker runtime apply metadata in its generated plan:
+
+- server descriptors may include `dockerApplyMode`
+- catalog-mode peers include `catalogServerId`
+- descriptor-only peers include `blockedReason`
+- apply commands omit descriptor-only peers from `serverRefs` and report them in `blockedServers`
+- apply mode may return `status: "blocked"` when Docker profile support exists but the selected plan contains descriptor-only peers
+
+For sessions using `runtime-observe`, `core-dev+runtime-observe`, `runtime-admin`, or `full`, the active tool surface may include Kubernetes read-only descriptors from the `kubernetes-read` peer server. The current Kubernetes tool ids are:
+
+- `kubernetes.context.inspect`
+- `kubernetes.namespaces.list`
+- `kubernetes.workloads.list`
+- `kubernetes.pods.list`
+- `kubernetes.events.list`
+- `kubernetes.logs.query`
+
+All six are `mutationLevel: read`. There is no Kubernetes mutation tool in v1.
+
+For sessions using `docs-research`, `core-dev+docs-research`, or `full`, the active tool surface may include DockerHub read-only descriptors from the `dockerhub-read` peer server. The current DockerHub tool ids are:
+
+- `dockerhub.image.search`
+- `dockerhub.image.tags.list`
+- `dockerhub.image.inspect`
+
+All three are `mutationLevel: read`. There is no DockerHub publish, delete, pull, push, signing, or deployment tool in this band.
 
 Issued-token listing filters are implemented end to end across CLI and HTTP. The supported request fields are:
 

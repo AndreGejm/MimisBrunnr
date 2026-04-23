@@ -9,6 +9,7 @@ profile:
     - docker-read
     - kubernetes-read
     - docker-admin
+    - kubernetes-read
   allowedCategories:
     - repo-read
     - internal-memory
@@ -20,6 +21,9 @@ profile:
     - k8s-logs-read
     - k8s-events-read
     - docker-write
+    - k8s-read
+    - k8s-logs-read
+    - k8s-events-read
   deniedCategories:
     - deployment
   fallbackProfile: runtime-observe

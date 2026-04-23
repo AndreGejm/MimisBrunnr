@@ -193,6 +193,43 @@ pnpm docker:mcp:sync
 pnpm docker:mcp:sync:json
 ```
 
+`sync-mcp-profiles` emits Docker apply metadata for each server:
+
+- `catalog` peers can be emitted as Docker MCP catalog references and may use a
+  different live catalog id than the repo policy id, for example
+  `brave-search` maps to Docker catalog server `brave`
+- `descriptor-only` peers describe a governed toolbox surface but are not safe
+  raw Docker catalog targets yet
+- descriptor-only peers may also declare `unsafeCatalogServerIds`, the live raw
+  catalog server names that correspond to curated descriptor-only wrappers
+
+Dry-run still succeeds when descriptor-only peers are present. Live apply is
+blocked before shelling out profile mutation commands if any selected profile
+contains descriptor-only peers. This prevents read-filtered policy surfaces such
+as `dockerhub-read` and `grafana-observe` from being replaced by broader raw
+catalog servers.
+
+The Windows installer Docker MCP audit compiles the checked-in toolbox policy
+beside the live Docker state and adds governance drift diagnostics:
+
+- `governedEnabledServers`: live enabled servers owned by repo policy or mapped
+  through catalog-mode `catalogServerId`
+- `unsafeEnabledServers`: live enabled raw catalog servers that match a
+  descriptor-only wrapper's `unsafeCatalogServerIds`
+- `unmanagedEnabledServers`: live enabled servers that match neither governed
+  nor unsafe policy metadata
+- `governanceStatus`: `clean`, `drift_detected`, or `unavailable`
+
+If policy preparation fails, Docker state is still reported and governance is
+marked `unavailable` with an explanation.
+
+When the local toolkit does not expose `docker mcp profile`, the compiled apply
+plan also emits deterministic diagnostic fallback commands:
+`docker mcp gateway run --servers <catalog-server-ids>`. These fallback entries
+include only catalog-mode peer servers and explicitly list omitted owned servers
+and descriptor-only peers. They are for operator diagnostics and handoff
+planning, not complete profile sessions.
+
 Run the control MCP server directly:
 
 ```bash
@@ -225,10 +262,94 @@ pnpm cli list-active-toolbox --json "{}"
 - `core-dev+runtime-observe`
 - `runtime-admin`
 - `heavy-rag`
+- `security-audit`
+- `core-dev+security-audit`
 - `delivery-admin`
 - `full`
 
 Composite profiles are only allowed for repeated workflows with explicit fixtures and tests.
+
+## Kubernetes read-only peer band
+
+`runtime-observe`, `core-dev+runtime-observe` (inherits from `runtime-observe`), `runtime-admin`, and `full` include the `kubernetes-read` peer server.
+
+Allowed categories for these profiles include `k8s-read`, `k8s-logs-read`, and `k8s-events-read`.
+
+v1 is **read-only** for Kubernetes. No Kubernetes mutation, deployment, or admin tool is exposed by any v1 profile. Future approval-gated Kubernetes mutation is tracked in the backlog but is not part of the current implementation.
+
+## Grafana observe read-only peer band
+
+`runtime-observe`, `core-dev+runtime-observe` (inherits from `runtime-observe`), `runtime-admin`, and `full` include the `grafana-observe` peer server.
+
+Allowed categories for these profiles include `logs-read`, `metrics-read`, and `traces-read`.
+
+The current Grafana observe tool ids are:
+
+- `grafana.logs.query`
+- `grafana.metrics.query`
+- `grafana.traces.query`
+
+All three are `mutationLevel: read`.
+
+Grafana apply caveat: the live Docker catalog server is named `grafana` and currently includes mutating/destructive tools (for example `alerting_manage_rules`, `update_dashboard`, and `create_*`). The curated `grafana-observe` toolbox server is therefore `descriptor-only` until a read-filtered wrapper or catalog entry exists.
+
+## DockerHub read-only peer band
+
+`docs-research`, `core-dev+docs-research` (inherits from `docs-research`), and `full` include the `dockerhub-read` peer server.
+
+Allowed categories for these profiles include `container-registry-read`.
+
+The current DockerHub tool ids are:
+
+- `dockerhub.image.search`
+- `dockerhub.image.tags.list`
+- `dockerhub.image.inspect`
+
+All three are `mutationLevel: read`. This band is for image discovery and metadata inspection only; it does not pull, push, publish, sign, delete, or deploy images.
+
+DockerHub apply caveat: the live Docker catalog server is named `dockerhub` and
+also exposes repository creation and metadata update tools. The curated
+`dockerhub-read` toolbox server is therefore `descriptor-only` until a
+read-filtered wrapper or catalog entry exists.
+
+## DeepWiki read-only repo knowledge band
+
+`docs-research`, `core-dev+docs-research` (inherits from `docs-research`), and `full` include the `deepwiki-read` peer server.
+
+Allowed categories for these profiles include `repo-knowledge-read`.
+
+The current DeepWiki tool ids are:
+
+- `read_wiki_structure`
+- `read_wiki_contents`
+- `ask_question`
+
+All three are `mutationLevel: read`. This band is for generated GitHub repository documentation and repository Q&A only; it does not write GitHub state or mutate local files.
+
+DeepWiki apply note: the live Docker catalog server is named `deepwiki`, so the
+repo policy id `deepwiki-read` maps to catalog server `deepwiki`.
+
+## Semgrep read-only security audit band
+
+`security-audit`, `core-dev+security-audit` (inherits from `security-audit`), and `full` include the `semgrep-audit` peer server.
+
+Allowed categories for these profiles include `security-scan-read`.
+
+The current Semgrep tool ids are:
+
+- `semgrep.rule.schema`
+- `semgrep.languages.list`
+- `semgrep.findings.list`
+- `semgrep.scan.content`
+- `semgrep.scan.custom_rule`
+- `semgrep.scan.local`
+- `semgrep.security.check`
+- `semgrep.ast.get`
+
+All Semgrep tools are `mutationLevel: read`. This band is for static analysis, existing finding lookup, and security review support only. It does not publish findings, change repository files, or deploy workloads.
+
+Semgrep apply note: the live Docker catalog server is named `semgrep`, so the
+repo policy id `semgrep-audit` maps to catalog server `semgrep`.
 
 ## Enforcement notes
 

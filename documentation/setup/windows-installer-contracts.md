@@ -365,10 +365,13 @@ Current behavior:
   - `applyStatus`
   - `applyAttempted`
   - `applyCommandCount`
-  - normalized `commands[]` from the compiler dry-run payload
+  - normalized `commands[]` from the compiler dry-run payload, including
+    per-command `blockedServers[]` when the compiler reports blockers
   - `dockerProfileSubcommandAvailable`
   - `compatibleWithCurrentToolkit`
   - `blockedReasons[]`
+  - top-level `blockedServers[]` and `descriptorOnlyBlockedServers[]` for
+    descriptor-only blockers that keep the plan incompatible
   - embedded `toolkit` summary
 - never executes the planned Docker commands
 - always marks `mutationAllowed` as `false`
@@ -383,6 +386,9 @@ Current real-world compatibility note:
 
 - the tracked runtime compiler currently emits `docker mcp profile create ...`
   commands
+- installed Toolkit profile support alone does not make the plan compatible
+  while selected profiles still contain descriptor-only peer servers such as
+  `dockerhub-read` or `grafana-observe`
 - the live Docker MCP Toolkit surface verified in this repo does not currently
   expose profile-specific help output for that subcommand, even though the CLI
   returns exit code `0` for `docker mcp profile --help`

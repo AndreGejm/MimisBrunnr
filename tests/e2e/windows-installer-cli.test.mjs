@@ -331,11 +331,21 @@ test("windows installer cli audit-toolbox-assets returns toolbox manifest and ru
   assert.ok(envelope.details.toolboxAssets.counts.clients > 0);
   assert.ok(envelope.details.toolboxAssets.runtimePlan.serverCount > 0);
   assert.ok(envelope.details.toolboxAssets.runtimePlan.profileCount > 0);
+  assert.ok(Array.isArray(envelope.details.toolboxAssets.runtimePlan.serverIds));
+  assert.ok(envelope.details.toolboxAssets.runtimePlan.serverIds.includes("kubernetes-read"));
   assert.ok(
-    envelope.details.toolboxAssets.runtimePlan.serverIds.includes("kubernetes-read")
+    envelope.details.toolboxAssets.runtimePlan.serverIds.includes("semgrep-audit"),
+    "audit-toolbox-assets runtimePlan.serverIds must include semgrep-audit"
   );
   assert.ok(
-    envelope.details.toolboxAssets.runtimePlan.profileIds.includes("runtime-observe")
+    envelope.details.toolboxAssets.runtimePlan.serverIds.includes("deepwiki-read"),
+    "audit-toolbox-assets runtimePlan.serverIds must include deepwiki-read"
+  );
+  assert.ok(Array.isArray(envelope.details.toolboxAssets.runtimePlan.profileIds));
+  assert.ok(envelope.details.toolboxAssets.runtimePlan.profileIds.includes("runtime-observe"));
+  assert.ok(
+    envelope.details.toolboxAssets.runtimePlan.profileIds.includes("security-audit"),
+    "audit-toolbox-assets runtimePlan.profileIds must include security-audit"
   );
   assert.equal(envelope.details.toolboxAssets.bootstrapProfilePresent, true);
   assert.equal(envelope.details.toolboxAssets.controlServerPresent, true);
@@ -383,6 +393,22 @@ test("windows installer cli prepare-toolbox-runtime writes a compiled runtime-pl
   assert.notEqual(envelope.details.toolboxRuntime.manifestRevision.length, 0);
   assert.ok(envelope.details.toolboxRuntime.profileCount > 0);
   assert.ok(envelope.details.toolboxRuntime.serverCount > 0);
+  assert.ok(Array.isArray(envelope.details.toolboxRuntime.serverIds));
+  assert.ok(envelope.details.toolboxRuntime.serverIds.includes("kubernetes-read"));
+  assert.ok(
+    envelope.details.toolboxRuntime.serverIds.includes("semgrep-audit"),
+    "prepare-toolbox-runtime serverIds must include semgrep-audit"
+  );
+  assert.ok(
+    envelope.details.toolboxRuntime.serverIds.includes("deepwiki-read"),
+    "prepare-toolbox-runtime serverIds must include deepwiki-read"
+  );
+  assert.ok(Array.isArray(envelope.details.toolboxRuntime.profileIds));
+  assert.ok(envelope.details.toolboxRuntime.profileIds.includes("runtime-observe"));
+  assert.ok(
+    envelope.details.toolboxRuntime.profileIds.includes("security-audit"),
+    "prepare-toolbox-runtime profileIds must include security-audit"
+  );
   assert.equal(envelope.details.toolboxRuntime.dryRun, true);
   assert.equal(envelope.details.toolboxRuntime.dockerApplyImplemented, false);
   assert.ok(envelope.artifactsWritten.includes(expectedOutputPath));
@@ -636,8 +662,8 @@ test("windows installer cli audit-docker-mcp-toolkit reports Docker MCP toolkit 
       "  exit /b 0",
       ")",
       "if \"%~1 %~2 %~3 %~4\"==\"mcp server ls --json\" (",
-      "  echo [{\"name\":\"mimir-control\",\"description\":\"Control server\",\"secrets\":\"none\",\"config\":\"done\",\"oauth\":\"none\"},{\"name\":\"mimir-core\",\"description\":\"Core server\",\"secrets\":\"none\",\"config\":\"done\",\"oauth\":\"none\"}]",
-        "  exit /b 0",
+      "  echo [{\"name\":\"mimir-control\",\"description\":\"Control server\",\"secrets\":\"none\",\"config\":\"done\",\"oauth\":\"none\"},{\"name\":\"brave\",\"description\":\"Brave Search\",\"secrets\":\"done\",\"config\":\"done\",\"oauth\":\"none\"},{\"name\":\"grafana\",\"description\":\"Grafana\",\"secrets\":\"done\",\"config\":\"done\",\"oauth\":\"none\"},{\"name\":\"github\",\"description\":\"GitHub\",\"secrets\":\"done\",\"config\":\"done\",\"oauth\":\"none\"},{\"name\":\"filesystem\",\"description\":\"Filesystem\",\"secrets\":\"none\",\"config\":\"done\",\"oauth\":\"none\"},{\"name\":\"rtk-codex\",\"description\":\"RTK Codex\",\"secrets\":\"none\",\"config\":\"done\",\"oauth\":\"none\"}]",
+      "  exit /b 0",
       ")",
       "if \"%~1 %~2 %~3 %~4\"==\"mcp client ls --json\" (",
       "  echo {\"codex\":{\"displayName\":\"Codex\",\"dockerMCPCatalogConnected\":true,\"profile\":\"workspace\",\"error\":null,\"Cfg\":null,\"isConfigured\":true}}",
@@ -687,17 +713,50 @@ test("windows installer cli audit-docker-mcp-toolkit reports Docker MCP toolkit 
   assert.equal(envelope.mode, "audit_only");
   assert.equal(envelope.status, "success");
   assert.equal(envelope.reasonCode, "docker_mcp_toolkit_audited");
-  assert.equal(envelope.commandsRun.length, 5);
+  assert.equal(envelope.commandsRun.length, 6);
   assert.equal(envelope.details.dockerMcpToolkit.available, true);
   assert.equal(envelope.details.dockerMcpToolkit.version, "v0.40.3");
-  assert.equal(envelope.details.dockerMcpToolkit.enabledServerCount, 2);
+  assert.equal(envelope.details.dockerMcpToolkit.enabledServerCount, 6);
   assert.equal(envelope.details.dockerMcpToolkit.configuredClientCount, 1);
   assert.equal(envelope.details.dockerMcpToolkit.connectedClientCount, 1);
   assert.equal(envelope.details.dockerMcpToolkit.servers[0].name, "mimir-control");
-  assert.equal(envelope.details.dockerMcpToolkit.servers[1].name, "mimir-core");
+  assert.equal(envelope.details.dockerMcpToolkit.servers[1].name, "brave");
   assert.equal(envelope.details.dockerMcpToolkit.clients[0].name, "codex");
   assert.match(envelope.details.dockerMcpToolkit.configText, /filesystem:/);
   assert.match(envelope.details.dockerMcpToolkit.featureText, /dynamic-tools enabled/);
+  assert.equal(envelope.details.dockerMcpToolkit.governanceStatus, "drift_detected");
+  assert.deepEqual(
+    envelope.details.dockerMcpToolkit.governedEnabledServers.map((entry) => entry.name),
+    ["brave", "mimir-control"]
+  );
+  assert.deepEqual(
+    envelope.details.dockerMcpToolkit.unsafeEnabledServers.map((entry) => ({
+      name: entry.name,
+      policyServerId: entry.policyServerId,
+      policyServerIds: entry.policyServerIds
+    })),
+    [
+      {
+        name: "github",
+        policyServerId: "github-read",
+        policyServerIds: ["github-read", "github-write"]
+      },
+      {
+        name: "grafana",
+        policyServerId: "grafana-observe",
+        policyServerIds: ["grafana-observe"]
+      }
+    ]
+  );
+  assert.deepEqual(
+    envelope.details.dockerMcpToolkit.unmanagedEnabledServers.map((entry) => entry.name),
+    ["filesystem", "rtk-codex"]
+  );
+  assert.deepEqual(envelope.details.dockerMcpToolkit.governanceSummaryCounts, {
+    governedEnabledServerCount: 2,
+    unsafeEnabledServerCount: 2,
+    unmanagedEnabledServerCount: 2
+  });
 
   const persistedReport = JSON.parse(
     await readFile(path.join(stateRoot, "last-report.json"), "utf8")
@@ -784,6 +843,31 @@ test("windows installer cli plan-docker-mcp-toolkit-apply reports a blocked dry-
   assert.equal(envelope.details.dockerMcpToolkitApplyPlan.compatibleWithCurrentToolkit, false);
   assert.equal(envelope.details.dockerMcpToolkitApplyPlan.dockerProfileSubcommandAvailable, false);
   assert.ok(envelope.details.dockerMcpToolkitApplyPlan.applyCommandCount > 0);
+  assert.ok(envelope.details.dockerMcpToolkitApplyPlan.fallbackGatewayCommandCount > 0);
+  assert.ok(Array.isArray(envelope.details.dockerMcpToolkitApplyPlan.fallbackGatewayCommands));
+  const docsFallback = envelope.details.dockerMcpToolkitApplyPlan.fallbackGatewayCommands.find(
+    (entry) => entry.profileId === "docs-research"
+  );
+  assert.ok(docsFallback, "docs-research fallback command must be included in installer report");
+  assert.deepEqual(docsFallback.argv.slice(0, 3), ["mcp", "gateway", "run"]);
+  assert.deepEqual(docsFallback.serverNames, [
+    "brave",
+    "deepwiki",
+    "docker-docs",
+    "microsoft-learn"
+  ]);
+  assert.ok(
+    docsFallback.omittedServers.some(
+      (entry) => entry.id === "mimir-control" && /owned/i.test(entry.blockedReason)
+    ),
+    "fallback omittedServers must include owned mimir-control"
+  );
+  assert.ok(
+    docsFallback.omittedServers.some(
+      (entry) => entry.id === "github-read" && /descriptor-only/i.test(entry.blockedReason)
+    ),
+    "fallback omittedServers must include descriptor-only github-read"
+  );
   assert.match(
     envelope.details.dockerMcpToolkitApplyPlan.blockedReasons[0],
     /profile/i
@@ -1066,6 +1150,122 @@ test("windows installer cli audit-toolbox-client-handoff reports reconnect contr
     await readFile(path.join(stateRoot, "last-report.json"), "utf8")
   );
   assert.equal(persistedReport.operationId, "audit-toolbox-client-handoff");
+});
+
+test("windows installer cli plan-docker-mcp-toolkit-apply remains blocked when profile support exists but descriptor-only servers are present", async (t) => {
+  if (process.platform !== "win32") {
+    t.skip("Windows-only installer contract");
+    return;
+  }
+
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-installer-"));
+  const binDir = path.join(root, "bin");
+  const stateRoot = path.join(root, "state");
+  await mkdir(binDir, { recursive: true });
+  await writeFile(
+    path.join(binDir, "docker.cmd"),
+    [
+      "@echo off",
+      "if \"%~1 %~2\"==\"mcp version\" (",
+      "  echo v0.40.3",
+      "  exit /b 0",
+      ")",
+      "if \"%~1 %~2 %~3 %~4\"==\"mcp server ls --json\" (",
+      "  echo [{\"name\":\"mimir-control\",\"description\":\"Control server\",\"secrets\":\"none\",\"config\":\"done\",\"oauth\":\"none\"},{\"name\":\"mimir-core\",\"description\":\"Core server\",\"secrets\":\"none\",\"config\":\"done\",\"oauth\":\"none\"}]",
+      "  exit /b 0",
+      ")",
+      "if \"%~1 %~2 %~3 %~4\"==\"mcp client ls --json\" (",
+      "  echo {\"codex\":{\"displayName\":\"Codex\",\"dockerMCPCatalogConnected\":false,\"profile\":\"bootstrap\",\"error\":null,\"Cfg\":null,\"isConfigured\":true}}",
+      "  exit /b 0",
+      ")",
+      "if \"%~1 %~2 %~3\"==\"mcp config read\" (",
+      "  echo filesystem:",
+      "  echo   paths:",
+      "  echo     - F:\\Dev",
+      "  exit /b 0",
+      ")",
+      "if \"%~1 %~2 %~3\"==\"mcp feature ls\" (",
+      "  echo dynamic-tools enabled",
+      "  exit /b 0",
+      ")",
+      "if \"%~1 %~2 %~3\"==\"mcp profile --help\" (",
+      "  echo Usage: docker mcp profile [COMMAND]",
+      "  echo.",
+      "  echo Commands:",
+      "  echo   create    Create a profile",
+      "  exit /b 0",
+      ")",
+      "echo unexpected docker args: %* 1>&2",
+      "exit /b 1"
+    ].join("\r\n"),
+    "utf8"
+  );
+
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const result = await runInstallerCommand(
+    [
+      "-Operation",
+      "plan-docker-mcp-toolkit-apply",
+      "-RepoRoot",
+      process.cwd(),
+      "-StateRoot",
+      stateRoot,
+      "-Json"
+    ],
+    {
+      env: {
+        ...process.env,
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`
+      }
+    }
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const envelope = JSON.parse(result.stdout);
+  assert.equal(envelope.operationId, "plan-docker-mcp-toolkit-apply");
+  assert.equal(envelope.mode, "plan_only");
+  assert.equal(envelope.status, "user_action_required");
+  assert.equal(envelope.reasonCode, "docker_mcp_toolkit_apply_plan_blocked");
+  const report = envelope.details.dockerMcpToolkitApplyPlan;
+  assert.equal(report.mutationAllowed, false);
+  assert.equal(report.reviewRequired, true);
+  assert.equal(report.dockerProfileSubcommandAvailable, true);
+  assert.equal(report.compatibleWithCurrentToolkit, false);
+  assert.ok(
+    report.blockedReasons.some((reason) => /descriptor-only/i.test(reason) && /blocked/i.test(reason)),
+    "blockedReasons must explain descriptor-only blocking"
+  );
+  assert.ok(Array.isArray(report.blockedServers), "report must include structured blockedServers");
+  assert.ok(
+    report.blockedServers.some(
+      (entry) => entry.id === "dockerhub-read" && /descriptor-only/i.test(entry.blockedReason)
+    ),
+    "blockedServers must include descriptor-only dockerhub-read"
+  );
+  assert.ok(
+    report.blockedServers.some(
+      (entry) => entry.id === "grafana-observe" && /descriptor-only/i.test(entry.blockedReason)
+    ),
+    "blockedServers must include descriptor-only grafana-observe"
+  );
+  const runtimeObserveCommand = report.commands.find(
+    (entry) => entry.profileId === "runtime-observe"
+  );
+  assert.ok(runtimeObserveCommand, "runtime-observe command must be included");
+  assert.ok(
+    runtimeObserveCommand.blockedServers.some(
+      (entry) => entry.id === "grafana-observe" && /descriptor-only/i.test(entry.blockedReason)
+    ),
+    "profile command must include structured descriptor-only grafana-observe blocker"
+  );
+
+  const persistedReport = JSON.parse(
+    await readFile(path.join(stateRoot, "last-report.json"), "utf8")
+  );
+  assert.equal(persistedReport.operationId, "plan-docker-mcp-toolkit-apply");
 });
 
 test("windows installer cli show-state reads the persisted installer state", async (t) => {

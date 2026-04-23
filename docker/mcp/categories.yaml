@@ -75,3 +75,15 @@ categories:
     description: External delivery and publish actions
     trustClass: operator-only
     mutationLevel: admin
+  container-registry-read:
+    description: Read-only access to container registry metadata and image search
+    trustClass: external-read
+    mutationLevel: read
+  repo-knowledge-read:
+    description: Read-only generated repository documentation and question answering
+    trustClass: external-read
+    mutationLevel: read
+  security-scan-read:
+    description: Read-only security scanning and static analysis
+    trustClass: external-read
+    mutationLevel: read

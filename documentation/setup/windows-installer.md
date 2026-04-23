@@ -280,6 +280,9 @@ What this does:
 - probes whether the installed Toolkit exposes profile-specific help for
   `docker mcp profile`
 - reports the prepared `apply.commands[]` from the runtime compiler
+- reports descriptor-only `blockedServers[]` from the compiled plan and keeps
+  the plan blocked when selected profiles contain servers with no safe catalog
+  apply target
 - returns a reviewed-execution plan only; it never shells out into those apply
   commands
 - writes installer state files
@@ -287,6 +290,9 @@ What this does:
 What this currently reports on Docker MCP Toolkit `v0.40.x`:
 
 - the runtime compiler emits `docker mcp profile create ...` style commands
+- profile subcommand support alone is not enough for compatibility; selected
+  descriptor-only peer servers such as `dockerhub-read` and `grafana-observe`
+  keep the plan at `user_action_required`
 - the current live Toolkit surface may still return exit code `0` for
   `docker mcp profile --help` while printing only the generic top-level help;
   the installer treats that as incompatible, not as working profile support

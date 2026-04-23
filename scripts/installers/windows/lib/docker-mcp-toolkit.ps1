@@ -6,7 +6,9 @@ function Invoke-InstallerDockerMcpToolkitAudit {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory = $true)]
-    [string]$RepoRoot
+    [string]$RepoRoot,
+
+    [string]$ToolboxManifestDir = ""
   )
 
   $versionResult = Invoke-ProcessCaptureAdapter `
@@ -61,6 +63,14 @@ function Invoke-InstallerDockerMcpToolkitAudit {
     }
   )
 
+  $governanceCommands = @()
+  $governanceReport = Get-InstallerDockerMcpGovernanceDriftReport `
+    -RepoRoot $RepoRoot `
+    -ToolboxManifestDir $ToolboxManifestDir `
+    -EnabledServers $servers
+  $governanceCommands = @($governanceReport.commands)
+  $governance = $governanceReport.report
+
   return [pscustomobject]@{
     commands = @(
       $versionResult.command,
@@ -68,7 +78,7 @@ function Invoke-InstallerDockerMcpToolkitAudit {
       $clientsResult.command,
       $configResult.command,
       $featureResult.command
-    )
+    ) + @($governanceCommands)
     report = [pscustomobject]@{
       available = $true
       version = $versionResult.stdout.Trim()
@@ -79,6 +89,147 @@ function Invoke-InstallerDockerMcpToolkitAudit {
       clients = @($clients | Sort-Object name)
       configText = $configResult.stdout
       featureText = $featureResult.stdout
+      governanceStatus = $governance.governanceStatus
+      governanceSummaryCounts = $governance.governanceSummaryCounts
+      governedEnabledServers = @($governance.governedEnabledServers)
+      unsafeEnabledServers = @($governance.unsafeEnabledServers)
+      unmanagedEnabledServers = @($governance.unmanagedEnabledServers)
+      governanceUnavailableReason = $governance.governanceUnavailableReason
+    }
+  }
+}
+
+function Get-InstallerDockerMcpGovernanceDriftReport {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$RepoRoot,
+
+    [string]$ToolboxManifestDir = "",
+
+    [Parameter(Mandatory = $true)]
+    [object[]]$EnabledServers
+  )
+
+  if (-not $ToolboxManifestDir) {
+    $ToolboxManifestDir = Join-Path $RepoRoot "docker\mcp"
+  }
+
+  try {
+    $runtimePrepare = Invoke-InstallerToolboxRuntimePrepare `
+      -RepoRoot $RepoRoot `
+      -ToolboxManifestDir $ToolboxManifestDir
+
+    $plan = $runtimePrepare.plan
+    $policyServers = @($plan.servers)
+    $governedByLiveName = @{}
+    $unsafeByLiveName = @{}
+
+    foreach ($server in $policyServers) {
+      if ($server.source -eq "owned") {
+        $name = [string]$server.dockerServerName
+        if ($name) {
+          $governedByLiveName[$name] = [pscustomobject]@{
+            name = $name
+            policyServerId = [string]$server.id
+            matchType = "owned-dockerServerName"
+          }
+        }
+      } elseif ($server.dockerApplyMode -eq "catalog" -and $server.PSObject.Properties.Name -contains "catalogServerId") {
+        $name = [string]$server.catalogServerId
+        if ($name) {
+          $governedByLiveName[$name] = [pscustomobject]@{
+            name = $name
+            policyServerId = [string]$server.id
+            matchType = "catalogServerId"
+          }
+        }
+      }
+
+      if ($server.PSObject.Properties.Name -contains "unsafeCatalogServerIds" -and $null -ne $server.unsafeCatalogServerIds) {
+        foreach ($unsafeCatalogServerId in @($server.unsafeCatalogServerIds)) {
+          $name = [string]$unsafeCatalogServerId
+          if (-not $name) {
+            continue
+          }
+          if (-not $unsafeByLiveName.ContainsKey($name)) {
+            $unsafeByLiveName[$name] = @()
+          }
+          $unsafeByLiveName[$name] = @($unsafeByLiveName[$name]) + @([pscustomobject]@{
+              name = $name
+              policyServerId = [string]$server.id
+              blockedReason = [string]$server.blockedReason
+            })
+        }
+      }
+    }
+
+    $governed = @()
+    $unsafe = @()
+    $unmanaged = @()
+
+    foreach ($liveServer in @($EnabledServers | Sort-Object name)) {
+      $name = [string]$liveServer.name
+      if ($governedByLiveName.ContainsKey($name)) {
+        $governed += $governedByLiveName[$name]
+      } elseif ($unsafeByLiveName.ContainsKey($name)) {
+        $matches = @($unsafeByLiveName[$name] | Sort-Object policyServerId)
+        $unsafe += [pscustomobject]@{
+          name = $name
+          policyServerId = [string]$matches[0].policyServerId
+          policyServerIds = @($matches | ForEach-Object { $_.policyServerId })
+          policyMatches = @(
+            $matches | ForEach-Object {
+              [pscustomobject]@{
+                policyServerId = [string]$_.policyServerId
+                blockedReason = [string]$_.blockedReason
+              }
+            }
+          )
+        }
+      } else {
+        $unmanaged += [pscustomobject]@{
+          name = $name
+        }
+      }
+    }
+
+    $governanceStatus = if ($unsafe.Count -gt 0 -or $unmanaged.Count -gt 0) {
+      "drift_detected"
+    } else {
+      "clean"
+    }
+
+    return [pscustomobject]@{
+      commands = @($runtimePrepare.command)
+      report = [pscustomobject]@{
+        governanceStatus = $governanceStatus
+        governanceSummaryCounts = [pscustomobject]@{
+          governedEnabledServerCount = $governed.Count
+          unsafeEnabledServerCount = $unsafe.Count
+          unmanagedEnabledServerCount = $unmanaged.Count
+        }
+        governedEnabledServers = @($governed | Sort-Object name, policyServerId)
+        unsafeEnabledServers = @($unsafe | Sort-Object name)
+        unmanagedEnabledServers = @($unmanaged | Sort-Object name)
+        governanceUnavailableReason = $null
+      }
+    }
+  } catch {
+    return [pscustomobject]@{
+      commands = @()
+      report = [pscustomobject]@{
+        governanceStatus = "unavailable"
+        governanceSummaryCounts = [pscustomobject]@{
+          governedEnabledServerCount = 0
+          unsafeEnabledServerCount = 0
+          unmanagedEnabledServerCount = 0
+        }
+        governedEnabledServers = @()
+        unsafeEnabledServers = @()
+        unmanagedEnabledServers = @()
+        governanceUnavailableReason = $_.Exception.Message
+      }
     }
   }
 }
@@ -121,7 +272,9 @@ function Invoke-InstallerDockerMcpToolkitApplyPlan {
     -RepoRoot $RepoRoot `
     -ToolboxManifestDir $ToolboxManifestDir
 
-  $toolkitAudit = Invoke-InstallerDockerMcpToolkitAudit -RepoRoot $RepoRoot
+  $toolkitAudit = Invoke-InstallerDockerMcpToolkitAudit `
+    -RepoRoot $RepoRoot `
+    -ToolboxManifestDir $ToolboxManifestDir
   $profileSupport = Test-InstallerDockerMcpProfileSupport -RepoRoot $RepoRoot
 
   $payload = $runtimePrepare.payload
@@ -132,6 +285,11 @@ function Invoke-InstallerDockerMcpToolkitApplyPlan {
   } else {
     @()
   }
+  $gatewayRunCommands = if ($null -ne $apply -and $apply.PSObject.Properties.Name -contains "gatewayRunCommands") {
+    @($apply.gatewayRunCommands)
+  } else {
+    @()
+  }
   $requiresDockerProfile = @(
     $applyCommands | Where-Object {
       $argv = @($_.argv)
@@ -139,12 +297,54 @@ function Invoke-InstallerDockerMcpToolkitApplyPlan {
     }
   ).Count -gt 0
 
+  $descriptorOnlyBlockedById = @{}
+  foreach ($entry in $applyCommands) {
+    $profileId = [string]$entry.profileId
+    $entryBlockedServers = if ($entry.PSObject.Properties.Name -contains "blockedServers" -and $null -ne $entry.blockedServers) {
+      @($entry.blockedServers)
+    } else {
+      @()
+    }
+
+    foreach ($server in $entryBlockedServers) {
+      $id = [string]$server.id
+      $blockedReason = [string]$server.blockedReason
+      if (-not $id -or $blockedReason -notmatch "descriptor-only") {
+        continue
+      }
+
+      if (-not $descriptorOnlyBlockedById.ContainsKey($id)) {
+        $descriptorOnlyBlockedById[$id] = [pscustomobject]@{
+          id = $id
+          blockedReason = $blockedReason
+          profileIds = @()
+        }
+      }
+
+      if ($profileId -and @($descriptorOnlyBlockedById[$id].profileIds) -notcontains $profileId) {
+        $descriptorOnlyBlockedById[$id].profileIds = @($descriptorOnlyBlockedById[$id].profileIds) + @($profileId)
+      }
+    }
+  }
+  $descriptorOnlyBlockedServers = @(
+    $descriptorOnlyBlockedById.Values | Sort-Object id | ForEach-Object {
+      [pscustomobject]@{
+        id = $_.id
+        blockedReason = $_.blockedReason
+        profileIds = @($_.profileIds | Sort-Object)
+      }
+    }
+  )
+
   $blockedReasons = @()
   if ($applyCommands.Count -eq 0) {
     $blockedReasons += "The compiled toolbox runtime plan did not emit any Docker MCP apply commands."
   }
   if ($requiresDockerProfile -and -not $profileSupport.available) {
     $blockedReasons += "The prepared toolbox runtime apply commands target docker mcp profile create, but this Docker MCP Toolkit exposes no profile subcommand."
+  }
+  if ($descriptorOnlyBlockedServers.Count -gt 0) {
+    $blockedReasons += "The compiled toolbox runtime apply plan is blocked because selected Docker profiles contain descriptor-only peer servers with no safe Docker MCP catalog apply target."
   }
 
   $compatibleWithCurrentToolkit = ($blockedReasons.Count -eq 0)
@@ -162,10 +362,39 @@ function Invoke-InstallerDockerMcpToolkitApplyPlan {
 
   $compactCommands = @(
     foreach ($entry in $applyCommands) {
+      $entryBlockedServers = if ($entry.PSObject.Properties.Name -contains "blockedServers" -and $null -ne $entry.blockedServers) {
+        @(
+          $entry.blockedServers | ForEach-Object {
+            [pscustomobject]@{
+              id = $_.id
+              blockedReason = $_.blockedReason
+            }
+          }
+        )
+      } else {
+        @()
+      }
       [pscustomobject]@{
         description = $entry.description
         profileId = $entry.profileId
         argv = @($entry.argv)
+        blockedServers = @($entryBlockedServers)
+      }
+    }
+  )
+  $compactGatewayRunCommands = @(
+    foreach ($entry in $gatewayRunCommands) {
+      $omittedServers = if ($entry.PSObject.Properties.Name -contains "omittedServers" -and $null -ne $entry.omittedServers) {
+        @($entry.omittedServers)
+      } else {
+        @()
+      }
+      [pscustomobject]@{
+        description = $entry.description
+        profileId = $entry.profileId
+        argv = @($entry.argv)
+        serverNames = @($entry.serverNames)
+        omittedServers = @($omittedServers)
       }
     }
   )
@@ -186,9 +415,13 @@ function Invoke-InstallerDockerMcpToolkitApplyPlan {
       applyAttempted = if ($null -ne $apply -and $apply.PSObject.Properties.Name -contains "attempted") { [bool]$apply.attempted } else { $false }
       applyCommandCount = $applyCommands.Count
       commands = @($compactCommands)
+      fallbackGatewayCommandCount = $gatewayRunCommands.Count
+      fallbackGatewayCommands = @($compactGatewayRunCommands)
       dockerProfileSubcommandAvailable = [bool]$profileSupport.available
       compatibleWithCurrentToolkit = [bool]$compatibleWithCurrentToolkit
       blockedReasons = @($blockedReasons)
+      blockedServers = @($descriptorOnlyBlockedServers)
+      descriptorOnlyBlockedServers = @($descriptorOnlyBlockedServers)
       toolkit = $toolkitAudit.report
     }
   }

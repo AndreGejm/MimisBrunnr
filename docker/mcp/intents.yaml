@@ -37,6 +37,8 @@ intents:
       - docs-search
       - web-search
       - github-read
+      - container-registry-read
+      - repo-knowledge-read
     deniedCategories:
       - github-write
       - docker-write
@@ -160,6 +162,26 @@ intents:
       - docker-write
       - deployment
     fallbackProfile: core-dev
+  security-audit:
+    displayName: Security Audit
+    summary: Read-only security scanning and static analysis for repository audit work.
+    exampleTasks:
+      - Run a read-only Semgrep audit before release
+      - Inspect static-analysis findings without mutating source or deployment state
+    targetProfile: security-audit
+    trustClass: external-read
+    requiresApproval: false
+    activationMode: session-switch
+    allowedCategories:
+      - repo-read
+      - local-docs
+      - internal-memory
+      - security-scan-read
+    deniedCategories:
+      - github-write
+      - docker-write
+      - deployment
+    fallbackProfile: core-dev
   delivery-admin:
     displayName: Delivery Admin
     summary: Approved delivery and publishing workflows that mutate external systems.
@@ -207,5 +229,8 @@ intents:
       - docker-write
       - model-inference
       - deployment
+      - container-registry-read
+      - repo-knowledge-read
+      - security-scan-read
     deniedCategories: []
     fallbackProfile: delivery-admin
