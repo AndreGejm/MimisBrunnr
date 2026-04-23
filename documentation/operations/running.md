@@ -31,6 +31,22 @@ Entrypoint file:
 
 The CLI is JSON-in / JSON-out for command handlers that accept payloads.
 
+### VoltAgent upgrade-safety checks
+
+```bash
+corepack pnpm test:voltagent-contracts
+corepack pnpm test:voltagent-smoke
+```
+
+These focused lanes verify the Mimir-owned VoltAgent adapter seams, coding
+advisory transport parity, toolbox materialization, and the checked-in
+`voltagent-docs` local-stdio peer. Use them before and after upgrading
+`@voltagent/core`, `ai`, or provider-specific model routing config.
+
+The repository also includes a scheduled GitHub Actions canary,
+`voltagent-upstream-canary`, that temporarily upgrades `@voltagent/core` and
+`ai` to their latest releases and reruns the same focused lanes.
+
 ### MCP server
 
 ```bash
