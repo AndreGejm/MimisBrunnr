@@ -43,7 +43,17 @@ export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
           items: { type: "string" }
         },
         taskSummary: { type: "string" },
-        clientId: { type: "string" }
+        clientId: { type: "string" },
+        approval: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            grantedBy: { type: "string" },
+            grantedAt: { type: "string" },
+            reason: { type: "string" },
+            toolboxId: { type: "string" }
+          }
+        }
       }
     }
   },

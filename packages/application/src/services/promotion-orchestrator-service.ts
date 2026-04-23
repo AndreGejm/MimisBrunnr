@@ -2,7 +2,11 @@ import { createHash, randomUUID } from "node:crypto";
 import type { CanonicalNoteRecord } from "../ports/canonical-note-repository.js";
 import type { EmbeddingProvider } from "../ports/embedding-provider.js";
 import type { LexicalIndex } from "../ports/lexical-index.js";
-import type { MetadataControlStore } from "../ports/metadata-control-store.js";
+import type {
+  MetadataControlStore,
+  NoteRelationshipRecord,
+  PromotionDecisionRecord
+} from "../ports/metadata-control-store.js";
 import type { ContextRepresentationService } from "./context-representation-service.js";
 import type {
   StagingDraftRecord,
@@ -13,6 +17,7 @@ import { AuditHistoryService } from "./audit-history-service.js";
 import { CanonicalNoteService } from "./canonical-note-service.js";
 import { ChunkingService } from "./chunking-service.js";
 import { NoteValidationService } from "./note-validation-service.js";
+import type { RetrieveContextCache } from "./retrieve-context-cache.js";
 import type { PromoteNoteRequest, PromoteNoteResponse, ServiceResult } from "@mimir/contracts";
 import type { ChunkRecord, ControlledTag, NoteFrontmatter, NoteId } from "@mimir/domain";
 
@@ -49,7 +54,8 @@ export class PromotionOrchestratorService {
     private readonly lexicalIndex?: LexicalIndex,
     private readonly vectorIndex?: VectorIndex,
     private readonly embeddingProvider?: EmbeddingProvider,
-    private readonly contextRepresentationService?: ContextRepresentationService
+    private readonly contextRepresentationService?: ContextRepresentationService,
+    private readonly retrieveContextCache?: RetrieveContextCache
   ) {}
 
   async promoteDraft(
@@ -368,40 +374,71 @@ export class PromotionOrchestratorService {
       let snapshotChunks: ChunkRecord[] = [];
       let snapshotNotePath: string | undefined;
       let promotedCanonicalNote: CanonicalNoteRecord | undefined;
+      const completedSteps = new Set(queuedPromotion.completedSteps);
 
       for (const canonicalWrite of queuedPromotion.payload.canonicalWrites) {
-        const persisted = await this.canonicalNoteService.writeCanonicalNote(canonicalWrite);
-        if (!persisted.ok) {
-          throw new Error(
-            `${persisted.error.message}${persisted.error.details ? ` ${JSON.stringify(persisted.error.details)}` : ""}`
-          );
-        }
+        const persisted = await this.runPromotionOutboxStep(
+          outboxId,
+          completedSteps,
+          `canonical_write:${canonicalWrite.noteId}`,
+          async () => {
+            const persistedNote = await this.canonicalNoteService.writeCanonicalNote(canonicalWrite);
+            if (!persistedNote.ok) {
+              throw new Error(
+                `${persistedNote.error.message}${persistedNote.error.details ? ` ${JSON.stringify(persistedNote.error.details)}` : ""}`
+              );
+            }
 
-        const chunks = this.chunkingService.chunkCanonicalNote(persisted.data);
-        await this.syncChunkState(persisted.data.noteId, chunks);
+            return persistedNote.data;
+          }
+        );
+        const persistedNote = persisted ?? canonicalWrite;
 
-        if (persisted.data.noteId === queuedPromotion.payload.promotionDecision.canonicalNoteId) {
+        const chunks = this.chunkingService.chunkCanonicalNote(persistedNote);
+        await this.syncChunkState(outboxId, completedSteps, persistedNote.noteId, chunks);
+
+        if (persistedNote.noteId === queuedPromotion.payload.promotionDecision.canonicalNoteId) {
           promotedChunks = chunks;
-          promotedCanonicalNote = persisted.data;
+          promotedCanonicalNote = persistedNote;
         }
 
-        if (persisted.data.frontmatter.tags.includes("topic/current-state-snapshot")) {
+        if (persistedNote.frontmatter.tags.includes("topic/current-state-snapshot")) {
           snapshotChunks = chunks;
-          snapshotNotePath = persisted.data.notePath;
+          snapshotNotePath = persistedNote.notePath;
         }
       }
 
-      await this.metadataControlStore.recordPromotion(
-        queuedPromotion.payload.promotionDecision
+      await this.runPromotionOutboxStep(
+        outboxId,
+        completedSteps,
+        "promotion_event_recorded",
+        () => this.metadataControlStore.recordPromotion(queuedPromotion.payload.promotionDecision)
       );
 
-      const promotedDraft = await this.stagingNoteRepository.updateDraft(
-        queuedPromotion.payload.draftUpdate
+      await this.runPromotionOutboxStep(
+        outboxId,
+        completedSteps,
+        "note_relationships_recorded",
+        () => this.metadataControlStore.upsertNoteRelationships(
+          buildPromotionRelationships(queuedPromotion.payload.promotionDecision)
+        )
       );
-      await this.metadataControlStore.upsertNote(
-        mapDraftMetadataRecord(promotedDraft)
+
+      await this.runPromotionOutboxStep(
+        outboxId,
+        completedSteps,
+        "draft_marked_promoted",
+        async () => {
+          const promotedDraft = await this.stagingNoteRepository.updateDraft(
+            queuedPromotion.payload.draftUpdate
+          );
+          await this.metadataControlStore.upsertNote(
+            mapDraftMetadataRecord(promotedDraft)
+          );
+        }
       );
       await this.metadataControlStore.completePromotionOutboxEntry(outboxId);
+      this.retrieveContextCache?.clear();
 
       if (promotedCanonicalNote && this.contextRepresentationService) {
         try {
@@ -451,35 +488,79 @@ export class PromotionOrchestratorService {
   }
 
   private async syncChunkState(
+    outboxId: string,
+    completedSteps: Set<string>,
     noteId: NoteId,
     chunks: ChunkRecord[]
   ): Promise<void> {
-    await this.metadataControlStore.removeChunksByNoteId(noteId);
-    await this.metadataControlStore.upsertChunks(chunks);
+    await this.runPromotionOutboxStep(
+      outboxId,
+      completedSteps,
+      `chunk_metadata_sync:${noteId}`,
+      async () => {
+        await this.metadataControlStore.removeChunksByNoteId(noteId);
+        await this.metadataControlStore.upsertChunks(chunks);
+      }
+    );
 
     if (this.lexicalIndex) {
-      await this.lexicalIndex.removeByNoteId(noteId);
-      await this.lexicalIndex.upsertChunks(chunks);
+      await this.runPromotionOutboxStep(
+        outboxId,
+        completedSteps,
+        `lexical_index_sync:${noteId}`,
+        async () => {
+          await this.lexicalIndex?.removeByNoteId(noteId);
+          await this.lexicalIndex?.upsertChunks(chunks);
+        }
+      );
     }
 
     if (this.vectorIndex && this.embeddingProvider) {
-      await this.vectorIndex.removeByNoteId(noteId);
-      const embeddings = await this.embeddingProvider.embedTexts(
-        chunks.map((chunk) => buildEmbeddingText(chunk))
-      );
+      await this.runPromotionOutboxStep(
+        outboxId,
+        completedSteps,
+        `vector_index_sync:${noteId}`,
+        async () => {
+          await this.vectorIndex?.removeByNoteId(noteId);
+          const embeddings = await this.embeddingProvider?.embedTexts(
+            chunks.map((chunk) => buildEmbeddingText(chunk))
+          );
 
-      await this.vectorIndex.upsertEmbeddings(
-        chunks.map((chunk, index) => ({
-          chunkId: chunk.chunkId,
-          noteId: chunk.noteId,
-          embedding: embeddings[index],
-          corpusId: chunk.corpusId,
-          noteType: chunk.noteType,
-          stalenessClass: chunk.stalenessClass,
-          updatedAt: chunk.updatedAt
-        }))
+          if (!embeddings) {
+            return;
+          }
+
+          await this.vectorIndex?.upsertEmbeddings(
+            chunks.map((chunk, index) => ({
+              chunkId: chunk.chunkId,
+              noteId: chunk.noteId,
+              embedding: embeddings[index],
+              corpusId: chunk.corpusId,
+              noteType: chunk.noteType,
+              stalenessClass: chunk.stalenessClass,
+              updatedAt: chunk.updatedAt
+            }))
+          );
+        }
       );
     }
+  }
+
+  private async runPromotionOutboxStep<T>(
+    outboxId: string,
+    completedSteps: Set<string>,
+    stepId: string,
+    operation: () => Promise<T>
+  ): Promise<T | undefined> {
+    const normalizedStepId = stepId.trim();
+    if (completedSteps.has(normalizedStepId)) {
+      return undefined;
+    }
+
+    const result = await operation();
+    await this.metadataControlStore.markPromotionOutboxStepCompleted(outboxId, normalizedStepId);
+    completedSteps.add(normalizedStepId);
+    return result;
   }
 
   private async findSupersededRecords(
@@ -559,6 +640,16 @@ function mapDraftMetadataRecord(
     scope: draft.frontmatter.scope,
     tags: draft.frontmatter.tags
   };
+}
+
+function buildPromotionRelationships(
+  decision: PromotionDecisionRecord
+): NoteRelationshipRecord[] {
+  return decision.supersededNoteIds.map((supersededNoteId) => ({
+    sourceNoteId: decision.canonicalNoteId,
+    targetNoteId: supersededNoteId,
+    relationshipType: "supersedes"
+  }));
 }
 
 function normalizePromotedTags(

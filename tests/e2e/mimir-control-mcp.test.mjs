@@ -119,6 +119,7 @@ async function initializeMcp(transport, stdin) {
 
 test("mimir-control MCP exposes toolbox discovery tools and bootstrap-safe active tools", async (t) => {
   const { root, sqlitePath } = await createTempSqlitePath();
+  const policy = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
   const child = spawnControlServer({
     activeProfile: "bootstrap",
     clientId: "codex",
@@ -157,10 +158,97 @@ test("mimir-control MCP exposes toolbox discovery tools and bootstrap-safe activ
     const listToolboxes = await transport.next();
     const toolboxIds = listToolboxes.result.structuredContent.toolboxes.map((toolbox) => toolbox.id);
     assert.ok(toolboxIds.includes("docs-research"));
+    const docsResearchListing = listToolboxes.result.structuredContent.toolboxes.find(
+      (toolbox) => toolbox.id === "docs-research"
+    );
+    assert.equal(
+      docsResearchListing.summary,
+      "External docs, web search, and GitHub read for implementation research."
+    );
+    assert.equal(docsResearchListing.trustClass, "external-read");
+    assert.ok(
+      docsResearchListing.exampleTasks.includes(
+        "Compare upstream docs with the current implementation"
+      )
+    );
+    assert.ok(toolboxIds.includes("core-dev+docs-research"));
+    assert.ok(toolboxIds.includes("core-dev+runtime-observe"));
     assert.equal(listToolboxes.result.structuredContent.auditEvents[0].type, "toolbox_discovery");
     assert.equal(
       listToolboxes.result.structuredContent.auditEvents[0].details.toolboxId,
       undefined
+    );
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
+      id: 32,
+      method: "tools/call",
+      params: {
+        name: "describe_toolbox",
+        arguments: {
+          toolboxId: "core-dev+docs-research"
+        }
+      }
+    });
+    const describeToolbox = await transport.next();
+    assert.equal(
+      describeToolbox.result.structuredContent.toolbox.summary,
+      "Code changes that also need external documentation and GitHub read context."
+    );
+    assert.ok(
+      describeToolbox.result.structuredContent.toolbox.exampleTasks.includes(
+        "Implement a fix while checking upstream docs"
+      )
+    );
+    assert.equal(
+      describeToolbox.result.structuredContent.toolbox.workflow.activationMode,
+      "session-switch"
+    );
+    assert.equal(
+      describeToolbox.result.structuredContent.toolbox.trustClass,
+      "external-read"
+    );
+    assert.equal(
+      describeToolbox.result.structuredContent.diagnostics.profileRevision,
+      policy.profiles["core-dev+docs-research"].profileRevision
+    );
+    assert.deepEqual(
+      describeToolbox.result.structuredContent.toolbox.antiUseCases,
+      [
+        { type: "denied_category", category: "github-write" },
+        { type: "denied_category", category: "docker-write" },
+        { type: "denied_category", category: "deployment" }
+      ]
+    );
+    assert.ok(
+      describeToolbox.result.structuredContent.toolbox.suppressedTools.some(
+        (tool) =>
+          tool.toolId === "github.search" &&
+          tool.semanticCapabilityId === "github.search" &&
+          tool.boundary === "client-overlay-reduction" &&
+          tool.reasons.includes("suppressed-semantic-capability:github.search")
+      )
+    );
+    assert.ok(
+      describeToolbox.result.structuredContent.toolbox.suppressedTools.some(
+        (tool) =>
+          tool.toolId === "github.pull_request.read" &&
+          tool.semanticCapabilityId === "github.pull-request.read" &&
+          tool.boundary === "client-overlay-reduction" &&
+          tool.reasons.includes("suppressed-semantic-capability:github.pull-request.read")
+      )
+    );
+    assert.equal(
+      describeToolbox.result.structuredContent.toolbox.profile.composite,
+      true
+    );
+    assert.deepEqual(
+      describeToolbox.result.structuredContent.toolbox.profile.baseProfiles,
+      ["core-dev", "docs-research"]
+    );
+    assert.equal(
+      describeToolbox.result.structuredContent.toolbox.profile.compositeReason,
+      "repeated_workflow"
     );
 
     writeMcpMessage(child.stdin, {
@@ -183,12 +271,47 @@ test("mimir-control MCP exposes toolbox discovery tools and bootstrap-safe activ
       "docs-research"
     );
     assert.equal(
+      activation.result.structuredContent.diagnostics.profileRevision,
+      policy.profiles["docs-research"].profileRevision
+    );
+    assert.equal(
       activation.result.structuredContent.diagnostics.lease.issued,
       true
+    );
+    assert.ok(
+      activation.result.structuredContent.auditEvents.some(
+        (event) =>
+          event.type === "toolbox_activation_approved" &&
+          event.profileRevision === policy.profiles["docs-research"].profileRevision
+      )
     );
     assert.equal(
       activation.result.structuredContent.handoff.targetProfileId,
       "docs-research"
+    );
+    assert.equal(
+      activation.result.structuredContent.details.approval.trustClass,
+      "external-read"
+    );
+    assert.equal(
+      activation.result.structuredContent.downgradeTarget,
+      "core-dev"
+    );
+    assert.equal(
+      activation.result.structuredContent.handoff.downgradeTarget,
+      "core-dev"
+    );
+    assert.equal(
+      activation.result.structuredContent.handoff.handoffStrategy,
+      "env-reconnect"
+    );
+    assert.equal(
+      activation.result.structuredContent.handoff.handoffPresetRef,
+      "codex.toolbox"
+    );
+    assert.equal(
+      activation.result.structuredContent.handoff.clientPresetRef,
+      "codex.toolbox"
     );
     assert.equal(
       activation.result.structuredContent.handoff.client.handoffStrategy,
@@ -199,8 +322,20 @@ test("mimir-control MCP exposes toolbox discovery tools and bootstrap-safe activ
       "codex.toolbox"
     );
     assert.equal(
+      activation.result.structuredContent.handoff.client.clientPresetRef,
+      "codex.toolbox"
+    );
+    assert.equal(
       activation.result.structuredContent.handoff.environment.MAB_TOOLBOX_SESSION_POLICY_TOKEN,
       "{{leaseToken}}"
+    );
+    assert.match(
+      activation.result.structuredContent.leaseExpiresAt,
+      /^\d{4}-\d{2}-\d{2}T/
+    );
+    assert.equal(
+      activation.result.structuredContent.handoff.lease.expiresAt,
+      activation.result.structuredContent.leaseExpiresAt
     );
 
     writeMcpMessage(child.stdin, {
@@ -214,6 +349,14 @@ test("mimir-control MCP exposes toolbox discovery tools and bootstrap-safe activ
     });
     const activeToolbox = await transport.next();
     assert.equal(activeToolbox.result.structuredContent.profile.id, "bootstrap");
+    assert.equal(activeToolbox.result.structuredContent.workflow.toolboxId, null);
+    assert.equal(activeToolbox.result.structuredContent.workflow.activationMode, null);
+    assert.equal(
+      activeToolbox.result.structuredContent.workflow.sessionMode,
+      "toolbox-bootstrap"
+    );
+    assert.equal(activeToolbox.result.structuredContent.workflow.requiresApproval, false);
+    assert.equal(activeToolbox.result.structuredContent.workflow.fallbackProfile, null);
 
     writeMcpMessage(child.stdin, {
       jsonrpc: "2.0",
@@ -285,15 +428,22 @@ test("mimir-control MCP exposes toolbox discovery tools and bootstrap-safe activ
 test("mimir-control MCP applies client overlay suppression to activated profile tool listings", async (t) => {
   const codexChild = spawnControlServer({ activeProfile: "docs-research", clientId: "codex" });
   const claudeChild = spawnControlServer({ activeProfile: "docs-research", clientId: "claude" });
+  const antigravityChild = spawnControlServer({
+    activeProfile: "docs-research",
+    clientId: "antigravity"
+  });
   try {
     const codexTransport = createMessageCollector(codexChild.stdout);
     const claudeTransport = createMessageCollector(claudeChild.stdout);
+    const antigravityTransport = createMessageCollector(antigravityChild.stdout);
     await initializeMcp(codexTransport, codexChild.stdin);
     await initializeMcp(claudeTransport, claudeChild.stdin);
+    await initializeMcp(antigravityTransport, antigravityChild.stdin);
 
     for (const [stdin, requestId] of [
       [codexChild.stdin, 10],
-      [claudeChild.stdin, 20]
+      [claudeChild.stdin, 20],
+      [antigravityChild.stdin, 30]
     ]) {
       writeMcpMessage(stdin, {
         jsonrpc: "2.0",
@@ -308,13 +458,17 @@ test("mimir-control MCP applies client overlay suppression to activated profile 
 
     const codexTools = await codexTransport.next();
     const claudeTools = await claudeTransport.next();
+    const antigravityTools = await antigravityTransport.next();
 
     const codexToolIds = codexTools.result.structuredContent.tools.map((tool) => tool.toolId);
     const claudeToolIds = claudeTools.result.structuredContent.tools.map((tool) => tool.toolId);
+    const antigravityToolIds = antigravityTools.result.structuredContent.tools.map((tool) => tool.toolId);
 
     assert.ok(!codexToolIds.includes("github.search"));
     assert.ok(claudeToolIds.includes("github.search"));
+    assert.ok(antigravityToolIds.includes("github.search"));
     assert.ok(codexToolIds.includes("brave.web_search"));
+    assert.ok(antigravityToolIds.includes("brave.web_search"));
     assert.ok(
       codexTools.result.structuredContent.suppressedTools.some(
         (tool) =>
@@ -327,14 +481,740 @@ test("mimir-control MCP applies client overlay suppression to activated profile 
         (tool) => tool.toolId === "github.search"
       )
     );
+    assert.deepEqual(antigravityTools.result.structuredContent.suppressedTools, []);
+
+    writeMcpMessage(codexChild.stdin, {
+      jsonrpc: "2.0",
+      id: 31,
+      method: "tools/call",
+      params: {
+        name: "list_active_toolbox",
+        arguments: {}
+      }
+    });
+    const codexToolbox = await codexTransport.next();
+    assert.ok(
+      codexToolbox.result.structuredContent.client.suppressedTools.some(
+        (tool) =>
+          tool.toolId === "github.search" &&
+          tool.semanticCapabilityId === "github.search" &&
+          tool.boundary === "client-overlay-reduction" &&
+          tool.reasons.includes("suppressed-semantic-capability:github.search")
+      )
+    );
+    assert.ok(
+      codexToolbox.result.structuredContent.client.suppressedTools.some(
+        (tool) =>
+          tool.toolId === "github.pull_request.read" &&
+          tool.semanticCapabilityId === "github.pull-request.read" &&
+          tool.boundary === "client-overlay-reduction" &&
+          tool.reasons.includes("suppressed-semantic-capability:github.pull-request.read")
+      )
+    );
   } finally {
     await stopChild(codexChild);
     await stopChild(claudeChild);
+    await stopChild(antigravityChild);
+  }
+});
+
+test("mimir-control MCP returns Antigravity manual reconnect handoff metadata", async (t) => {
+  const child = spawnControlServer({
+    activeProfile: "bootstrap",
+    clientId: "antigravity"
+  });
+  try {
+    const transport = createMessageCollector(child.stdout);
+    await initializeMcp(transport, child.stdin);
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
+      id: 40,
+      method: "tools/call",
+      params: {
+        name: "request_toolbox_activation",
+        arguments: {
+          requestedToolbox: "docs-research"
+        }
+      }
+    });
+
+    const activation = await transport.next();
+    assert.equal(activation.result.structuredContent.approved, true);
+    assert.equal(activation.result.structuredContent.approvedProfile, "docs-research");
+    assert.equal(
+      activation.result.structuredContent.handoff.client.handoffStrategy,
+      "manual-env-reconnect"
+    );
+    assert.equal(
+      activation.result.structuredContent.handoff.client.handoffPresetRef,
+      "antigravity.toolbox"
+    );
+    assert.equal(
+      activation.result.structuredContent.handoff.client.clientPresetRef,
+      "antigravity.toolbox"
+    );
+    assert.equal(
+      activation.result.structuredContent.handoff.environment.MAB_TOOLBOX_ACTIVE_PROFILE,
+      "docs-research"
+    );
+    assert.equal(
+      activation.result.structuredContent.handoff.environment.MAB_TOOLBOX_SESSION_POLICY_TOKEN,
+      "{{leaseToken}}"
+    );
+  } finally {
+    await stopChild(child);
+  }
+});
+
+test("mimir-control MCP exposes read-only runtime-observe tools without admin mutation tools", async (t) => {
+  const child = spawnControlServer({
+    activeProfile: "runtime-observe",
+    clientId: "codex"
+  });
+  try {
+    const transport = createMessageCollector(child.stdout);
+    await initializeMcp(transport, child.stdin);
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
+      id: 45,
+      method: "tools/call",
+      params: {
+        name: "list_active_tools",
+        arguments: {}
+      }
+    });
+
+    const activeTools = await transport.next();
+    const activeToolIds = activeTools.result.structuredContent.tools.map((tool) => tool.toolId);
+    assert.ok(activeToolIds.includes("grafana.logs.query"));
+    assert.ok(activeToolIds.includes("grafana.metrics.query"));
+    assert.ok(activeToolIds.includes("grafana.traces.query"));
+    assert.ok(activeToolIds.includes("docker.inspect"));
+    assert.ok(activeToolIds.includes("kubernetes.context.inspect"));
+    assert.ok(activeToolIds.includes("kubernetes.events.list"));
+    assert.ok(activeToolIds.includes("kubernetes.logs.query"));
+    assert.ok(!activeToolIds.includes("docker.restart"));
+    assert.ok(!activeToolIds.includes("kubernetes.apply"));
+    assert.deepEqual(activeTools.result.structuredContent.suppressedTools, []);
+  } finally {
+    await stopChild(child);
+  }
+});
+
+test("mimir-control MCP approves runtime-admin activation when operator approval is supplied", async (t) => {
+  const child = spawnControlServer({
+    activeProfile: "bootstrap",
+    clientId: "codex"
+  });
+  try {
+    const transport = createMessageCollector(child.stdout);
+    await initializeMcp(transport, child.stdin);
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
+      id: 451,
+      method: "tools/call",
+      params: {
+        name: "request_toolbox_activation",
+        arguments: {
+          requestedToolbox: "runtime-admin",
+          taskSummary: "Need to restart a container",
+          approval: {
+            grantedBy: "operator",
+            grantedAt: "2026-04-19T22:30:00.000Z",
+            reason: "Approved runtime intervention"
+          }
+        }
+      }
+    });
+
+    const activation = await transport.next();
+    assert.equal(activation.result.structuredContent.approved, true);
+    assert.equal(activation.result.structuredContent.approvedToolbox, "runtime-admin");
+    assert.equal(activation.result.structuredContent.approvedProfile, "runtime-admin");
+    assert.equal(
+      activation.result.structuredContent.handoff.targetProfileId,
+      "runtime-admin"
+    );
+    assert.equal(
+      activation.result.structuredContent.details.approval.requiresApproval,
+      true
+    );
+    assert.equal(
+      activation.result.structuredContent.details.approval.granted,
+      true
+    );
+    assert.equal(
+      activation.result.structuredContent.details.approval.grantedBy,
+      "operator"
+    );
+
+    const runtimeChild = spawnControlServer({
+      activeProfile: "runtime-admin",
+      clientId: "codex"
+    });
+    try {
+      const runtimeTransport = createMessageCollector(runtimeChild.stdout);
+      await initializeMcp(runtimeTransport, runtimeChild.stdin);
+      writeMcpMessage(runtimeChild.stdin, {
+        jsonrpc: "2.0",
+        id: 452,
+        method: "tools/call",
+        params: {
+          name: "list_active_tools",
+          arguments: {}
+        }
+      });
+      const activeTools = await runtimeTransport.next();
+      const activeToolIds = activeTools.result.structuredContent.tools.map((tool) => tool.toolId);
+      assert.ok(activeToolIds.includes("docker.restart"));
+      assert.ok(activeToolIds.includes("kubernetes.context.inspect"));
+      assert.ok(!activeToolIds.includes("kubernetes.apply"));
+    } finally {
+      await stopChild(runtimeChild);
+    }
+  } finally {
+    await stopChild(child);
+  }
+});
+
+test("mimir-control MCP rejects approval that targets a different toolbox", async (t) => {
+  const child = spawnControlServer({
+    activeProfile: "bootstrap",
+    clientId: "codex"
+  });
+  try {
+    const transport = createMessageCollector(child.stdout);
+    await initializeMcp(transport, child.stdin);
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
+      id: 455,
+      method: "tools/call",
+      params: {
+        name: "request_toolbox_activation",
+        arguments: {
+          requestedToolbox: "runtime-admin",
+          taskSummary: "Need to restart a container",
+          approval: {
+            grantedBy: "operator",
+            grantedAt: "2026-04-19T22:30:00.000Z",
+            reason: "Approved runtime intervention",
+            toolboxId: "delivery-admin"
+          }
+        }
+      }
+    });
+
+    const activation = await transport.next();
+    assert.equal(activation.result.structuredContent.approved, false);
+    assert.equal(
+      activation.result.structuredContent.reasonCode,
+      "toolbox_activation_denied_invalid_approval"
+    );
+    assert.equal(
+      activation.result.structuredContent.fallbackProfile,
+      "runtime-observe"
+    );
+    assert.equal(
+      activation.result.structuredContent.downgradeTarget,
+      "runtime-observe"
+    );
+    assert.equal(
+      activation.result.structuredContent.handoff.targetProfileId,
+      "runtime-observe"
+    );
+    assert.equal(
+      activation.result.structuredContent.handoff.downgradeTarget,
+      "runtime-observe"
+    );
+    assert.equal(activation.result.structuredContent.leaseExpiresAt, null);
+    assert.equal(
+      activation.result.structuredContent.handoff.lease.expiresAt,
+      undefined
+    );
+    assert.equal(activation.result.structuredContent.leaseToken, null);
+    assert.equal(
+      activation.result.structuredContent.details.approval.granted,
+      false
+    );
+    assert.equal(
+      activation.result.structuredContent.details.approval.grantedBy,
+      "operator"
+    );
+    assert.equal(
+      activation.result.structuredContent.auditEvents[0].details.approval.toolboxId,
+      "delivery-admin"
+    );
+  } finally {
+    await stopChild(child);
+  }
+});
+
+test("mimir-control MCP denies delivery-admin activation until approval is granted", async (t) => {
+  const child = spawnControlServer({
+    activeProfile: "bootstrap",
+    clientId: "codex"
+  });
+  try {
+    const transport = createMessageCollector(child.stdout);
+    await initializeMcp(transport, child.stdin);
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
+      id: 456,
+      method: "tools/call",
+      params: {
+        name: "request_toolbox_activation",
+        arguments: {
+          requestedToolbox: "delivery-admin",
+          taskSummary: "Need to publish a release artifact"
+        }
+      }
+    });
+
+    const activation = await transport.next();
+    assert.equal(activation.result.structuredContent.approved, false);
+    assert.equal(
+      activation.result.structuredContent.reasonCode,
+      "toolbox_activation_denied_requires_approval"
+    );
+    assert.equal(
+      activation.result.structuredContent.fallbackProfile,
+      "runtime-admin"
+    );
+    assert.equal(
+      activation.result.structuredContent.downgradeTarget,
+      "runtime-admin"
+    );
+    assert.equal(
+      activation.result.structuredContent.handoff.targetProfileId,
+      "runtime-admin"
+    );
+    assert.equal(
+      activation.result.structuredContent.handoff.downgradeTarget,
+      "runtime-admin"
+    );
+    assert.equal(activation.result.structuredContent.leaseToken, null);
+    assert.equal(activation.result.structuredContent.leaseExpiresAt, null);
+  } finally {
+    await stopChild(child);
+  }
+});
+
+test("mimir-control MCP approves delivery-admin activation and exposes only delivery admin tools", async (t) => {
+  const child = spawnControlServer({
+    activeProfile: "bootstrap",
+    clientId: "codex"
+  });
+  try {
+    const transport = createMessageCollector(child.stdout);
+    await initializeMcp(transport, child.stdin);
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
+      id: 457,
+      method: "tools/call",
+      params: {
+        name: "request_toolbox_activation",
+        arguments: {
+          requestedToolbox: "delivery-admin",
+          taskSummary: "Need to publish a release artifact",
+          approval: {
+            grantedBy: "operator",
+            grantedAt: "2026-04-19T22:35:00.000Z",
+            reason: "Approved delivery workflow"
+          }
+        }
+      }
+    });
+
+    const activation = await transport.next();
+    assert.equal(activation.result.structuredContent.approved, true);
+    assert.equal(
+      activation.result.structuredContent.approvedToolbox,
+      "delivery-admin"
+    );
+    assert.equal(
+      activation.result.structuredContent.approvedProfile,
+      "delivery-admin"
+    );
+    assert.equal(
+      activation.result.structuredContent.handoff.targetProfileId,
+      "delivery-admin"
+    );
+    assert.equal(
+      activation.result.structuredContent.details.approval.requiresApproval,
+      true
+    );
+    assert.equal(
+      activation.result.structuredContent.details.approval.granted,
+      true
+    );
+
+    const runtimeChild = spawnControlServer({
+      activeProfile: "delivery-admin",
+      clientId: "codex"
+    });
+    try {
+      const runtimeTransport = createMessageCollector(runtimeChild.stdout);
+      await initializeMcp(runtimeTransport, runtimeChild.stdin);
+      writeMcpMessage(runtimeChild.stdin, {
+        jsonrpc: "2.0",
+        id: 458,
+        method: "tools/call",
+        params: {
+          name: "list_active_tools",
+          arguments: {}
+        }
+      });
+      const activeTools = await runtimeTransport.next();
+      const activeToolIds = activeTools.result.structuredContent.tools.map((tool) => tool.toolId);
+      assert.ok(activeToolIds.includes("github.issue.comment"));
+      assert.ok(activeToolIds.includes("github.pull_request.review"));
+      assert.ok(activeToolIds.includes("docker.restart"));
+      assert.ok(!activeToolIds.includes("brave.web_search"));
+      assert.ok(!activeToolIds.includes("grafana.logs.query"));
+
+      writeMcpMessage(runtimeChild.stdin, {
+        jsonrpc: "2.0",
+        id: 459,
+        method: "tools/call",
+        params: {
+          name: "list_active_toolbox",
+          arguments: {}
+        }
+      });
+      const activeToolbox = await runtimeTransport.next();
+      assert.equal(activeToolbox.result.structuredContent.profile.id, "delivery-admin");
+      assert.equal(
+        activeToolbox.result.structuredContent.workflow.toolboxId,
+        "delivery-admin"
+      );
+      assert.equal(
+        activeToolbox.result.structuredContent.workflow.requiresApproval,
+        true
+      );
+      assert.equal(
+        activeToolbox.result.structuredContent.workflow.fallbackProfile,
+        "runtime-admin"
+      );
+      assert.equal(
+        activeToolbox.result.structuredContent.profile.fallbackProfile,
+        "runtime-admin"
+      );
+    } finally {
+      await stopChild(runtimeChild);
+    }
+  } finally {
+    await stopChild(child);
+  }
+});
+
+test("mimir-control MCP denies full activation until approval is granted", async (t) => {
+  const child = spawnControlServer({
+    activeProfile: "bootstrap",
+    clientId: "claude"
+  });
+  try {
+    const transport = createMessageCollector(child.stdout);
+    await initializeMcp(transport, child.stdin);
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
+      id: 460,
+      method: "tools/call",
+      params: {
+        name: "request_toolbox_activation",
+        arguments: {
+          requestedToolbox: "full",
+          taskSummary: "Need broad emergency access"
+        }
+      }
+    });
+
+    const activation = await transport.next();
+    assert.equal(activation.result.structuredContent.approved, false);
+    assert.equal(
+      activation.result.structuredContent.reasonCode,
+      "toolbox_activation_denied_requires_approval"
+    );
+    assert.equal(
+      activation.result.structuredContent.fallbackProfile,
+      "delivery-admin"
+    );
+    assert.equal(
+      activation.result.structuredContent.downgradeTarget,
+      "delivery-admin"
+    );
+    assert.equal(
+      activation.result.structuredContent.handoff.targetProfileId,
+      "delivery-admin"
+    );
+  } finally {
+    await stopChild(child);
+  }
+});
+
+test("mimir-control MCP approves full activation for Claude and exposes the complete operator toolbox", async (t) => {
+  const child = spawnControlServer({
+    activeProfile: "bootstrap",
+    clientId: "claude"
+  });
+  try {
+    const transport = createMessageCollector(child.stdout);
+    await initializeMcp(transport, child.stdin);
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
+      id: 461,
+      method: "tools/call",
+      params: {
+        name: "request_toolbox_activation",
+        arguments: {
+          requestedToolbox: "full",
+          taskSummary: "Need broad emergency access",
+          approval: {
+            grantedBy: "operator",
+            grantedAt: "2026-04-19T22:40:00.000Z",
+            reason: "Approved full recovery workflow"
+          }
+        }
+      }
+    });
+
+    const activation = await transport.next();
+    assert.equal(activation.result.structuredContent.approved, true);
+    assert.equal(activation.result.structuredContent.approvedToolbox, "full");
+    assert.equal(activation.result.structuredContent.approvedProfile, "full");
+    assert.equal(
+      activation.result.structuredContent.handoff.targetProfileId,
+      "full"
+    );
+    assert.equal(
+      activation.result.structuredContent.details.approval.requiresApproval,
+      true
+    );
+    assert.equal(
+      activation.result.structuredContent.details.approval.granted,
+      true
+    );
+
+    const runtimeChild = spawnControlServer({
+      activeProfile: "full",
+      clientId: "claude"
+    });
+    try {
+      const runtimeTransport = createMessageCollector(runtimeChild.stdout);
+      await initializeMcp(runtimeTransport, runtimeChild.stdin);
+      writeMcpMessage(runtimeChild.stdin, {
+        jsonrpc: "2.0",
+        id: 462,
+        method: "tools/call",
+        params: {
+          name: "list_active_tools",
+          arguments: {}
+        }
+      });
+      const activeTools = await runtimeTransport.next();
+      const activeToolIds = activeTools.result.structuredContent.tools.map((tool) => tool.toolId);
+      for (const toolId of [
+        "github.search",
+        "github.issue.comment",
+        "brave.web_search",
+        "grafana.logs.query",
+        "docker.restart"
+      ]) {
+        assert.ok(
+          activeToolIds.includes(toolId),
+          `expected ${toolId} to be active in full profile`
+        );
+      }
+      assert.deepEqual(activeTools.result.structuredContent.suppressedTools, []);
+
+      writeMcpMessage(runtimeChild.stdin, {
+        jsonrpc: "2.0",
+        id: 463,
+        method: "tools/call",
+        params: {
+          name: "list_active_toolbox",
+          arguments: {}
+        }
+      });
+      const activeToolbox = await runtimeTransport.next();
+      assert.equal(activeToolbox.result.structuredContent.profile.id, "full");
+      assert.equal(
+        activeToolbox.result.structuredContent.workflow.toolboxId,
+        "full"
+      );
+      assert.equal(
+        activeToolbox.result.structuredContent.workflow.requiresApproval,
+        true
+      );
+      assert.equal(
+        activeToolbox.result.structuredContent.workflow.fallbackProfile,
+        "delivery-admin"
+      );
+      assert.equal(
+        activeToolbox.result.structuredContent.profile.fallbackProfile,
+        "delivery-admin"
+      );
+      assert.equal(activeToolbox.result.structuredContent.client.id, "claude");
+      assert.equal(
+        activeToolbox.result.structuredContent.client.handoffPresetRef,
+        "claude.toolbox"
+      );
+      assert.deepEqual(
+        activeToolbox.result.structuredContent.client.suppressedSemanticCapabilities,
+        []
+      );
+      assert.deepEqual(
+        activeToolbox.result.structuredContent.client.suppressedTools,
+        []
+      );
+    } finally {
+      await stopChild(runtimeChild);
+    }
+  } finally {
+    await stopChild(child);
+  }
+});
+
+test("mimir-control MCP resolves repo-write plus logs-read to the composite runtime-observe toolbox", async (t) => {
+  const child = spawnControlServer({
+    activeProfile: "bootstrap",
+    clientId: "codex"
+  });
+  try {
+    const transport = createMessageCollector(child.stdout);
+    await initializeMcp(transport, child.stdin);
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
+      id: 46,
+      method: "tools/call",
+      params: {
+        name: "request_toolbox_activation",
+        arguments: {
+          requiredCategories: ["repo-write", "logs-read"]
+        }
+      }
+    });
+
+    const activation = await transport.next();
+    assert.equal(activation.result.structuredContent.approved, true);
+    assert.equal(
+      activation.result.structuredContent.approvedToolbox,
+      "core-dev+runtime-observe"
+    );
+    assert.equal(
+      activation.result.structuredContent.approvedProfile,
+      "core-dev+runtime-observe"
+    );
+    assert.equal(
+      activation.result.structuredContent.handoff.targetProfileId,
+      "core-dev+runtime-observe"
+    );
+
+    const runtimeChild = spawnControlServer({
+      activeProfile: "core-dev+runtime-observe",
+      clientId: "codex"
+    });
+    try {
+      const runtimeTransport = createMessageCollector(runtimeChild.stdout);
+      await initializeMcp(runtimeTransport, runtimeChild.stdin);
+      writeMcpMessage(runtimeChild.stdin, {
+        jsonrpc: "2.0",
+        id: 471,
+        method: "tools/call",
+        params: {
+          name: "list_active_toolbox",
+          arguments: {}
+        }
+      });
+      const activeToolbox = await runtimeTransport.next();
+      assert.equal(activeToolbox.result.structuredContent.profile.id, "core-dev+runtime-observe");
+      assert.equal(
+        activeToolbox.result.structuredContent.workflow.toolboxId,
+        "core-dev+runtime-observe"
+      );
+      assert.equal(
+        activeToolbox.result.structuredContent.workflow.activationMode,
+        "session-switch"
+      );
+      assert.equal(
+        activeToolbox.result.structuredContent.workflow.sessionMode,
+        "toolbox-activated"
+      );
+      assert.equal(
+        activeToolbox.result.structuredContent.workflow.requiresApproval,
+        false
+      );
+      assert.equal(
+        activeToolbox.result.structuredContent.workflow.fallbackProfile,
+        "runtime-observe"
+      );
+      assert.equal(activeToolbox.result.structuredContent.profile.composite, true);
+      assert.deepEqual(
+        activeToolbox.result.structuredContent.profile.baseProfiles,
+        ["core-dev", "runtime-observe"]
+      );
+      assert.equal(
+        activeToolbox.result.structuredContent.profile.fallbackProfile,
+        "runtime-observe"
+      );
+      assert.ok(
+        activeToolbox.result.structuredContent.profile.allowedCategories.includes("logs-read")
+      );
+      assert.ok(
+        activeToolbox.result.structuredContent.profile.deniedCategories.includes("docker-write")
+      );
+      assert.equal(activeToolbox.result.structuredContent.client.id, "codex");
+      assert.equal(
+        activeToolbox.result.structuredContent.client.handoffStrategy,
+        "env-reconnect"
+      );
+      assert.equal(
+        activeToolbox.result.structuredContent.client.handoffPresetRef,
+        "codex.toolbox"
+      );
+      assert.equal(
+        activeToolbox.result.structuredContent.client.clientPresetRef,
+        "codex.toolbox"
+      );
+
+      writeMcpMessage(runtimeChild.stdin, {
+        jsonrpc: "2.0",
+        id: 472,
+        method: "tools/call",
+        params: {
+          name: "list_active_tools",
+          arguments: {}
+        }
+      });
+      const activeTools = await runtimeTransport.next();
+      const activeToolIds = activeTools.result.structuredContent.tools.map((tool) => tool.toolId);
+      assert.ok(activeToolIds.includes("draft_note"));
+      assert.ok(activeToolIds.includes("grafana.logs.query"));
+      assert.ok(activeToolIds.includes("docker.inspect"));
+      assert.ok(activeToolIds.includes("kubernetes.context.inspect"));
+      assert.ok(activeToolIds.includes("kubernetes.events.list"));
+      assert.ok(activeToolIds.includes("kubernetes.logs.query"));
+      assert.ok(!activeToolIds.includes("docker.restart"));
+      assert.ok(!activeToolIds.includes("kubernetes.apply"));
+    } finally {
+      await stopChild(runtimeChild);
+    }
+  } finally {
+    await stopChild(child);
   }
 });
 
 test("mimir-control MCP records activation denial diagnostics and audit history", async (t) => {
   const { root, sqlitePath } = await createTempSqlitePath();
+  const policy = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
   const child = spawnControlServer({ activeProfile: "bootstrap", clientId: "codex", sqlitePath });
   try {
     const transport = createMessageCollector(child.stdout);
@@ -363,8 +1243,21 @@ test("mimir-control MCP records activation denial diagnostics and audit history"
       activation.result.structuredContent.diagnostics.requestedToolbox,
       "missing-toolbox"
     );
+    assert.equal(
+      activation.result.structuredContent.diagnostics.profileRevision,
+      policy.profiles.bootstrap.profileRevision
+    );
     assert.deepEqual(activation.result.structuredContent.diagnostics.requiredCategories, ["search"]);
+    assert.equal(activation.result.structuredContent.leaseExpiresAt, null);
+    assert.equal(
+      activation.result.structuredContent.handoff.lease.expiresAt,
+      undefined
+    );
     assert.equal(activation.result.structuredContent.auditEvents[0].type, "toolbox_activation_denied");
+    assert.equal(
+      activation.result.structuredContent.auditEvents[0].profileRevision,
+      policy.profiles.bootstrap.profileRevision
+    );
     assert.equal(
       activation.result.structuredContent.auditEvents[0].details.reasonCode,
       "toolbox_activation_denied_no_matching_toolbox"
@@ -437,6 +1330,69 @@ test("mimir-control MCP emits toolbox_expired when deactivating an expired lease
     const history = await readAuditHistory(sqlitePath);
     assert.ok(history.entries.some((entry) => entry.actionType === "toolbox_expired"));
     assert.ok(history.entries.some((entry) => entry.actionType === "toolbox_deactivated"));
+  } finally {
+    await stopChild(child);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("mimir-control MCP deactivation returns the active profile fallback downgrade target", async () => {
+  const { root, sqlitePath } = await createTempSqlitePath();
+  const child = spawnControlServer({
+    activeProfile: "docs-research",
+    clientId: "codex",
+    sqlitePath
+  });
+  try {
+    const policy = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+    const validLease = issueToolboxSessionLease(
+      {
+        version: 1,
+        sessionId: "docs-research-session",
+        issuer: "mimir-control",
+        audience: "mimir-core",
+        clientId: "codex",
+        approvedProfile: "docs-research",
+        approvedCategories: policy.profiles["docs-research"].allowedCategories,
+        deniedCategories: policy.profiles["docs-research"].deniedCategories,
+        trustClass: policy.intents["docs-research"].trustClass,
+        manifestRevision: policy.manifestRevision,
+        profileRevision: policy.profiles["docs-research"].profileRevision,
+        issuedAt: new Date(Date.now() - 60_000).toISOString(),
+        expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+        nonce: "docs-research-active-nonce"
+      },
+      "toolbox-secret"
+    );
+
+    const transport = createMessageCollector(child.stdout);
+    await initializeMcp(transport, child.stdin);
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
+      id: 81,
+      method: "tools/call",
+      params: {
+        name: "deactivate_toolbox",
+        arguments: {
+          leaseToken: validLease
+        }
+      }
+    });
+
+    const deactivation = await transport.next();
+    assert.equal(deactivation.result.structuredContent.reasonCode, "toolbox_deactivated");
+    assert.equal(deactivation.result.structuredContent.activeProfile, "docs-research");
+    assert.equal(deactivation.result.structuredContent.downgradeTarget, "core-dev");
+    assert.equal(
+      deactivation.result.structuredContent.handoff.targetProfileId,
+      "core-dev"
+    );
+    assert.equal(
+      deactivation.result.structuredContent.handoff.downgradeTarget,
+      "core-dev"
+    );
+    assert.equal(deactivation.result.structuredContent.diagnostics.lease.revoked, true);
   } finally {
     await stopChild(child);
     await rm(root, { recursive: true, force: true });

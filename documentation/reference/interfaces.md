@@ -177,6 +177,38 @@ Toolbox control commands are implemented through the shared control surface. The
 - `activeTools`: tools currently exposed to the session after overlay suppression
 - `suppressedTools`: declared tools hidden by overlay rules, including `suppressionReasons`
 
+Observation-oriented profiles may expose Kubernetes read-only descriptors
+through `list-active-tools` / `list_active_tools`, including
+`kubernetes.context.inspect`, `kubernetes.namespaces.list`,
+`kubernetes.workloads.list`, `kubernetes.events.list`, and
+`kubernetes.logs.query`. No Kubernetes mutation tool is part of v1.
+
+`describe-toolbox` returns structured workflow and composition metadata in
+addition to the intent-level categories and tool list. The discovery payload now
+includes:
+
+- `summary`
+- `exampleTasks`
+- `trustClass`
+- `antiUseCases` entries such as `{ type: "denied_category", category: "docker-write" }`
+- `workflow.activationMode`
+- `workflow.sessionMode`
+- `workflow.requiresApproval`
+- `workflow.fallbackProfile`
+- `profile.composite`
+- `profile.baseProfiles`
+- `profile.compositeReason`
+- `profile.profileRevision`
+
+`list-active-toolbox` returns a structured active-session summary with three
+sections:
+
+- `workflow`: current toolbox mapping, activation mode, active session mode,
+  approval requirement, and fallback profile
+- `profile`: active profile identity, composition, category bounds, semantic
+  capabilities, and profile revision
+- `client`: current overlay handoff metadata plus suppression lists
+
 Issued-token listing filters are implemented end to end across CLI and HTTP. The supported request fields are:
 
 - `actorId`
@@ -247,6 +279,33 @@ Source of truth:
 - `list_active_toolbox`
 - `list_active_tools`
 - `deactivate_toolbox`
+
+`list_active_toolbox` returns the active workflow/profile summary plus client
+overlay diagnostics. The client block now includes both the configured
+suppression lists and `suppressedTools`, a machine-readable array describing
+which tool descriptors were hidden for the active session, why they were
+suppressed, and the `client-overlay-reduction` boundary that enforced it.
+Client reconnect metadata is available under both `handoffPresetRef` and the
+plan-aligned alias `clientPresetRef`.
+The diagnostics and emitted audit events now carry both `manifestRevision` and
+`profileRevision` so activation, denial, and reconnect flows can be explained
+against the exact compiled policy state.
+
+`describe_toolbox` returns the same style of suppression diagnostics for
+pre-activation discovery. In addition to the overlay-filtered `toolbox.tools`
+array, the response now includes:
+
+- `toolbox.suppressedTools` so clients can see which descriptors were hidden by
+  the current overlay and why
+- `toolbox.antiUseCases` so clients can explain denied-category boundaries in a
+  machine-readable way before activation
+
+`request_toolbox_activation` returns the same revision-aware diagnostics and
+stable-schema audit events, including the profile revision tied to the approved
+or active profile in scope for the decision. The reconnect handoff also carries
+both `handoffPresetRef` and `clientPresetRef` so existing clients and the
+Sprint 6 contract can use the same payload. Activation responses also surface
+the approved trust boundary under `details.approval.trustClass`.
 
 ## Internal integration surfaces
 

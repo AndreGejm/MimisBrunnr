@@ -60,9 +60,19 @@ export interface PromotionOutboxRecord {
   state: PromotionOutboxState;
   attempts: number;
   lastError?: string;
+  completedSteps: string[];
   createdAt: string;
   updatedAt: string;
   payload: PromotionOutboxPayload;
+}
+
+export type NoteRelationshipType = "supersedes";
+export type NoteRelationshipDirection = "outgoing" | "incoming" | "both";
+
+export interface NoteRelationshipRecord {
+  sourceNoteId: NoteId;
+  targetNoteId: NoteId;
+  relationshipType: NoteRelationshipType;
 }
 
 export interface TemporalValiditySummary {
@@ -105,6 +115,7 @@ export interface TemporalValidityReport extends TemporalValiditySummary {
 
 export interface MetadataControlStore {
   upsertNote(note: MetadataNoteRecord): Promise<void>;
+  getNoteById(noteId: NoteId): Promise<MetadataNoteRecord | null>;
   upsertChunks(chunks: ChunkRecord[]): Promise<void>;
   removeChunksByNoteId(noteId: NoteId): Promise<void>;
   getChunksByIds(chunkIds: ChunkId[]): Promise<ChunkRecord[]>;
@@ -124,9 +135,15 @@ export interface MetadataControlStore {
     limit?: number;
   }): Promise<PromotionOutboxRecord[]>;
   claimPromotionOutboxEntry(outboxId: string): Promise<PromotionOutboxRecord | null>;
+  markPromotionOutboxStepCompleted(outboxId: string, stepId: string): Promise<void>;
   completePromotionOutboxEntry(outboxId: string): Promise<void>;
   failPromotionOutboxEntry(outboxId: string, lastError: string): Promise<void>;
   recordPromotion(decision: PromotionDecisionRecord): Promise<void>;
+  upsertNoteRelationships(relationships: NoteRelationshipRecord[]): Promise<void>;
+  listNoteRelationships(noteId: NoteId, input?: {
+    direction?: NoteRelationshipDirection;
+    relationshipType?: NoteRelationshipType;
+  }): Promise<NoteRelationshipRecord[]>;
   getTemporalValiditySummary(input?: {
     asOf?: string;
     expiringWithinDays?: number;

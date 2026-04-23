@@ -16,6 +16,9 @@ Current supported operations:
 - `prepare-repo-workspace`
 - `audit-toolbox-assets`
 - `prepare-toolbox-runtime`
+- `audit-toolbox-control-surface`
+- `audit-active-toolbox-session`
+- `audit-toolbox-client-handoff`
 - `audit-docker-mcp-toolkit`
 - `plan-docker-mcp-toolkit-apply`
 - `plan-client-access`
@@ -34,6 +37,12 @@ model-backed mode, or provide a full GUI bootstrap yet. They currently:
 - validate the tracked `docker/mcp` manifest set through the same compiler and
   runtime-plan path used by the toolbox scripts
 - persist a compiled toolbox runtime artifact for later Docker apply work
+- audit the real toolbox discovery surface through `corepack pnpm cli -- list-toolboxes`
+  and `describe-toolbox`
+- audit the current active toolbox session through `list-active-toolbox` and
+  `list-active-tools`
+- audit reconnect handoff readiness for the selected installer client without
+  issuing activation or approval requests
 - audit the installed Docker MCP Toolkit state through the live `docker mcp`
   surface
 - compare the prepared toolbox runtime commands against the live Docker MCP
@@ -129,6 +138,7 @@ What this does:
   - `apps/mimir-api/dist/main.js`
   - `apps/mimir-cli/dist/main.js`
   - `apps/mimir-mcp/dist/main.js`
+  - `apps/mimir-control-mcp/dist/main.js`
 - writes installer state files
 
 What this does not do:
@@ -136,6 +146,75 @@ What this does not do:
 - it does not clone or update the repo yet
 - it does not auto-stash or auto-clean a dirty repo
 - it does not prepare arbitrary Node repositories; it is scoped to the tracked mimir layout
+
+### Audit toolbox control discovery without activating a toolbox
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
+  -Operation audit-toolbox-control-surface `
+  -RepoRoot F:\Dev\scripts\Mimir\mimir `
+  -Json
+```
+
+What this does:
+
+- runs the real toolbox discovery commands through `corepack pnpm cli`
+  - `list-toolboxes`
+  - `describe-toolbox`
+- reports the available toolbox ids, approval-required count, and one described
+  toolbox summary
+- proves the control surface is available without issuing activation or approval
+  requests
+- writes installer state files
+
+### Audit the current active toolbox session
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
+  -Operation audit-active-toolbox-session `
+  -RepoRoot F:\Dev\scripts\Mimir\mimir `
+  -Json
+```
+
+What this does:
+
+- runs the real active-session commands through `corepack pnpm cli`
+  - `list-active-toolbox`
+  - `list-active-tools`
+- reports the current workflow, active profile, client overlay metadata, and
+  declared versus active versus suppressed tool counts
+- shows whether the current client is still in bootstrap mode or already in an
+  activated toolbox session
+- writes installer state files
+
+### Audit toolbox client handoff readiness
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
+  -Operation audit-toolbox-client-handoff `
+  -RepoRoot F:\Dev\scripts\Mimir\mimir `
+  -ClientName codex `
+  -Json
+```
+
+What this does:
+
+- reuses the installer client-access health audit for the selected client
+- reads the current active toolbox client metadata through `list-active-toolbox`
+- reports reconnect handoff readiness for:
+  - `MAB_TOOLBOX_ACTIVE_PROFILE`
+  - `MAB_TOOLBOX_CLIENT_ID`
+  - `MAB_TOOLBOX_SESSION_MODE`
+  - optional `MAB_TOOLBOX_SESSION_POLICY_TOKEN`
+- confirms whether the installer-selected client matches the runtime-selected
+  client and whether the required handoff strategy metadata is present
+- writes installer state files
+
+What this does not do:
+
+- it does not issue `request-toolbox-activation`
+- it does not grant approval for `requiresApproval` toolboxes
+- it does not mutate the active toolbox session
 
 ### Audit Docker toolbox assets without mutating Docker Desktop
 
@@ -312,6 +391,9 @@ Shared arguments accepted by `cli.ps1`:
 - `plan-client-access`
 - `apply-client-access`
 - `show-state`
+- `audit-toolbox-control-surface`
+- `audit-active-toolbox-session`
+- `audit-toolbox-client-handoff`
 - `-RepoRoot`
   - defaults to the tracked repository root resolved from the script location
 - `-StateRoot`
@@ -388,6 +470,9 @@ The exact contract and status semantics are documented in
   it does not apply Docker Desktop profile changes yet
 - `prepare-toolbox-runtime` persists the compiled runtime plan, but the apply
   step still needs a separate deterministic Docker mutation contract
+- `audit-toolbox-control-surface`, `audit-active-toolbox-session`, and
+  `audit-toolbox-client-handoff` are read-only checks over the real toolbox CLI
+  surfaces; they do not activate toolboxes or issue approvals
 - `audit-docker-mcp-toolkit` reads the current Docker Toolkit state, but it does
   not mutate enabled servers, client connections, or config
 - `plan-docker-mcp-toolkit-apply` is intentionally plan-only and is currently

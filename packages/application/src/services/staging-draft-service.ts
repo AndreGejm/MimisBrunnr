@@ -140,7 +140,10 @@ export class StagingDraftService {
   async getDraft(
     noteId: NoteId
   ): Promise<ServiceResult<StagingDraftRecord, DraftNoteErrorCode>> {
-    const draft = await this.stagingNoteRepository.getById(noteId);
+    const metadata = await this.metadataControlStore.getNoteById(noteId);
+    const draft = metadata
+      ? await this.stagingNoteRepository.getByPath(metadata.notePath)
+      : await this.stagingNoteRepository.getById(noteId);
     if (!draft) {
       return {
         ok: false,

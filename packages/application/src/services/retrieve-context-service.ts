@@ -21,6 +21,10 @@ import { RetrievalTraceService } from "./retrieval-trace-service.js";
 import { LexicalRetrievalService } from "./lexical-retrieval-service.js";
 import { QueryIntentService } from "./query-intent-service.js";
 import { RankingFusionService } from "./ranking-fusion-service.js";
+import {
+  buildRetrieveContextCacheKey,
+  type RetrieveContextCache
+} from "./retrieve-context-cache.js";
 import { VectorRetrievalService } from "./vector-retrieval-service.js";
 
 type RetrieveContextErrorCode = "retrieval_failed";
@@ -44,6 +48,7 @@ export class RetrieveContextService {
     rerankerProvider?: RerankerProvider;
     auditHistoryService?: AuditHistoryService;
     hierarchicalRetrievalService?: HierarchicalRetrievalService;
+    retrieveContextCache?: RetrieveContextCache;
   }) {
     this.queryIntentService = new QueryIntentService(input.localReasoningProvider);
     this.lexicalRetrievalService = new LexicalRetrievalService(
@@ -63,12 +68,14 @@ export class RetrieveContextService {
     this.rerankerProvider = input.rerankerProvider;
     this.paidEscalationProvider = input.paidEscalationProvider;
     this.vectorIndex = input.vectorIndex;
+    this.retrieveContextCache = input.retrieveContextCache;
   }
 
   private readonly auditHistoryService?: AuditHistoryService;
   private readonly paidEscalationProvider?: LocalReasoningProvider;
   private readonly rerankerProvider?: RerankerProvider;
   private readonly vectorIndex: VectorIndex;
+  private readonly retrieveContextCache?: RetrieveContextCache;
 
   async retrieveContext(
     request: RetrieveContextRequest
@@ -76,6 +83,12 @@ export class RetrieveContextService {
     try {
       if (request.strategy === "hierarchical" && this.hierarchicalRetrievalService) {
         return await this.hierarchicalRetrievalService.retrieveContext(request);
+      }
+
+      const cacheKey = buildRetrieveContextCacheKey(request, "flat");
+      const cached = await this.readCachedResponse(request, cacheKey);
+      if (cached) {
+        return cached;
       }
 
       const budget = request.budget ?? DEFAULT_CONTEXT_BUDGET;
@@ -206,20 +219,26 @@ export class RetrieveContextService {
         warnings: responseWarnings ?? []
       });
 
+      const data: RetrieveContextResponse = {
+        packet,
+        candidateCounts: {
+          lexical: lexicalCandidates.length,
+          vector: vectorCandidates.length,
+          reranked: rankedCandidates.length,
+          delivered: packet.evidence.length
+        },
+        provenance: packet.evidence,
+        retrievalHealth,
+        trace
+      };
+      this.retrieveContextCache?.set(cacheKey, {
+        data,
+        warnings: responseWarnings
+      });
+
       return {
         ok: true,
-        data: {
-          packet,
-          candidateCounts: {
-            lexical: lexicalCandidates.length,
-            vector: vectorCandidates.length,
-            reranked: rankedCandidates.length,
-            delivered: packet.evidence.length
-          },
-          provenance: packet.evidence,
-          retrievalHealth,
-          trace
-        },
+        data,
         warnings: responseWarnings
       };
     } catch (error) {
@@ -249,6 +268,52 @@ export class RetrieveContextService {
         }
       };
     }
+  }
+
+  private async readCachedResponse(
+    request: RetrieveContextRequest,
+    cacheKey: string
+  ): Promise<ServiceResult<RetrieveContextResponse, RetrieveContextErrorCode> | undefined> {
+    const cached = this.retrieveContextCache?.get(cacheKey);
+    if (!cached) {
+      return undefined;
+    }
+
+    const data = structuredClone(cached.data);
+    const auditResult = await this.auditHistoryService?.recordAction({
+      actionType: "retrieve_context",
+      actorId: request.actor.actorId,
+      actorRole: request.actor.actorRole,
+      source: request.actor.source,
+      toolName: request.actor.toolName,
+      occurredAt: new Date().toISOString(),
+      outcome: data.packet.answerability === "local_answer" ? "accepted" : "partial",
+      affectedNoteIds: data.packet.evidence.map((source) => source.noteId),
+      affectedChunkIds: data.packet.evidence.flatMap((source) => (source.chunkId ? [source.chunkId] : [])),
+      detail: {
+        query: request.query,
+        answerability: data.packet.answerability,
+        budget: request.budget ?? DEFAULT_CONTEXT_BUDGET,
+        cacheHit: true,
+        candidateCounts: data.candidateCounts
+      }
+    });
+    const responseWarnings = collectWarnings(
+      cached.warnings ?? data.retrievalHealth?.warnings ?? [],
+      auditResult && !auditResult.ok ? [auditResult.error.message] : []
+    );
+    if (data.retrievalHealth) {
+      data.retrievalHealth = {
+        ...data.retrievalHealth,
+        warnings: responseWarnings ?? []
+      };
+    }
+
+    return {
+      ok: true,
+      data,
+      warnings: responseWarnings
+    };
   }
 
   private async rerankCandidates(

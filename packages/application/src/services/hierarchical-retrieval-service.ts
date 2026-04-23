@@ -3,6 +3,7 @@ import {
   DEFAULT_CONTEXT_BUDGET,
   type AssembleContextPacketRequest,
   type ContextCandidate,
+  type RetrievalHealthReport,
   type RetrieveContextRequest,
   type RetrieveContextResponse,
   type ServiceResult
@@ -18,6 +19,10 @@ import { ContextPacketService } from "./context-packet-service.js";
 import { LexicalRetrievalService } from "./lexical-retrieval-service.js";
 import { QueryIntentService } from "./query-intent-service.js";
 import { RankingFusionService } from "./ranking-fusion-service.js";
+import {
+  buildRetrieveContextCacheKey,
+  type RetrieveContextCache
+} from "./retrieve-context-cache.js";
 import { RetrievalTraceService } from "./retrieval-trace-service.js";
 import { VectorRetrievalService } from "./vector-retrieval-service.js";
 
@@ -40,6 +45,7 @@ export class HierarchicalRetrievalService {
     paidEscalationProvider?: LocalReasoningProvider;
     rerankerProvider?: RerankerProvider;
     auditHistoryService?: AuditHistoryService;
+    retrieveContextCache?: RetrieveContextCache;
   }) {
     this.queryIntentService = new QueryIntentService(input.localReasoningProvider);
     this.lexicalRetrievalService = new LexicalRetrievalService(
@@ -58,17 +64,25 @@ export class HierarchicalRetrievalService {
     this.rerankerProvider = input.rerankerProvider;
     this.paidEscalationProvider = input.paidEscalationProvider;
     this.vectorIndex = input.vectorIndex;
+    this.retrieveContextCache = input.retrieveContextCache;
   }
 
   private readonly auditHistoryService?: AuditHistoryService;
   private readonly paidEscalationProvider?: LocalReasoningProvider;
   private readonly rerankerProvider?: RerankerProvider;
   private readonly vectorIndex: VectorIndex;
+  private readonly retrieveContextCache?: RetrieveContextCache;
 
   async retrieveContext(
     request: RetrieveContextRequest
   ): Promise<ServiceResult<RetrieveContextResponse, RetrieveContextErrorCode>> {
     try {
+      const cacheKey = buildRetrieveContextCacheKey(request, "hierarchical");
+      const cached = await this.readCachedResponse(request, cacheKey);
+      if (cached) {
+        return cached;
+      }
+
       const budget = request.budget ?? DEFAULT_CONTEXT_BUDGET;
       const intent = await this.queryIntentService.classifyIntent(
         request.query,
@@ -189,24 +203,40 @@ export class HierarchicalRetrievalService {
             "hierarchical"
           )
         : undefined;
+      const responseWarnings = collectWarnings(
+        warnings,
+        auditResult && !auditResult.ok ? [auditResult.error.message] : []
+      );
+      const retrievalHealth = buildRetrievalHealthReport({
+        lexicalCandidates: lexicalCandidates.length,
+        vectorCandidates: vectorCandidates.length,
+        rerankedCandidates: hierarchicalCandidates.length,
+        deliveredCandidates: packet.evidence.length,
+        vectorHealthStatus: vectorHealth?.status,
+        warnings: responseWarnings ?? []
+      });
+
+      const data: RetrieveContextResponse = {
+        packet,
+        candidateCounts: {
+          lexical: lexicalCandidates.length,
+          vector: vectorCandidates.length,
+          reranked: hierarchicalCandidates.length,
+          delivered: packet.evidence.length
+        },
+        provenance: packet.evidence,
+        retrievalHealth,
+        trace
+      };
+      this.retrieveContextCache?.set(cacheKey, {
+        data,
+        warnings: responseWarnings
+      });
 
       return {
         ok: true,
-        data: {
-          packet,
-          candidateCounts: {
-            lexical: lexicalCandidates.length,
-            vector: vectorCandidates.length,
-            reranked: hierarchicalCandidates.length,
-            delivered: packet.evidence.length
-          },
-          provenance: packet.evidence,
-          trace
-        },
-        warnings: collectWarnings(
-          warnings,
-          auditResult && !auditResult.ok ? [auditResult.error.message] : []
-        )
+        data,
+        warnings: responseWarnings
       };
     } catch (error) {
       await this.auditHistoryService?.recordAction({
@@ -235,6 +265,52 @@ export class HierarchicalRetrievalService {
         }
       };
     }
+  }
+
+  private async readCachedResponse(
+    request: RetrieveContextRequest,
+    cacheKey: string
+  ): Promise<ServiceResult<RetrieveContextResponse, RetrieveContextErrorCode> | undefined> {
+    const cached = this.retrieveContextCache?.get(cacheKey);
+    if (!cached) {
+      return undefined;
+    }
+
+    const data = structuredClone(cached.data);
+    const auditResult = await this.auditHistoryService?.recordAction({
+      actionType: "retrieve_context",
+      actorId: request.actor.actorId,
+      actorRole: request.actor.actorRole,
+      source: request.actor.source,
+      toolName: request.actor.toolName,
+      occurredAt: new Date().toISOString(),
+      outcome: data.packet.answerability === "local_answer" ? "accepted" : "partial",
+      affectedNoteIds: data.packet.evidence.map((source) => source.noteId),
+      affectedChunkIds: data.packet.evidence.flatMap((source) => (source.chunkId ? [source.chunkId] : [])),
+      detail: {
+        query: request.query,
+        answerability: data.packet.answerability,
+        budget: request.budget ?? DEFAULT_CONTEXT_BUDGET,
+        cacheHit: true,
+        candidateCounts: data.candidateCounts
+      }
+    });
+    const responseWarnings = collectWarnings(
+      cached.warnings ?? data.retrievalHealth?.warnings ?? [],
+      auditResult && !auditResult.ok ? [auditResult.error.message] : []
+    );
+    if (data.retrievalHealth) {
+      data.retrievalHealth = {
+        ...data.retrievalHealth,
+        warnings: responseWarnings ?? []
+      };
+    }
+
+    return {
+      ok: true,
+      data,
+      warnings: responseWarnings
+    };
   }
 
   private async rerankCandidates(
@@ -319,6 +395,32 @@ function selectHierarchicalCandidates(
 function collectWarnings(...groups: Array<ReadonlyArray<string>>): string[] | undefined {
   const warnings = [...new Set(groups.flat().map((warning) => warning.trim()).filter(Boolean))];
   return warnings.length > 0 ? warnings : undefined;
+}
+
+function buildRetrievalHealthReport(input: {
+  lexicalCandidates: number;
+  vectorCandidates: number;
+  rerankedCandidates: number;
+  deliveredCandidates: number;
+  vectorHealthStatus?: string;
+  warnings: string[];
+}): RetrievalHealthReport {
+  const vectorDegraded =
+    input.vectorHealthStatus === "degraded" || input.vectorCandidates === 0;
+  const status = input.deliveredCandidates === 0
+    ? "unhealthy"
+    : vectorDegraded
+      ? "degraded"
+      : "healthy";
+
+  return {
+    status,
+    lexicalCandidates: input.lexicalCandidates,
+    vectorCandidates: input.vectorCandidates,
+    rerankedCandidates: input.rerankedCandidates,
+    deliveredCandidates: input.deliveredCandidates,
+    warnings: input.warnings
+  };
 }
 
 function mergeUncertainties(existing: string[], summary: string): string[] {

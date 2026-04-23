@@ -7,6 +7,7 @@ profile:
     - mimir-core
     - grafana-observe
     - docker-read
+    - kubernetes-read
     - docker-admin
   allowedCategories:
     - repo-read
@@ -15,6 +16,9 @@ profile:
     - metrics-read
     - traces-read
     - docker-read
+    - k8s-read
+    - k8s-logs-read
+    - k8s-events-read
     - docker-write
   deniedCategories:
     - deployment

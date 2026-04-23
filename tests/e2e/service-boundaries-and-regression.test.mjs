@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir as fsMkdir, mkdtemp, readFile as fsReadFile, rm, writeFile as fsWriteFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import process from "node:process";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import * as application from "../../packages/application/dist/index.js";
@@ -142,6 +143,72 @@ test("default access doctor reports reusable Docker tool assets", async (t) => {
   ]);
 });
 
+test("default access doctor reports Docker MCP profile compatibility without making it a hard health requirement", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-doctor-docker-mcp-"));
+  const binDir = path.join(root, "bin");
+  const codexConfigPath = path.join(root, "config.toml");
+  const manifestPath = path.join(root, "installation.json");
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const supportedStub = path.join(root, "docker-supported.cjs");
+  const unsupportedStub = path.join(root, "docker-unsupported.cjs");
+  await fsMkdir(path.join(root, "scripts"), { recursive: true });
+  await fsMkdir(path.join(root, "apps", "mimir-cli", "dist"), { recursive: true });
+  await fsMkdir(path.join(root, "apps", "mimir-mcp", "dist"), { recursive: true });
+  await fsMkdir(binDir, { recursive: true });
+  await fsWriteFile(path.join(root, "scripts", "launch-mimir-cli.mjs"), "", "utf8");
+  await fsWriteFile(path.join(root, "scripts", "launch-mimir-mcp.mjs"), "", "utf8");
+  await fsWriteFile(path.join(root, "apps", "mimir-cli", "dist", "main.js"), "", "utf8");
+  await fsWriteFile(path.join(root, "apps", "mimir-mcp", "dist", "main.js"), "", "utf8");
+  await fsWriteFile(codexConfigPath, "[mcp_servers.mimir]\ncommand = 'node'\n", "utf8");
+  await fsWriteFile(manifestPath, "{}\n", "utf8");
+  for (const launcherName of COMPATIBILITY_LAUNCHER_NAMES) {
+    await fsWriteFile(path.join(binDir, `${launcherName}.cmd`), "", "utf8");
+  }
+  await fsWriteFile(supportedStub, renderDockerMcpStub({ profileSupported: true }), "utf8");
+  await fsWriteFile(unsupportedStub, renderDockerMcpStub({ profileSupported: false }), "utf8");
+
+  const supported = evaluateDefaultAccess({
+    repoRoot: root,
+    codexConfigPath,
+    launcherBinDir: binDir,
+    manifestPath,
+    pathValue: binDir,
+    dockerExecutable: process.execPath,
+    dockerExecutableArgs: [supportedStub]
+  });
+  assert.equal(supported.dockerMcp.profileSupport.supported, true);
+  assert.equal(supported.dockerMcp.profileSupport.profileCommandDetected, true);
+  assert.ok(supported.dockerMcp.profileSupport.availableCommands.includes("profile"));
+  assert.equal(supported.dockerMcp.gatewayProfileSupport.supported, true);
+  assert.equal(supported.dockerMcp.gatewayProfileSupport.gatewayRunDetected, true);
+  assert.equal(supported.dockerMcp.gatewayProfileSupport.profileFlagDetected, true);
+
+  const unsupported = evaluateDefaultAccess({
+    repoRoot: root,
+    codexConfigPath,
+    launcherBinDir: binDir,
+    manifestPath,
+    pathValue: binDir,
+    dockerExecutable: process.execPath,
+    dockerExecutableArgs: [unsupportedStub]
+  });
+  assert.equal(unsupported.dockerMcp.profileSupport.supported, false);
+  assert.equal(unsupported.dockerMcp.profileSupport.profileCommandDetected, false);
+  assert.ok(!unsupported.dockerMcp.profileSupport.availableCommands.includes("profile"));
+  assert.equal(unsupported.dockerMcp.gatewayProfileSupport.supported, false);
+  assert.equal(unsupported.dockerMcp.gatewayProfileSupport.gatewayRunDetected, true);
+  assert.equal(unsupported.dockerMcp.gatewayProfileSupport.profileFlagDetected, false);
+  assert.ok(
+    unsupported.dockerMcp.profileSupport.nextSteps.some((step) =>
+      step.includes("docker mcp feature enable profiles")
+    )
+  );
+  assert.equal(unsupported.status, "healthy");
+});
+
 test("default access health does not require optional Docker tool assets", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "mimir-doctor-base-install-"));
   const binDir = path.join(root, "bin");
@@ -181,6 +248,66 @@ test("default access health does not require optional Docker tool assets", async
     )
   );
 });
+
+function renderDockerMcpStub({ profileSupported }) {
+  const commandLines = profileSupported
+    ? [
+        "  catalog     Manage MCP server catalogs",
+        "  client      Manage MCP clients",
+        "  config      Manage the configuration",
+        "  feature     Manage experimental features",
+        "  gateway     Manage the MCP Server gateway",
+        "  profile     Manage profiles",
+        "  server      Manage servers",
+        "  tools       Manage tools",
+        "  version     Show the version information"
+      ]
+    : [
+        "  catalog     Manage MCP server catalogs",
+        "  client      Manage MCP clients",
+        "  config      Manage the configuration",
+        "  feature     Manage experimental features",
+        "  gateway     Manage the MCP Server gateway",
+        "  server      Manage servers",
+        "  tools       Manage tools",
+        "  version     Show the version information"
+      ];
+  const helpText = [
+    "Docker MCP Toolkit's CLI - Manage your MCP servers and clients.",
+    "",
+    "Usage: docker mcp [OPTIONS]",
+    "",
+    "Available Commands:",
+    ...commandLines,
+    ""
+  ].join("\n");
+
+  return [
+    `const helpText = ${JSON.stringify(helpText)};`,
+    `const gatewayRunHelpText = ${JSON.stringify([
+      "Docker MCP Toolkit's CLI - Manage your MCP servers and clients.",
+      "",
+      "Usage: docker mcp gateway run",
+      "",
+      "Flags:",
+      ...(profileSupported
+        ? ["      --profile string   Profile to use"]
+        : ["      --servers strings  Names of the servers to enable"]),
+      ""
+    ].join("\n"))};`,
+    "const args = process.argv.slice(2);",
+    "if (args[0] === 'mcp' && args[1] === '--help') {",
+    "  process.stdout.write(helpText);",
+    "  process.exit(0);",
+    "}",
+    "if (args[0] === 'mcp' && args[1] === 'gateway' && args[2] === 'run' && args[3] === '--help') {",
+    "  process.stdout.write(gatewayRunHelpText);",
+    "  process.exit(0);",
+    "}",
+    "process.exit(2);",
+    ""
+  ].join("\n");
+}
 test("transport validation normalizes legacy context-brain corpus aliases to mimisbrunnr", () => {
   const search = validateTransportRequest("search-context", {
     query: "legacy corpus aliases",
@@ -341,6 +468,54 @@ test("promotion of a current-state context note creates a deterministic snapshot
   assert.ok(snapshot.frontmatter.tags.includes("topic/current-state-snapshot"));
 });
 
+test("promotion records supersession relationships in metadata graph", async (t) => {
+  const { container } = await createHarness(t);
+
+  const first = await createAndPromote(container, {
+    title: "Relationship Governance V1",
+    noteType: "architecture",
+    bodyHints: [
+      "The first current-state relationship note is superseded by a later revision."
+    ],
+    scope: "relationship-governance",
+    promoteAsCurrentState: true
+  });
+  const second = await createAndPromote(container, {
+    title: "Relationship Governance V2",
+    noteType: "architecture",
+    bodyHints: [
+      "The second current-state relationship note replaces the first revision."
+    ],
+    scope: "relationship-governance",
+    promoteAsCurrentState: true
+  });
+
+  assert.deepEqual(second.supersededNoteIds, [first.promotedNoteId]);
+
+  const outgoing = await container.ports.metadataControlStore.listNoteRelationships(
+    second.promotedNoteId
+  );
+  assert.ok(
+    outgoing.some((relationship) =>
+      relationship.sourceNoteId === second.promotedNoteId &&
+      relationship.targetNoteId === first.promotedNoteId &&
+      relationship.relationshipType === "supersedes"
+    )
+  );
+
+  const incoming = await container.ports.metadataControlStore.listNoteRelationships(
+    first.promotedNoteId,
+    { direction: "incoming" }
+  );
+  assert.ok(
+    incoming.some((relationship) =>
+      relationship.sourceNoteId === second.promotedNoteId &&
+      relationship.targetNoteId === first.promotedNoteId &&
+      relationship.relationshipType === "supersedes"
+    )
+  );
+});
+
 test("promotion succeeds when derived representations fail to regenerate", async (t) => {
   const { container } = await createHarness(t);
 
@@ -429,6 +604,16 @@ test("promotion outbox replays failed cross-store sync work after a transient in
       return container.ports.lexicalIndex.upsertChunks(chunks);
     }
   };
+  let cacheClearCount = 0;
+  const retrieveContextCache = {
+    get() {
+      return undefined;
+    },
+    set() {},
+    clear() {
+      cacheClearCount += 1;
+    }
+  };
   const promotionService = new application.PromotionOrchestratorService(
     container.ports.stagingNoteRepository,
     container.services.canonicalNoteService,
@@ -438,7 +623,9 @@ test("promotion outbox replays failed cross-store sync work after a transient in
     container.services.auditHistoryService,
     failOnceLexicalIndex,
     container.ports.vectorIndex,
-    container.ports.embeddingProvider
+    container.ports.embeddingProvider,
+    undefined,
+    retrieveContextCache
   );
 
   const initialPromotion = await promotionService.promoteDraft({
@@ -451,19 +638,28 @@ test("promotion outbox replays failed cross-store sync work after a transient in
   assert.equal(initialPromotion.ok, false);
   assert.equal(initialPromotion.error.code, "write_failed");
   assert.equal(typeof initialPromotion.error.details?.outboxId, "string");
+  assert.equal(cacheClearCount, 0);
 
   const outboxId = initialPromotion.error.details.outboxId;
   const failedOutbox = await container.ports.metadataControlStore.getPromotionOutboxEntry(outboxId);
   assert.ok(failedOutbox);
   assert.equal(failedOutbox.state, "failed");
+  const promotedNoteId = failedOutbox.payload.promotionDecision.canonicalNoteId;
+  assert.ok(failedOutbox.completedSteps.includes(`canonical_write:${promotedNoteId}`));
+  assert.ok(failedOutbox.completedSteps.includes(`chunk_metadata_sync:${promotedNoteId}`));
+  assert.ok(!failedOutbox.completedSteps.includes(`lexical_index_sync:${promotedNoteId}`));
 
   const replay = await promotionService.replayPendingPromotions();
   assert.ok(replay.processedOutboxIds.includes(outboxId));
   assert.ok(!replay.failedOutboxIds.includes(outboxId));
+  assert.equal(cacheClearCount, 1);
 
   const completedOutbox = await container.ports.metadataControlStore.getPromotionOutboxEntry(outboxId);
   assert.ok(completedOutbox);
   assert.equal(completedOutbox.state, "completed");
+  assert.ok(completedOutbox.completedSteps.includes(`lexical_index_sync:${promotedNoteId}`));
+  assert.ok(completedOutbox.completedSteps.includes("promotion_event_recorded"));
+  assert.ok(completedOutbox.completedSteps.includes("draft_marked_promoted"));
 
   const notes = await container.services.canonicalNoteService.listCanonicalNotes("mimisbrunnr");
   assert.equal(notes.ok, true);

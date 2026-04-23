@@ -3,6 +3,9 @@ import { DatabaseSync } from "node:sqlite";
 import type {
   MetadataControlStore,
   MetadataNoteRecord,
+  NoteRelationshipDirection,
+  NoteRelationshipRecord,
+  NoteRelationshipType,
   PromotionDecisionRecord,
   PromotionOutboxPayload,
   PromotionOutboxRecord,
@@ -123,6 +126,30 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
       this.database.exec("ROLLBACK");
       throw error;
     }
+  }
+
+  async getNoteById(noteId: MetadataNoteRecord["noteId"]): Promise<MetadataNoteRecord | null> {
+    const row = this.database.prepare(`
+      SELECT
+        note_id,
+        corpus_id,
+        note_path,
+        note_type,
+        lifecycle_state,
+        revision,
+        updated_at,
+        current_state,
+        valid_from,
+        valid_until,
+        summary,
+        scope,
+        content_hash,
+        semantic_signature
+      FROM notes
+      WHERE note_id = ?
+    `).get(noteId) as SqliteNoteRow | undefined;
+
+    return row ? this.mapNoteRow(row) : null;
   }
 
   async upsertChunks(chunks: ChunkRecord[]): Promise<void> {
@@ -383,6 +410,7 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
       outboxId: input.outboxId,
       state: "pending",
       attempts: 0,
+      completedSteps: [],
       createdAt: timestamp,
       updatedAt: timestamp,
       payload: input.payload
@@ -394,14 +422,16 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
         state,
         attempts,
         last_error,
+        completed_steps_json,
         created_at,
         updated_at,
         payload_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(outbox_id) DO UPDATE SET
         state = excluded.state,
         attempts = excluded.attempts,
         last_error = excluded.last_error,
+        completed_steps_json = excluded.completed_steps_json,
         created_at = excluded.created_at,
         updated_at = excluded.updated_at,
         payload_json = excluded.payload_json
@@ -410,6 +440,7 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
       record.state,
       record.attempts,
       null,
+      JSON.stringify(record.completedSteps),
       record.createdAt,
       record.updatedAt,
       JSON.stringify(record.payload)
@@ -425,6 +456,7 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
         state,
         attempts,
         last_error,
+        completed_steps_json,
         created_at,
         updated_at,
         payload_json
@@ -449,6 +481,7 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
           state,
           attempts,
           last_error,
+          completed_steps_json,
           created_at,
           updated_at,
           payload_json
@@ -463,6 +496,7 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
           state,
           attempts,
           last_error,
+          completed_steps_json,
           created_at,
           updated_at,
           payload_json
@@ -487,6 +521,7 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
           state,
           attempts,
           last_error,
+          completed_steps_json,
           created_at,
           updated_at,
           payload_json
@@ -518,6 +553,42 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
         last_error: null,
         updated_at: updatedAt
       });
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  async markPromotionOutboxStepCompleted(outboxId: string, stepId: string): Promise<void> {
+    const normalizedStepId = stepId.trim();
+    if (!normalizedStepId) {
+      throw new Error("Promotion outbox step ID is required.");
+    }
+
+    this.database.exec("BEGIN");
+    try {
+      const row = this.database.prepare(`
+        SELECT completed_steps_json
+        FROM promotion_outbox
+        WHERE outbox_id = ?
+      `).get(outboxId) as Pick<SqlitePromotionOutboxRow, "completed_steps_json"> | undefined;
+      if (!row) {
+        this.database.exec("COMMIT");
+        return;
+      }
+
+      const completedSteps = parseCompletedSteps(row.completed_steps_json);
+      if (!completedSteps.includes(normalizedStepId)) {
+        completedSteps.push(normalizedStepId);
+        this.database.prepare(`
+          UPDATE promotion_outbox
+          SET completed_steps_json = ?,
+              updated_at = ?
+          WHERE outbox_id = ?
+        `).run(JSON.stringify(completedSteps), currentTimestampIso(), outboxId);
+      }
+
+      this.database.exec("COMMIT");
     } catch (error) {
       this.database.exec("ROLLBACK");
       throw error;
@@ -565,6 +636,79 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
       JSON.stringify(decision.supersededNoteIds),
       decision.promotedAt
     );
+  }
+
+  async upsertNoteRelationships(
+    relationships: NoteRelationshipRecord[]
+  ): Promise<void> {
+    if (relationships.length === 0) {
+      return;
+    }
+
+    const uniqueRelationships = new Map<string, NoteRelationshipRecord>();
+    for (const relationship of relationships) {
+      uniqueRelationships.set(
+        `${relationship.sourceNoteId}\n${relationship.targetNoteId}\n${relationship.relationshipType}`,
+        relationship
+      );
+    }
+
+    const insertRelationship = this.database.prepare(`
+      INSERT INTO note_relationships (
+        source_note_id,
+        target_note_id,
+        relationship_type
+      ) VALUES (?, ?, ?)
+      ON CONFLICT(source_note_id, target_note_id, relationship_type) DO NOTHING
+    `);
+
+    this.database.exec("BEGIN");
+    try {
+      for (const relationship of uniqueRelationships.values()) {
+        insertRelationship.run(
+          relationship.sourceNoteId,
+          relationship.targetNoteId,
+          relationship.relationshipType
+        );
+      }
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  async listNoteRelationships(
+    noteId: NoteId,
+    input: {
+      direction?: NoteRelationshipDirection;
+      relationshipType?: NoteRelationshipType;
+    } = {}
+  ): Promise<NoteRelationshipRecord[]> {
+    const directionClause = relationshipDirectionClause(input.direction ?? "outgoing");
+    const relationshipTypeClause = input.relationshipType
+      ? "AND relationship_type = :relationshipType"
+      : "";
+    const parameters: Record<string, string> = { noteId };
+    if (input.relationshipType) {
+      parameters.relationshipType = input.relationshipType;
+    }
+    const rows = this.database.prepare(`
+      SELECT
+        source_note_id,
+        target_note_id,
+        relationship_type
+      FROM note_relationships
+      WHERE ${directionClause}
+        ${relationshipTypeClause}
+      ORDER BY relationship_type, source_note_id, target_note_id
+    `).all(parameters) as unknown as SqliteNoteRelationshipRow[];
+
+    return rows.map((row) => ({
+      sourceNoteId: row.source_note_id,
+      targetNoteId: row.target_note_id,
+      relationshipType: row.relationship_type as NoteRelationshipType
+    }));
   }
 
   async getTemporalValiditySummary(input: {
@@ -890,6 +1034,7 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
         state TEXT NOT NULL,
         attempts INTEGER NOT NULL,
         last_error TEXT,
+        completed_steps_json TEXT NOT NULL DEFAULT '[]',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         payload_json TEXT NOT NULL
@@ -935,6 +1080,7 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
     ensureColumnExists(this.database, "notes", "valid_until", "TEXT");
     ensureColumnExists(this.database, "chunks", "valid_from", "TEXT");
     ensureColumnExists(this.database, "chunks", "valid_until", "TEXT");
+    ensureColumnExists(this.database, "promotion_outbox", "completed_steps_json", "TEXT NOT NULL DEFAULT '[]'");
   }
 
   private async listTemporalValidityCandidates(input: {
@@ -1100,10 +1246,31 @@ export class SqliteMetadataControlStore implements MetadataControlStore {
       state: row.state,
       attempts: row.attempts,
       lastError: row.last_error ?? undefined,
+      completedSteps: parseCompletedSteps(row.completed_steps_json),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       payload: JSON.parse(row.payload_json) as PromotionOutboxPayload
     };
+  }
+}
+
+function parseCompletedSteps(value: string | null | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .filter((step): step is string => typeof step === "string")
+      .map((step) => step.trim())
+      .filter(Boolean);
+  } catch {
+    return [];
   }
 }
 
@@ -1136,6 +1303,12 @@ interface SqliteAuditRow {
   detail_json: string | null;
 }
 
+interface SqliteNoteRelationshipRow {
+  source_note_id: NoteId;
+  target_note_id: NoteId;
+  relationship_type: string;
+}
+
 interface SqliteChunkRow {
   chunk_id: string;
   note_id: string;
@@ -1163,6 +1336,7 @@ interface SqlitePromotionOutboxRow {
   state: PromotionOutboxState;
   attempts: number;
   last_error: string | null;
+  completed_steps_json: string;
   created_at: string;
   updated_at: string;
   payload_json: string;
@@ -1186,6 +1360,20 @@ function diffDaysIso(leftIso: string, rightIso: string): number {
   const left = new Date(`${leftIso}T00:00:00Z`);
   const right = new Date(`${rightIso}T00:00:00Z`);
   return Math.round((left.getTime() - right.getTime()) / 86_400_000);
+}
+
+function relationshipDirectionClause(
+  direction: NoteRelationshipDirection
+): string {
+  switch (direction) {
+    case "incoming":
+      return "target_note_id = :noteId";
+    case "both":
+      return "(source_note_id = :noteId OR target_note_id = :noteId)";
+    case "outgoing":
+    default:
+      return "source_note_id = :noteId";
+  }
 }
 
 function deriveTemporalValidityCandidateState(

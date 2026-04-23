@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [ValidateSet("audit-install-surface", "show-state", "detect-environment", "plan-client-access", "apply-client-access", "audit-toolbox-assets", "prepare-toolbox-runtime", "audit-docker-mcp-toolkit", "plan-docker-mcp-toolkit-apply", "prepare-repo-workspace")]
+  [ValidateSet("audit-install-surface", "show-state", "detect-environment", "plan-client-access", "apply-client-access", "audit-toolbox-assets", "prepare-toolbox-runtime", "audit-docker-mcp-toolkit", "plan-docker-mcp-toolkit-apply", "prepare-repo-workspace", "audit-toolbox-control-surface", "audit-active-toolbox-session", "audit-toolbox-client-handoff")]
   [string]$Operation = "audit-install-surface",
 
   [string]$RepoRoot = "",
@@ -24,6 +24,7 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "lib\write-plan.ps1")
 . (Join-Path $PSScriptRoot "lib\client-access.ps1")
 . (Join-Path $PSScriptRoot "lib\toolbox-assets.ps1")
+. (Join-Path $PSScriptRoot "lib\toolbox-control.ps1")
 . (Join-Path $PSScriptRoot "lib\docker-mcp-toolkit.ps1")
 . (Join-Path $PSScriptRoot "lib\repo-bootstrap.ps1")
 . (Join-Path $PSScriptRoot "lib\adapters\default-access.ps1")
@@ -297,6 +298,107 @@ switch ($Operation) {
         }) `
       -CommandsRun @($adapter.commands) `
       -NextActions $nextActions
+
+    $envelope = Write-InstallerOperationState -StateRoot $StateRoot -Envelope $envelope
+  }
+
+  "audit-toolbox-control-surface" {
+    $adapter = Invoke-InstallerToolboxControlSurfaceAudit `
+      -RepoRoot $RepoRoot `
+      -ClientName $ClientName
+    $report = $adapter.report
+
+    $message = if ($report.status -eq "success") {
+      "Toolbox discovery surfaces are available through the real CLI control path."
+    } else {
+      "Toolbox discovery surfaces returned no available toolboxes."
+    }
+    $nextActions = if ($report.status -eq "success") {
+      @(
+        "Use audit-active-toolbox-session to inspect the current bootstrap or activated session shape.",
+        "Keep request-toolbox-activation outside the installer; this backend only audits control-surface readiness."
+      )
+    } else {
+      @(
+        "Check docker/mcp intent manifests and rebuild the repo before relying on toolbox discovery through the installer."
+      )
+    }
+
+    $envelope = New-InstallerResultEnvelope `
+      -OperationId $Operation `
+      -Mode "audit_only" `
+      -RepoRoot $RepoRoot `
+      -StateRoot $StateRoot `
+      -Status $report.status `
+      -ReasonCode $report.reasonCode `
+      -Message $message `
+      -Details ([pscustomobject]@{
+          toolboxControlSurface = $report
+        }) `
+      -CommandsRun @($adapter.commands) `
+      -NextActions $nextActions
+
+    $envelope = Write-InstallerOperationState -StateRoot $StateRoot -Envelope $envelope
+  }
+
+  "audit-active-toolbox-session" {
+    $adapter = Invoke-InstallerActiveToolboxSessionAudit -RepoRoot $RepoRoot
+    $report = $adapter.report
+    $nextActions = if ($report.workflow.sessionMode -eq "toolbox-bootstrap") {
+      @(
+        "This client is still in bootstrap mode; request toolbox activation through mimir-control outside the installer when broader capabilities are needed."
+      )
+    } else {
+      @(
+        "The current client already reports an activated toolbox profile; verify downgrade and reconnect behavior separately from the installer."
+      )
+    }
+
+    $envelope = New-InstallerResultEnvelope `
+      -OperationId $Operation `
+      -Mode "audit_only" `
+      -RepoRoot $RepoRoot `
+      -StateRoot $StateRoot `
+      -Status $report.status `
+      -ReasonCode $report.reasonCode `
+      -Message "Active toolbox session surfaces were read successfully." `
+      -Details ([pscustomobject]@{
+          activeToolboxSession = $report
+        }) `
+      -CommandsRun @($adapter.commands) `
+      -NextActions $nextActions
+
+    $envelope = Write-InstallerOperationState -StateRoot $StateRoot -Envelope $envelope
+  }
+
+  "audit-toolbox-client-handoff" {
+    $adapter = Invoke-InstallerToolboxClientHandoffAudit `
+      -ClientName $ClientName `
+      -RepoRoot $RepoRoot `
+      -ConfigPath $ConfigPath `
+      -BinDir $BinDir `
+      -ManifestPath $ManifestPath `
+      -ServerName $ServerName
+    $report = $adapter.report
+    $message = if ($report.status -eq "success") {
+      "Toolbox reconnect handoff is ready for the selected installer client."
+    } else {
+      "Toolbox reconnect handoff for the selected installer client still needs follow-up."
+    }
+
+    $envelope = New-InstallerResultEnvelope `
+      -OperationId $Operation `
+      -Mode "audit_only" `
+      -RepoRoot $RepoRoot `
+      -StateRoot $StateRoot `
+      -Status $report.status `
+      -ReasonCode $report.reasonCode `
+      -Message $message `
+      -Details ([pscustomobject]@{
+          toolboxClientHandoff = $report
+        }) `
+      -CommandsRun @($adapter.commands) `
+      -NextActions @($report.nextActions)
 
     $envelope = Write-InstallerOperationState -StateRoot $StateRoot -Envelope $envelope
   }

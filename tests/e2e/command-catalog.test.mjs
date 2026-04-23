@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
 import {
   CLI_RUNTIME_COMMAND_NAMES,
   RUNTIME_COMMAND_DEFINITIONS,
   RUNTIME_COMMAND_NAMES,
+  RUNTIME_COMMAND_TOOLBOX_POLICIES,
   getRuntimeCommandDefinition,
   toCliCommandName,
   toRuntimeCommandName
@@ -14,7 +16,12 @@ import {
 } from "../../packages/orchestration/dist/index.js";
 import { getRuntimeHttpRouteDefinitions } from "../../apps/mimir-api/dist/server.js";
 import { MCP_TOOL_DEFINITIONS } from "../../apps/mimir-mcp/dist/tool-definitions.js";
-import { dispatchRuntimeCommand, getSupportedRuntimeDispatchCommandNames, getSupportedTransportCommandNames } from "../../packages/infrastructure/dist/index.js";
+import {
+  compileToolboxPolicyFromDirectory,
+  dispatchRuntimeCommand,
+  getSupportedRuntimeDispatchCommandNames,
+  getSupportedTransportCommandNames
+} from "../../packages/infrastructure/dist/index.js";
 
 const expectedCommands = [
   ["execute_coding_task", "execute-coding-task", "coding", "coding", "operator"],
@@ -111,6 +118,36 @@ test("command authorization policy covers every runtime catalog command", () => 
     const allowedRoles = getCommandAuthorizationRoles(name);
     assert.deepEqual(allowedRoles, expectedAuthorizationRoles.get(name));
     assert.ok(allowedRoles.includes(defaultActorRole));
+  }
+});
+test("toolbox policy metadata covers every runtime command with known categories and trust classes", () => {
+  const policy = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+  const validMutationLevels = new Set(["read", "write", "admin"]);
+
+  assert.deepEqual(
+    Object.keys(RUNTIME_COMMAND_TOOLBOX_POLICIES).sort(),
+    [...RUNTIME_COMMAND_NAMES].sort()
+  );
+
+  for (const commandName of RUNTIME_COMMAND_NAMES) {
+    const toolboxPolicy = RUNTIME_COMMAND_TOOLBOX_POLICIES[commandName];
+    assert.ok(toolboxPolicy, `Expected toolbox policy metadata for '${commandName}'.`);
+    assert.ok(
+      policy.trustClasses[toolboxPolicy.minimumTrustClass],
+      `Unknown trust class '${toolboxPolicy.minimumTrustClass}' for '${commandName}'.`
+    );
+    assert.ok(
+      validMutationLevels.has(toolboxPolicy.mutationLevel),
+      `Unknown mutation level '${toolboxPolicy.mutationLevel}' for '${commandName}'.`
+    );
+
+    for (const category of toolboxPolicy.allOfCategories) {
+      assert.ok(policy.categories[category], `Unknown allOf category '${category}' for '${commandName}'.`);
+    }
+
+    for (const category of toolboxPolicy.anyOfCategories ?? []) {
+      assert.ok(policy.categories[category], `Unknown anyOf category '${category}' for '${commandName}'.`);
+    }
   }
 });
 test("HTTP and MCP adapter command surfaces stay aligned with the runtime catalog", () => {

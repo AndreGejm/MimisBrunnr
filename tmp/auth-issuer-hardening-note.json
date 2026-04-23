@@ -1,0 +1,14 @@
+{
+  "targetCorpus": "mimisbrunnr",
+  "noteType": "decision",
+  "title": "Central auth issuer controls are registry-bounded across CLI and HTTP",
+  "sourcePrompt": "Record the BK-001 hardening completed on 2026-04-18 for the central auth issuer control plane in Mimir.",
+  "supportingSources": [],
+  "bodyHints": [
+    "AuthIssuerLifecycleService is now the shared authority for CLI and HTTP auth-control routes and commands.",
+    "The issuer control plane exposes auth-issuers and GET /v1/system/auth/issuers plus set-auth-issuer-state and POST /v1/system/auth/issuer-state.",
+    "Issuer controls can narrow, disable, or time-bound a registered issuer with validFrom and validUntil, but they cannot widen an actor beyond the registry's allowed admin actions.",
+    "Bulk token revocation and single-token issue and revoke flows remain gated through the same issuer lifecycle plane.",
+    "Verified commands: corepack pnpm build; node --test tests/e2e/authorization-policy.test.mjs tests/e2e/transport-adapters.test.mjs; node --test tests/e2e/mimir-control-mcp.test.mjs tests/e2e/toolbox-cli.test.mjs tests/e2e/transport-validation-boundaries.test.mjs tests/e2e/service-boundaries-and-regression.test.mjs."
+  ]
+}

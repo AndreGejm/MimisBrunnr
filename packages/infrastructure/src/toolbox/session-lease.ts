@@ -4,6 +4,7 @@ import type {
   CompiledToolboxPolicy,
   RuntimeCommandToolboxPolicy,
   RuntimeCliCommandName,
+  ToolboxMutationLevel,
   ToolboxSessionLeaseClaims
 } from "@mimir/contracts";
 import {
@@ -12,6 +13,11 @@ import {
 import { SqliteToolboxSessionLeaseStore } from "../sqlite/sqlite-toolbox-session-lease-store.js";
 
 const TOKEN_PREFIX = "mabtl1";
+const MUTATION_LEVEL_RANK: Record<ToolboxMutationLevel, number> = {
+  read: 10,
+  write: 20,
+  admin: 30
+};
 
 export interface ToolboxSessionPolicyEnforcerOptions {
   policy?: CompiledToolboxPolicy;
@@ -132,6 +138,16 @@ export class ToolboxSessionPolicyEnforcer {
     if (claims.profileRevision !== expectedProfile.profileRevision) {
       throw new ToolboxSessionPolicyError("forbidden", "Session policy profile revision mismatch.");
     }
+    assertCategorySetMatchesProfile(
+      "approved",
+      claims.approvedCategories,
+      expectedProfile.allowedCategories
+    );
+    assertCategorySetMatchesProfile(
+      "denied",
+      claims.deniedCategories,
+      expectedProfile.deniedCategories
+    );
 
     if (this.options.leaseStore?.isLeaseRevoked(claims.leaseId ?? "")) {
       throw new ToolboxSessionPolicyError("unauthorized", "Session policy token has been revoked.");
@@ -247,22 +263,82 @@ function assertCommandPolicySatisfied(
         `Toolbox session does not allow required category '${category}' for '${command}'.`
       );
     }
+
+    assertCategorySupportsMutation(command, category, commandPolicy.mutationLevel, policy);
   }
 
   if (commandPolicy.anyOfCategories?.length) {
-    const anyMatched = commandPolicy.anyOfCategories.some(
+    const matchedCategories = commandPolicy.anyOfCategories.filter(
       (category) =>
         claims.approvedCategories.includes(category) &&
         !claims.deniedCategories.includes(category)
     );
+    const anyMatched = matchedCategories.length > 0;
     if (!anyMatched) {
       throw new ToolboxSessionPolicyError(
         "forbidden",
         `Toolbox session does not satisfy optional category requirements for '${command}'.`
       );
     }
+
+    const anySatisfiesMutation = matchedCategories.some((category) => {
+      const categoryPolicy = policy.categories[category];
+      return (
+        categoryPolicy &&
+        MUTATION_LEVEL_RANK[categoryPolicy.mutationLevel] >=
+          MUTATION_LEVEL_RANK[commandPolicy.mutationLevel]
+      );
+    });
+    if (!anySatisfiesMutation) {
+      throw new ToolboxSessionPolicyError(
+        "forbidden",
+        `Toolbox session does not satisfy mutation requirements for '${command}'.`
+      );
+    }
   }
 
+}
+
+function assertCategorySetMatchesProfile(
+  label: "approved" | "denied",
+  actualCategories: string[],
+  expectedCategories: string[]
+): void {
+  const normalizedExpected = [...new Set(expectedCategories.map((value) => value.trim()))].sort();
+  if (
+    actualCategories.length !== normalizedExpected.length ||
+    actualCategories.some((value, index) => value !== normalizedExpected[index])
+  ) {
+    throw new ToolboxSessionPolicyError(
+      "forbidden",
+      `Session policy ${label} categories do not match the active toolbox profile.`
+    );
+  }
+}
+
+function assertCategorySupportsMutation(
+  command: RuntimeCliCommandName,
+  category: string,
+  requiredMutationLevel: ToolboxMutationLevel,
+  policy: CompiledToolboxPolicy
+): void {
+  const categoryPolicy = policy.categories[category];
+  if (!categoryPolicy) {
+    throw new ToolboxSessionPolicyError(
+      "forbidden",
+      "Toolbox category policy is incomplete."
+    );
+  }
+
+  if (
+    MUTATION_LEVEL_RANK[categoryPolicy.mutationLevel] <
+    MUTATION_LEVEL_RANK[requiredMutationLevel]
+  ) {
+    throw new ToolboxSessionPolicyError(
+      "forbidden",
+      `Toolbox session category '${category}' mutation level '${categoryPolicy.mutationLevel}' is too weak for '${command}' mutation '${requiredMutationLevel}'.`
+    );
+  }
 }
 
 function assertLeaseLifecycleClaims(

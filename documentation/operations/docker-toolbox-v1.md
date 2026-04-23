@@ -38,6 +38,11 @@ Client stance in v1:
 - Codex and Claude are first-class overlay targets
 - Antigravity stays contract-compatible, but operationally thinner and reconnect-driven
 
+`runtime-observe`, `core-dev+runtime-observe`, `runtime-admin`, and `full`
+include the `kubernetes-read` peer band. V1 keeps that band read-only: cluster
+inspection, namespace/workload listing, event reads, and log queries are
+available, but no Kubernetes mutation or deploy tool is exposed.
+
 ## Repo layout
 
 - [`docker/mcp/categories.yaml`](/F:/Dev/scripts/Mimir/mimir/docker/mcp/categories.yaml)
@@ -51,6 +56,7 @@ Client manifests may now declare:
 
 - `handoffStrategy`
 - `handoffPresetRef`
+- `clientPresetRef` (runtime alias emitted alongside `handoffPresetRef`)
 
 These fields are advisory runtime metadata owned by the repo policy layer. They
 do not execute reconnects themselves. They tell `mimir-control` how to describe
@@ -68,6 +74,10 @@ List toolboxes from the compiled policy:
 
 ```bash
 pnpm cli list-toolboxes --json "{}"
+
+This list now includes the predefined composite toolboxes, including
+`core-dev+docs-research` and `core-dev+runtime-observe`, because they are
+policy-backed activation targets rather than compile-only profiles.
 ```
 
 Describe one toolbox:
@@ -75,6 +85,32 @@ Describe one toolbox:
 ```bash
 pnpm cli describe-toolbox --json "{\"toolboxId\":\"docs-research\"}"
 ```
+
+`describe-toolbox` now returns structured discovery metadata beyond the flat
+intent record:
+
+- `toolbox.summary`
+- `toolbox.exampleTasks`
+- `toolbox.workflow` with activation mode, session mode, approval requirement,
+  and fallback profile
+- `toolbox.trustClass`
+- `toolbox.profile` with composition details such as `composite`,
+  `baseProfiles`, `compositeReason`, and `profileRevision`
+- overlay-filtered `toolbox.tools` for the current client
+
+`list-toolboxes` now returns the same manifest-backed intent summaries so an
+agent can pick a toolbox by purpose before it sees raw tool descriptors.
+
+`describe-toolbox` now mirrors the active-session suppression diagnostics for
+discovery. Alongside the overlay-filtered `toolbox.tools` list, it returns
+`toolbox.suppressedTools` with the hidden descriptor ids, semantic
+capabilities, suppression reasons, and the `client-overlay-reduction` boundary.
+It also returns `toolbox.antiUseCases`, which currently pins denied-category
+boundaries as machine-readable entries such as
+`{ type: "denied_category", category: "docker-write" }`.
+Discovery diagnostics and audit records also carry both `manifestRevision` and
+`profileRevision`, so the reported toolbox metadata is tied to the exact
+compiled profile revision in play.
 
 Request activation and emit a lease when configured:
 
@@ -91,14 +127,58 @@ map that handoff into the next session instead of improvising local state:
 - when `lease.issued` is true, copy `leaseToken` into
   `MAB_TOOLBOX_SESSION_POLICY_TOKEN`
 - on denial or deactivation, clear `MAB_TOOLBOX_SESSION_POLICY_TOKEN` and
-  reconnect into the returned bootstrap downgrade target
+  reconnect into the returned `downgradeTarget`
+
+Approved activation responses now also surface:
+
+- `downgradeTarget` as a top-level reconnect fallback
+- `leaseExpiresAt` as the client-visible lease expiry timestamp
+- `handoff.downgradeTarget` for the same reconnect target inside the handoff
+- `handoff.handoffStrategy`, `handoff.handoffPresetRef`, and
+  `handoff.clientPresetRef` as flattened client reconnect metadata
+- `handoff.lease.expiresAt` when a lease was actually issued
+
+When activation is requested through `requiredCategories` instead of an explicit
+toolbox name, the resolver now picks the narrowest non-escalating matching
+toolbox rather than the first broad match in manifest order.
+
+Toolboxes whose manifest sets `requiresApproval: true`, including
+`runtime-admin`, `delivery-admin`, and `full`, currently deny activation until
+an explicit approval path exists. Those denials still return a structured
+fallback handoff so the client can reconnect into the lower-risk target
+profile.
+
+That approval path now exists as an explicit activation input. For example:
+
+```json
+{
+  "requestedToolbox": "runtime-admin",
+  "taskSummary": "Need to restart a container",
+  "approval": {
+    "grantedBy": "operator",
+    "grantedAt": "2026-04-19T22:30:00.000Z",
+    "reason": "Approved runtime intervention"
+  }
+}
+```
+
+When a `requiresApproval` toolbox is activated with this input, the response
+includes the approval metadata in `details.approval` and diagnostics/audit
+records. Those diagnostics and audit events now include both the manifest and
+profile revisions involved in the approval or denial path, and
+`details.approval.trustClass` makes the approved trust boundary explicit to the
+client.
 
 The handoff now also includes client metadata:
 
+- `handoff.handoffStrategy`
+- `handoff.handoffPresetRef`
+- `handoff.clientPresetRef`
 - `client.id`
 - `client.displayName`
 - `client.handoffStrategy`
 - `client.handoffPresetRef`
+- `client.clientPresetRef`
 
 V1 meaning:
 
@@ -118,6 +198,22 @@ Run the control MCP server directly:
 ```bash
 pnpm mcp:control
 ```
+
+Inspect the current active toolbox session:
+
+```bash
+pnpm cli list-active-toolbox --json "{}"
+```
+
+`list-active-toolbox` now reports:
+
+- active workflow state, including toolbox id when one maps cleanly to the
+  current profile, activation mode, approval requirement, and fallback profile
+- active profile fallback, category bounds, semantic capabilities, and profile revision
+- current client handoff metadata
+- active client overlay suppression lists, including suppressed semantic capabilities
+  and machine-readable `suppressedTools` entries with tool id, semantic capability,
+  suppression reasons, and the `client-overlay-reduction` boundary marker
 
 ## Current profile set
 

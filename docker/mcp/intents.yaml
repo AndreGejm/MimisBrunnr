@@ -1,6 +1,10 @@
 intents:
   core-dev:
     displayName: Core Development
+    summary: Safe local repository work with write access and internal memory tools.
+    exampleTasks:
+      - Inspect and edit code inside the current workspace
+      - Draft or update repo-local implementation notes
     targetProfile: core-dev
     trustClass: local-readwrite
     requiresApproval: false
@@ -18,6 +22,10 @@ intents:
     fallbackProfile: bootstrap
   docs-research:
     displayName: Docs Research
+    summary: External docs, web search, and GitHub read for implementation research.
+    exampleTasks:
+      - Compare upstream docs with the current implementation
+      - Look up Docker or Microsoft Learn guidance before changing code
     targetProfile: docs-research
     trustClass: external-read
     requiresApproval: false
@@ -34,8 +42,36 @@ intents:
       - docker-write
       - deployment
     fallbackProfile: core-dev
+  core-dev+docs-research:
+    displayName: Core Dev Plus Docs Research
+    summary: Code changes that also need external documentation and GitHub read context.
+    exampleTasks:
+      - Implement a fix while checking upstream docs
+      - Refactor code and confirm behavior against API references
+    targetProfile: core-dev+docs-research
+    trustClass: external-read
+    requiresApproval: false
+    activationMode: session-switch
+    allowedCategories:
+      - repo-read
+      - repo-write
+      - local-docs
+      - internal-memory
+      - internal-memory-write
+      - docs-search
+      - web-search
+      - github-read
+    deniedCategories:
+      - github-write
+      - docker-write
+      - deployment
+    fallbackProfile: core-dev
   runtime-observe:
     displayName: Runtime Observe
+    summary: Read-only runtime inspection across logs, metrics, traces, Docker, and Kubernetes state.
+    exampleTasks:
+      - Investigate service startup failures from logs, metrics, and cluster events
+      - Inspect live container and pod state without mutating runtime resources
     targetProfile: runtime-observe
     trustClass: ops-read
     requiresApproval: false
@@ -47,12 +83,47 @@ intents:
       - metrics-read
       - traces-read
       - docker-read
+      - k8s-read
+      - k8s-logs-read
+      - k8s-events-read
     deniedCategories:
       - docker-write
       - deployment
     fallbackProfile: core-dev
+  core-dev+runtime-observe:
+    displayName: Core Dev Plus Runtime Observe
+    summary: Repo changes that also require read-only runtime debugging context.
+    exampleTasks:
+      - Fix an incident by inspecting logs and editing code in the same session
+      - Compare runtime traces with the current implementation before patching
+    targetProfile: core-dev+runtime-observe
+    trustClass: ops-read
+    requiresApproval: false
+    activationMode: session-switch
+    allowedCategories:
+      - repo-read
+      - repo-write
+      - local-docs
+      - internal-memory
+      - internal-memory-write
+      - logs-read
+      - metrics-read
+      - traces-read
+      - docker-read
+      - k8s-read
+      - k8s-logs-read
+      - k8s-events-read
+    deniedCategories:
+      - github-write
+      - docker-write
+      - deployment
+    fallbackProfile: runtime-observe
   runtime-admin:
     displayName: Runtime Admin
+    summary: Runtime mutation tools for approved operator workflows on live systems.
+    exampleTasks:
+      - Restart a misbehaving container after approval
+      - Run approved destructive runtime diagnostics
     targetProfile: runtime-admin
     trustClass: ops-mutate
     requiresApproval: true
@@ -64,12 +135,19 @@ intents:
       - metrics-read
       - traces-read
       - docker-read
+      - k8s-read
+      - k8s-logs-read
+      - k8s-events-read
       - docker-write
     deniedCategories:
       - deployment
     fallbackProfile: runtime-observe
   heavy-rag:
     displayName: Heavy RAG
+    summary: Retrieval-heavy internal workflows that need model inference and memory writes.
+    exampleTasks:
+      - Build a large internal retrieval context before synthesis
+      - Run memory-intensive analysis that exceeds the default coding toolbox
     targetProfile: heavy-rag
     trustClass: local-read
     requiresApproval: false
@@ -84,6 +162,10 @@ intents:
     fallbackProfile: core-dev
   delivery-admin:
     displayName: Delivery Admin
+    summary: Approved delivery and publishing workflows that mutate external systems.
+    exampleTasks:
+      - Publish a release artifact after operator approval
+      - Perform a deployment or GitHub write action tied to delivery
     targetProfile: delivery-admin
     trustClass: operator-only
     requiresApproval: true
@@ -97,6 +179,10 @@ intents:
     fallbackProfile: runtime-admin
   full:
     displayName: Full Access
+    summary: Operator-only emergency toolbox with the full curated capability surface.
+    exampleTasks:
+      - Handle an incident that spans delivery, runtime mutation, and repo changes
+      - Run a tightly supervised end-to-end recovery workflow
     targetProfile: full
     trustClass: operator-only
     requiresApproval: true
@@ -115,6 +201,9 @@ intents:
       - metrics-read
       - traces-read
       - docker-read
+      - k8s-read
+      - k8s-logs-read
+      - k8s-events-read
       - docker-write
       - model-inference
       - deployment

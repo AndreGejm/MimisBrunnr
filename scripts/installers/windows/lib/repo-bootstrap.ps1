@@ -22,6 +22,10 @@ function Get-InstallerRepoWorkspaceRequiredOutputs {
     [pscustomobject]@{
       relativePath = "apps/mimir-mcp/dist/main.js"
       path = Join-Path $RepoRoot "apps/mimir-mcp/dist/main.js"
+    },
+    [pscustomobject]@{
+      relativePath = "apps/mimir-control-mcp/dist/main.js"
+      path = Join-Path $RepoRoot "apps/mimir-control-mcp/dist/main.js"
     }
   )
 }

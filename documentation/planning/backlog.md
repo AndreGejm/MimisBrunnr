@@ -44,6 +44,36 @@ The next implementation order now begins with the stricter read-path governance 
 2. close the remaining freshness-governance work under `BK-007`
 3. keep hierarchical retrieval behind packet-diff-reviewed rollout gates under `BK-008`
 
+## Active Toolbox Workstream
+
+The Docker toolbox work is no longer speculative. The repo now has a working
+toolbox compiler, control surface, lease enforcement layer, Docker runtime
+planner, installer audit path, and regression coverage. The remaining toolbox
+backlog should start from that implemented baseline rather than re-planning the
+foundation.
+
+The refreshed remaining-work execution plan for this baseline lives in
+[`../superpowers/plans/2026-04-19-mcp-toolbox-v1-remaining-work-plan.md`](../superpowers/plans/2026-04-19-mcp-toolbox-v1-remaining-work-plan.md).
+
+This does not replace the repo-wide backlog order above. It is the current
+toolbox-specific execution order while the broader memory and retrieval backlog
+remains in force.
+
+Current toolbox execution order:
+
+1. validate reconnect presets and Docker Toolkit apply behavior across target client environments
+2. add Kubernetes mutation only after the read-only band is stable and explicitly approval-gated
+
+| ID | Work Item | Why It Is Still Here | Status |
+| --- | --- | --- | --- |
+| TB-001 | Manifest-driven toolbox compiler, normalized IR, deterministic revisions, and duplicate-capability detection | Compiler, manifest families, profile revisions, overlay no-widening rules, and deterministic sync planning are implemented | done |
+| TB-002 | Toolbox discovery and approval surface through CLI and `mimir-control` MCP | Discovery, activation, active-tool inspection, deactivation, approval metadata, and reconnect handoffs are implemented and covered by e2e tests | done |
+| TB-003 | Lease-bound session enforcement, explicit session modes, and structured diagnostics | Revision-bound leases, session-mode separation, audit events, suppression diagnostics, anti-use-case metadata, trust-class reporting, and reconnect preset metadata are implemented | done |
+| TB-004 | Docker runtime sync and installer compatibility gates for toolbox rollout | Plan-first sync, deterministic dry-run output, installer audits, and compatibility blockers exist; current-machine validation is in place, but broader target-machine rollout validation is still pending | partial |
+| TB-005 | Add a read-only Kubernetes peer band for toolbox runtime observation | Kubernetes read-only categories, peer manifest, profile wiring, and regression coverage are implemented for observation toolboxes | done |
+| TB-006 | Add approval-gated Kubernetes mutation to `runtime-admin` and `delivery-admin` | Still intentionally blocked until the read-only band is stable in real use and the operator approval surface is extended for Kubernetes mutation | blocked |
+| TB-007 | Validate reconnect presets and Docker Toolkit apply behavior across target client environments | Current-machine validation is in place, but cross-environment rollout validation still needs explicit target-machine execution | partial |
+
 ## Review-Driven Ready Work
 
 | ID | Work Item | Maps To | Status |
@@ -53,7 +83,7 @@ The next implementation order now begins with the stricter read-path governance 
 | RV-003 | Implement `tagFilters` end-to-end through lexical retrieval, vector retrieval, and fusion | `F4` | done |
 | RV-004 | Add runtime schema validation at CLI, HTTP, and MCP ingress | `F8` | done |
 | RV-005 | Harden SQLite access strategy and make vector degraded mode explicit in telemetry and health reporting | `F6`, `F7` | done |
-| RV-006 | Define authority-state invariants and namespace semantics before namespace, import, session, or hierarchical retrieval work | `read-path-alignment-rfc.md` | ready |
+| RV-006 | Define authority-state invariants and namespace semantics before namespace, import, session, or hierarchical retrieval work | Contract-level authority-state invariant enforcement plus namespace projection for canonical notes, staging drafts, imported artifacts, and session archives are implemented, but broader namespace coverage and rollout guardrails remain incomplete | partial |
 
 ## Ready Now
 

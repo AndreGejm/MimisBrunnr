@@ -9,6 +9,7 @@ import { spawn } from "node:child_process";
 import {
   issueToolboxSessionLease,
   SqliteToolboxSessionLeaseStore,
+  ToolboxSessionPolicyEnforcer,
   compileToolboxPolicyFromDirectory,
   verifyToolboxSessionLease
 } from "../../packages/infrastructure/dist/index.js";
@@ -130,6 +131,7 @@ function buildLease({
   policy,
   profileId = "docs-research",
   clientId = "claude",
+  trustClass = "external-read",
   audience = "mimir-core",
   manifestRevision = policy.manifestRevision,
   profileRevision = policy.profiles[profileId].profileRevision
@@ -146,7 +148,7 @@ function buildLease({
       approvedProfile: profileId,
       approvedCategories: profile.allowedCategories,
       deniedCategories: profile.deniedCategories,
-      trustClass: "external-read",
+      trustClass,
       manifestRevision,
       profileRevision,
       issuedAt,
@@ -375,4 +377,122 @@ test("toolbox-scoped MCP accepts a lease from the session-policy env default whe
 
   const validRead = await transport.next();
   assert.equal(validRead.result.isError, false);
+});
+
+test("toolbox session enforcer rejects leases whose approved or denied categories drift from the active profile", () => {
+  const policy = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+  const enforcer = new ToolboxSessionPolicyEnforcer({
+    policy,
+    activeProfileId: "docs-research",
+    clientId: "claude",
+    enforcementMode: "enforced",
+    issuer: "mimir-control",
+    audience: "mimir-core",
+    issuerSecret: "toolbox-secret"
+  });
+
+  const approvedCategoryMismatch = issueToolboxSessionLease(
+    {
+      version: 1,
+      sessionId: `session-${randomUUID()}`,
+      issuer: "mimir-control",
+      audience: "mimir-core",
+      clientId: "claude",
+      approvedProfile: "docs-research",
+      approvedCategories: [...policy.profiles["docs-research"].allowedCategories, "internal-memory-write"],
+      deniedCategories: policy.profiles["docs-research"].deniedCategories,
+      trustClass: "external-read",
+      manifestRevision: policy.manifestRevision,
+      profileRevision: policy.profiles["docs-research"].profileRevision,
+      issuedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      nonce: randomUUID()
+    },
+    "toolbox-secret"
+  );
+
+  assert.throws(
+    () =>
+      enforcer.authorize("get-context-packet", {
+        sessionPolicyToken: approvedCategoryMismatch,
+        toolboxSessionMode: "toolbox-activated",
+        toolboxClientId: "claude",
+        toolboxProfileId: "docs-research"
+      }),
+    (error) => {
+      assert.match(error.message, /approved categories/i);
+      return true;
+    }
+  );
+
+  const deniedCategoryMismatch = issueToolboxSessionLease(
+    {
+      version: 1,
+      sessionId: `session-${randomUUID()}`,
+      issuer: "mimir-control",
+      audience: "mimir-core",
+      clientId: "claude",
+      approvedProfile: "docs-research",
+      approvedCategories: policy.profiles["docs-research"].allowedCategories,
+      deniedCategories: [],
+      trustClass: "external-read",
+      manifestRevision: policy.manifestRevision,
+      profileRevision: policy.profiles["docs-research"].profileRevision,
+      issuedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      nonce: randomUUID()
+    },
+    "toolbox-secret"
+  );
+
+  assert.throws(
+    () =>
+      enforcer.authorize("get-context-packet", {
+        sessionPolicyToken: deniedCategoryMismatch,
+        toolboxSessionMode: "toolbox-activated",
+        toolboxClientId: "claude",
+        toolboxProfileId: "docs-research"
+      }),
+    (error) => {
+      assert.match(error.message, /denied categories/i);
+      return true;
+    }
+  );
+});
+
+test("toolbox session enforcer rejects commands when approved category mutation is weaker than the command policy", () => {
+  const policy = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+  const weakenedPolicy = structuredClone(policy);
+  weakenedPolicy.categories["internal-memory-write"].mutationLevel = "read";
+
+  const lease = buildLease({
+    policy: weakenedPolicy,
+    profileId: "core-dev",
+    clientId: "codex",
+    trustClass: "local-readwrite"
+  });
+
+  const enforcer = new ToolboxSessionPolicyEnforcer({
+    policy: weakenedPolicy,
+    activeProfileId: "core-dev",
+    clientId: "codex",
+    enforcementMode: "enforced",
+    issuer: "mimir-control",
+    audience: "mimir-core",
+    issuerSecret: "toolbox-secret"
+  });
+
+  assert.throws(
+    () =>
+      enforcer.authorize("draft-note", {
+        sessionPolicyToken: lease,
+        toolboxSessionMode: "toolbox-activated",
+        toolboxClientId: "codex",
+        toolboxProfileId: "core-dev"
+      }),
+    (error) => {
+      assert.match(error.message, /mutation/i);
+      return true;
+    }
+  );
 });

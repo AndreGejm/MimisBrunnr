@@ -49,6 +49,8 @@ export interface ToolboxProfileManifest {
 
 export interface ToolboxIntentManifest {
   displayName: string;
+  summary: string;
+  exampleTasks: string[];
   targetProfile: string;
   trustClass: string;
   requiresApproval: boolean;

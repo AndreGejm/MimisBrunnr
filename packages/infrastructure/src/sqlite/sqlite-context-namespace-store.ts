@@ -9,7 +9,11 @@ import type {
   ContextOwnerScope,
   ContextPromotionStatus,
   ContextSourceType,
-  ContextSupersessionStatus
+  ContextSupersessionStatus,
+  SessionArchive
+} from "@mimir/domain";
+import {
+  assertContextNodeAuthorityInvariants
 } from "@mimir/domain";
 import {
   acquireSharedSqliteConnection,
@@ -19,6 +23,36 @@ import type { SqliteNoteRow } from "./sqlite-metadata-control-store.js";
 
 const NOTE_BACKED_LIFECYCLE_STATES = ["promoted", "draft", "staged"] as const;
 const NOTE_CONTEXT_KIND: ContextKind = "note";
+const IMPORT_CONTEXT_KIND: ContextKind = "resource";
+const IMPORT_OWNER_SCOPE: ContextOwnerScope = "imports";
+const SESSION_CONTEXT_KIND: ContextKind = "session_archive";
+const SESSION_OWNER_SCOPE: ContextOwnerScope = "sessions";
+
+interface SqliteImportJobRow {
+  import_job_id: string;
+  authority_state: "imported";
+  state: string;
+  source_path: string;
+  import_kind: string;
+  source_name: string;
+  source_digest: string;
+  source_size_bytes: number;
+  source_preview: string;
+  draft_note_ids_json: string;
+  canonical_outputs_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface SqliteSessionArchiveRow {
+  archive_id: string;
+  session_id: string;
+  uri: string;
+  authority_state: SessionArchive["authorityState"];
+  promotion_status: SessionArchive["promotionStatus"];
+  message_count: number;
+  created_at: string;
+}
 
 export class SqliteContextNamespaceStore implements ContextNamespaceStore {
   private readonly database: DatabaseSync;
@@ -43,49 +77,158 @@ export class SqliteContextNamespaceStore implements ContextNamespaceStore {
     ownerScope?: ContextOwnerScope;
     authorityStates?: ContextAuthorityState[];
   }): Promise<ContextNode[]> {
-    const lifecycleStates = mapAuthorityStatesToLifecycleStates(input.authorityStates);
-    if (input.authorityStates && lifecycleStates.length === 0) {
-      return [];
+    const nodes: ContextNode[] = [];
+
+    if (shouldIncludeNoteBackedNodes(input)) {
+      const lifecycleStates = mapAuthorityStatesToLifecycleStates(input.authorityStates);
+      if (!(input.authorityStates && lifecycleStates.length === 0)) {
+        const whereClauses = [`lifecycle_state IN (${lifecycleStates.map(() => "?").join(", ")})`];
+        const parameters: string[] = [...lifecycleStates];
+
+        if (input.ownerScope) {
+          whereClauses.push("corpus_id = ?");
+          parameters.push(input.ownerScope);
+        }
+
+        const rows = this.database.prepare(`
+          SELECT
+            note_id,
+            corpus_id,
+            note_path,
+            note_type,
+            lifecycle_state,
+            revision,
+            updated_at,
+            current_state,
+            valid_from,
+            valid_until,
+            summary,
+            scope,
+            content_hash,
+            semantic_signature
+          FROM notes
+          WHERE ${whereClauses.join(" AND ")}
+          ORDER BY corpus_id ASC, lifecycle_state ASC, updated_at DESC, note_id ASC
+        `).all(...parameters) as unknown as SqliteNoteRow[];
+
+        nodes.push(
+          ...rows
+            .map((row) => mapSqliteNoteRowToContextNode(row))
+            .filter((node): node is ContextNode => Boolean(node))
+        );
+      }
     }
 
-    const whereClauses = [`lifecycle_state IN (${lifecycleStates.map(() => "?").join(", ")})`];
-    const parameters: string[] = [...lifecycleStates];
+    if (shouldIncludeSessionArchiveNodes(input)) {
+      const rows = this.database.prepare(`
+        SELECT
+          archive_id,
+          session_id,
+          uri,
+          authority_state,
+          promotion_status,
+          message_count,
+          created_at
+        FROM session_archives
+        ORDER BY created_at DESC, archive_id ASC
+      `).all() as unknown as SqliteSessionArchiveRow[];
 
-    if (input.ownerScope) {
-      whereClauses.push("corpus_id = ?");
-      parameters.push(input.ownerScope);
+      nodes.push(...rows.map((row) => mapSessionArchiveRowToContextNode(row)));
     }
 
-    const rows = this.database.prepare(`
-      SELECT
-        note_id,
-        corpus_id,
-        note_path,
-        note_type,
-        lifecycle_state,
-        revision,
-        updated_at,
-        current_state,
-        valid_from,
-        valid_until,
-        summary,
-        scope,
-        content_hash,
-        semantic_signature
-      FROM notes
-      WHERE ${whereClauses.join(" AND ")}
-      ORDER BY corpus_id ASC, lifecycle_state ASC, updated_at DESC, note_id ASC
-    `).all(...parameters) as unknown as SqliteNoteRow[];
+    if (shouldIncludeImportArtifactNodes(input)) {
+      const rows = this.database.prepare(`
+        SELECT
+          import_job_id,
+          authority_state,
+          state,
+          source_path,
+          import_kind,
+          source_name,
+          source_digest,
+          source_size_bytes,
+          source_preview,
+          draft_note_ids_json,
+          canonical_outputs_json,
+          created_at,
+          updated_at
+        FROM import_jobs
+        ORDER BY created_at DESC, import_job_id ASC
+      `).all() as unknown as SqliteImportJobRow[];
 
-    return rows
-      .map((row) => mapSqliteNoteRowToContextNode(row))
-      .filter((node): node is ContextNode => Boolean(node));
+      nodes.push(...rows.map((row) => mapImportJobRowToContextNode(row)));
+    }
+
+    return nodes.sort((left, right) => {
+      if (left.ownerScope !== right.ownerScope) {
+        return left.ownerScope.localeCompare(right.ownerScope);
+      }
+      if (left.contextKind !== right.contextKind) {
+        return left.contextKind.localeCompare(right.contextKind);
+      }
+      if (left.updatedAt !== right.updatedAt) {
+        return right.updatedAt.localeCompare(left.updatedAt);
+      }
+      return left.sourceRef.localeCompare(right.sourceRef);
+    });
   }
 
   async getNodeByUri(uri: string): Promise<ContextNode | undefined> {
     const parsed = parseNamespaceUri(uri);
     if (!parsed) {
       return undefined;
+    }
+
+    if (parsed.ownerScope === SESSION_OWNER_SCOPE && parsed.contextKind === SESSION_CONTEXT_KIND) {
+      const archive = this.database.prepare(`
+        SELECT
+          archive_id,
+          session_id,
+          uri,
+          authority_state,
+          promotion_status,
+          message_count,
+          created_at
+        FROM session_archives
+        WHERE archive_id = ?
+        LIMIT 1
+      `).get(parsed.recordId) as SqliteSessionArchiveRow | undefined;
+
+      if (!archive) {
+        return undefined;
+      }
+
+      const node = mapSessionArchiveRowToContextNode(archive);
+      return node.uri === uri ? node : undefined;
+    }
+
+    if (parsed.ownerScope === IMPORT_OWNER_SCOPE && parsed.contextKind === IMPORT_CONTEXT_KIND) {
+      const importJob = this.database.prepare(`
+        SELECT
+          import_job_id,
+          authority_state,
+          state,
+          source_path,
+          import_kind,
+          source_name,
+          source_digest,
+          source_size_bytes,
+          source_preview,
+          draft_note_ids_json,
+          canonical_outputs_json,
+          created_at,
+          updated_at
+        FROM import_jobs
+        WHERE import_job_id = ?
+        LIMIT 1
+      `).get(parsed.recordId) as SqliteImportJobRow | undefined;
+
+      if (!importJob) {
+        return undefined;
+      }
+
+      const node = mapImportJobRowToContextNode(importJob);
+      return node.uri === uri ? node : undefined;
     }
 
     const row = this.database.prepare(`
@@ -107,7 +250,7 @@ export class SqliteContextNamespaceStore implements ContextNamespaceStore {
       FROM notes
       WHERE note_id = ?
       LIMIT 1
-    `).get(parsed.noteId) as SqliteNoteRow | undefined;
+    `).get(parsed.recordId) as SqliteNoteRow | undefined;
 
     if (!row) {
       return undefined;
@@ -130,7 +273,7 @@ function mapSqliteNoteRowToContextNode(row: SqliteNoteRow): ContextNode | undefi
 
   const freshness = deriveFreshness(row);
 
-  return {
+  const node: ContextNode = {
     uri: `mimir://${row.corpus_id}/${NOTE_CONTEXT_KIND}/${row.note_id}`,
     ownerScope: row.corpus_id,
     contextKind: NOTE_CONTEXT_KIND,
@@ -148,6 +291,67 @@ function mapSqliteNoteRowToContextNode(row: SqliteNoteRow): ContextNode | undefi
     createdAt: row.updated_at,
     updatedAt: row.updated_at
   };
+
+  assertContextNodeAuthorityInvariants(node);
+  return node;
+}
+
+function mapSessionArchiveRowToContextNode(row: SqliteSessionArchiveRow): ContextNode {
+  const node: ContextNode = {
+    uri: row.uri,
+    ownerScope: SESSION_OWNER_SCOPE,
+    contextKind: SESSION_CONTEXT_KIND,
+    authorityState: row.authority_state,
+    sourceType: "session_archive",
+    sourceRef: row.archive_id,
+    freshness: {
+      validFrom: row.created_at,
+      validUntil: row.created_at,
+      freshnessClass: "current",
+      freshnessReason: "Immutable session archive."
+    },
+    representationAvailability: {
+      L0: false,
+      L1: false,
+      L2: true
+    },
+    promotionStatus: row.promotion_status,
+    supersessionStatus: "archived",
+    createdAt: row.created_at,
+    updatedAt: row.created_at
+  };
+
+  assertContextNodeAuthorityInvariants(node);
+  return node;
+}
+
+function mapImportJobRowToContextNode(row: SqliteImportJobRow): ContextNode {
+  const node: ContextNode = {
+    uri: `mimir://${IMPORT_OWNER_SCOPE}/${IMPORT_CONTEXT_KIND}/${row.import_job_id}`,
+    ownerScope: IMPORT_OWNER_SCOPE,
+    contextKind: IMPORT_CONTEXT_KIND,
+    authorityState: row.authority_state,
+    sourceType: "import_artifact",
+    sourceRef: row.import_job_id,
+    freshness: {
+      validFrom: row.created_at,
+      validUntil: row.updated_at,
+      freshnessClass: "current",
+      freshnessReason: "Imported artifacts remain read-only until reviewed."
+    },
+    representationAvailability: {
+      L0: false,
+      L1: false,
+      L2: true
+    },
+    promotionStatus: "not_applicable",
+    supersessionStatus: "not_applicable",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+
+  assertContextNodeAuthorityInvariants(node);
+  return node;
 }
 
 function deriveAuthorityState(
@@ -299,10 +503,43 @@ function mapAuthorityStatesToLifecycleStates(
   return [...mapped].filter((state) => NOTE_BACKED_LIFECYCLE_STATES.includes(state as typeof NOTE_BACKED_LIFECYCLE_STATES[number]));
 }
 
+function shouldIncludeNoteBackedNodes(input: {
+  ownerScope?: ContextOwnerScope;
+  authorityStates?: ContextAuthorityState[];
+}): boolean {
+  if (input.ownerScope === SESSION_OWNER_SCOPE || input.ownerScope === IMPORT_OWNER_SCOPE) {
+    return false;
+  }
+
+  return true;
+}
+
+function shouldIncludeSessionArchiveNodes(input: {
+  ownerScope?: ContextOwnerScope;
+  authorityStates?: ContextAuthorityState[];
+}): boolean {
+  if (input.ownerScope === SESSION_OWNER_SCOPE) {
+    return !input.authorityStates || input.authorityStates.includes("session");
+  }
+
+  return input.authorityStates?.includes("session") ?? false;
+}
+
+function shouldIncludeImportArtifactNodes(input: {
+  ownerScope?: ContextOwnerScope;
+  authorityStates?: ContextAuthorityState[];
+}): boolean {
+  if (input.ownerScope === IMPORT_OWNER_SCOPE) {
+    return !input.authorityStates || input.authorityStates.includes("imported");
+  }
+
+  return input.authorityStates?.includes("imported") ?? false;
+}
+
 
 function parseNamespaceUri(
   uri: string
-): { ownerScope: ContextOwnerScope; contextKind: ContextKind; noteId: string } | undefined {
+): { ownerScope: ContextOwnerScope; contextKind: ContextKind; recordId: string } | undefined {
   const match = /^mimir:\/\/([^/]+)\/([^/]+)\/([^/?#]+)$/.exec(uri);
   if (!match) {
     return undefined;
@@ -315,6 +552,6 @@ function parseNamespaceUri(
   return {
     ownerScope,
     contextKind,
-    noteId
+    recordId: noteId
   };
 }

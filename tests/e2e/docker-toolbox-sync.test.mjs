@@ -19,6 +19,9 @@ test("compileDockerMcpRuntimePlan returns deterministic Docker profile and serve
   assert.equal(JSON.stringify(first), JSON.stringify(second));
   assert.ok(first.profiles.some((profile) => profile.id === "bootstrap"));
   assert.ok(first.profiles.some((profile) => profile.id === "docs-research"));
+  assert.ok(first.profiles.some((profile) => profile.id === "core-dev+docs-research"));
+  assert.ok(first.profiles.some((profile) => profile.id === "core-dev+runtime-observe"));
+  assert.ok(first.servers.some((server) => server.id === "kubernetes-read"));
 
   const canonicalNames = first.profiles.map((profile) => profile.dockerProfileName);
   assert.equal(new Set(canonicalNames).size, canonicalNames.length);
@@ -111,6 +114,22 @@ test("sync-mcp-profiles apply mode shells out when docker mcp profile support ex
     );
     assert.ok(
       docsCommand.serverRefs.includes("catalog://mcp/docker-mcp-catalog/docker-docs")
+    );
+
+    const compositeCommand = payload.apply.plan.commands.find(
+      (command) => command.profileId === "core-dev+runtime-observe"
+    );
+    assert.ok(compositeCommand);
+    assert.ok(
+      compositeCommand.serverRefs.includes("catalog://mcp/docker-mcp-catalog/grafana-observe")
+    );
+    assert.ok(
+      compositeCommand.serverRefs.includes("catalog://mcp/docker-mcp-catalog/docker-read")
+    );
+    assert.ok(
+      compositeCommand.serverRefs.includes(
+        "catalog://mcp/docker-mcp-catalog/kubernetes-read"
+      )
     );
 
     const log = readFileSync(stub.logFile, "utf8").trim().split(/\r?\n/);

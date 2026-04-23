@@ -225,7 +225,8 @@ async function callTool(name: string, args: JsonRecord): Promise<unknown> {
           requestedToolbox: optionalString(args.requestedToolbox),
           requiredCategories: optionalStringArray(args.requiredCategories),
           taskSummary: optionalString(args.taskSummary),
-          clientId: optionalString(args.clientId)
+          clientId: optionalString(args.clientId),
+          approval: optionalToolboxApproval(args.approval)
         });
         break;
       case "list_active_toolbox":
@@ -287,6 +288,25 @@ function optionalStringArray(value: unknown): string[] | undefined {
   return value
     .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
     .map((entry) => entry.trim());
+}
+
+function optionalToolboxApproval(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const approval = value as Record<string, unknown>;
+  const grantedBy = optionalString(approval.grantedBy);
+  if (!grantedBy) {
+    return undefined;
+  }
+
+  return {
+    grantedBy,
+    grantedAt: optionalString(approval.grantedAt),
+    reason: optionalString(approval.reason),
+    toolboxId: optionalString(approval.toolboxId)
+  };
 }
 
 function isJsonRpcRequest(value: unknown): value is JsonRpcRequest {

@@ -11,6 +11,7 @@ profile:
     - mimir-core
     - grafana-observe
     - docker-read
+    - kubernetes-read
   allowedCategories:
     - repo-read
     - repo-write
@@ -21,6 +22,9 @@ profile:
     - metrics-read
     - traces-read
     - docker-read
+    - k8s-read
+    - k8s-logs-read
+    - k8s-events-read
   deniedCategories:
     - github-write
     - docker-write

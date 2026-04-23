@@ -35,6 +35,13 @@ export class FileSystemStagingNoteRepository implements StagingNoteRepository {
     return null;
   }
 
+  async getByPath(draftPath: string): Promise<StagingDraftRecord | null> {
+    const corpusId = inferCorpusFromPath(draftPath);
+    const absolutePath = toAbsoluteNotePath(this.rootPath, draftPath, corpusId);
+
+    return this.readRecord(absolutePath);
+  }
+
   async listByCorpus(corpusId: CorpusId): Promise<StagingDraftRecord[]> {
     const corpusRoot = path.resolve(this.rootPath, corpusId);
     const files = await listMarkdownFiles(corpusRoot);
@@ -90,4 +97,15 @@ export class FileSystemStagingNoteRepository implements StagingNoteRepository {
       throw error;
     }
   }
+}
+
+function inferCorpusFromPath(notePath: string): CorpusId {
+  const normalized = notePath.replace(/\\/g, "/").replace(/^\/+/, "");
+  if (normalized.startsWith("mimisbrunnr/")) {
+    return "mimisbrunnr";
+  }
+  if (normalized.startsWith("general_notes/")) {
+    return "general_notes";
+  }
+  throw new Error(`Unable to infer corpus from note path '${notePath}'.`);
 }

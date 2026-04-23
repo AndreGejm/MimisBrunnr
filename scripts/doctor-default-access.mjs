@@ -68,6 +68,8 @@ function renderHumanReport(report) {
     `launchers: ${report.launchers.files.every((item) => item.exists) ? "installed" : "missing"} (${report.launchers.binDir})`,
     `launchersOnPath: ${report.launchers.onPath ? "yes" : "no"}`,
     `manifest: ${report.manifest.exists ? "present" : "missing"} (${report.manifest.path})`,
+    `dockerMcpProfiles: ${report.dockerMcp.profileSupport.supported ? "supported" : "unsupported"} (${report.dockerMcp.profileSupport.executable} ${report.dockerMcp.profileSupport.probeCommand.join(" ")})`,
+    `dockerMcpGatewayProfiles: ${report.dockerMcp.gatewayProfileSupport.supported ? "supported" : "unsupported"} (${report.dockerMcp.gatewayProfileSupport.executable} ${report.dockerMcp.gatewayProfileSupport.probeCommand.join(" ")})`,
     report.recommendations.length > 0
       ? `next: ${report.recommendations.join(" ")}`
       : "next: no action needed"

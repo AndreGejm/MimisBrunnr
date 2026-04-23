@@ -6,6 +6,7 @@ import {
   CONTEXT_PROMOTION_STATUSES,
   CONTEXT_SOURCE_TYPES,
   CONTEXT_SUPERSESSION_STATUSES,
+  assertContextNodeAuthorityInvariants,
   type ContextAuthorityState,
   type ContextFreshnessClass,
   type ContextKind,
@@ -47,7 +48,7 @@ export function parseContextNodeDescriptor(
     throw new TypeError("ContextNodeDescriptor must be an object");
   }
 
-  return {
+  const descriptor = {
     uri: expectString(value.uri, "ContextNodeDescriptor.uri"),
     ownerScope: expectOneOf(
       value.ownerScope,
@@ -88,6 +89,9 @@ export function parseContextNodeDescriptor(
     updatedAt: expectString(value.updatedAt, "ContextNodeDescriptor.updatedAt"),
     representations: parseRepresentations(value.representations)
   };
+
+  assertContextNodeAuthorityInvariants(descriptor);
+  return descriptor;
 }
 
 function parseFreshness(value: unknown): ContextNodeDescriptor["freshness"] {

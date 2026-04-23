@@ -251,6 +251,9 @@ function seedBaseFixture(root) {
       "intents:",
       "  docs-research:",
       "    displayName: Docs Research",
+      "    summary: External docs, web search, and GitHub read for implementation research.",
+      "    exampleTasks:",
+      "      - Compare upstream docs with the current implementation",
       "    targetProfile: docs-research",
       "    trustClass: external-read",
       "    requiresApproval: false",
@@ -291,6 +294,13 @@ test("compileToolboxPolicyFromDirectory returns deterministic normalized IR", ()
     assert.equal(JSON.stringify(first), JSON.stringify(second));
     assert.equal(first.profiles.bootstrap.sessionMode, "toolbox-bootstrap");
     assert.equal(first.profiles["core-dev+docs-research"].composite, true);
+    assert.equal(
+      first.intents["docs-research"].summary,
+      "External docs, web search, and GitHub read for implementation research."
+    );
+    assert.deepEqual(first.intents["docs-research"].exampleTasks, [
+      "Compare upstream docs with the current implementation"
+    ]);
     assert.equal(first.clients.codex.suppressedSemanticCapabilities[0], "github.search");
     assert.equal(first.clients.codex.handoffStrategy, "env-reconnect");
     assert.equal(first.clients.codex.handoffPresetRef, "codex.toolbox");
@@ -453,6 +463,9 @@ test("compileToolboxPolicyFromDirectory rejects unknown fallback profiles", () =
         "intents:",
         "  docs-research:",
         "    displayName: Docs Research",
+        "    summary: External docs, web search, and GitHub read for implementation research.",
+        "    exampleTasks:",
+        "      - Compare upstream docs with the current implementation",
         "    targetProfile: docs-research",
         "    trustClass: external-read",
         "    requiresApproval: false",
@@ -481,10 +494,31 @@ test("checked-in docker/mcp manifests compile into the bootstrap and activated p
   assert.equal(compiled.profiles.bootstrap.sessionMode, "toolbox-bootstrap");
   assert.equal(compiled.profiles["docs-research"].sessionMode, "toolbox-activated");
   assert.equal(compiled.profiles["core-dev+docs-research"].composite, true);
+  assert.equal(compiled.profiles["core-dev+runtime-observe"].composite, true);
+  assert.ok(compiled.intents["core-dev+docs-research"]);
+  assert.ok(compiled.intents["core-dev+runtime-observe"]);
+  assert.equal(
+    compiled.intents["docs-research"].summary,
+    "External docs, web search, and GitHub read for implementation research."
+  );
+  assert.ok(
+    compiled.intents["docs-research"].exampleTasks.includes(
+      "Compare upstream docs with the current implementation"
+    )
+  );
   assert.ok(compiled.clients.codex);
   assert.ok(compiled.clients.claude);
   assert.ok(compiled.clients.antigravity);
   assert.equal(compiled.clients.codex.handoffStrategy, "env-reconnect");
   assert.equal(compiled.clients.claude.handoffStrategy, "env-reconnect");
   assert.equal(compiled.clients.antigravity.handoffStrategy, "manual-env-reconnect");
+  assert.ok(compiled.categories["k8s-read"]);
+  assert.ok(compiled.categories["k8s-logs-read"]);
+  assert.ok(compiled.categories["k8s-events-read"]);
+  assert.ok(compiled.servers["kubernetes-read"]);
+  assert.ok(
+    compiled.servers["kubernetes-read"].tools.some(
+      (tool) => tool.toolId === "kubernetes.logs.query"
+    )
+  );
 });

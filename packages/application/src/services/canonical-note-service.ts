@@ -18,7 +18,10 @@ export class CanonicalNoteService {
   async getCanonicalNote(
     noteId: NoteId
   ): Promise<ServiceResult<CanonicalNoteRecord, CanonicalNoteErrorCode>> {
-    const note = await this.canonicalNoteRepository.getById(noteId);
+    const metadata = await this.metadataControlStore.getNoteById(noteId);
+    const note = metadata
+      ? await this.canonicalNoteRepository.getByPath(metadata.notePath)
+      : await this.canonicalNoteRepository.getById(noteId);
     if (!note) {
       return {
         ok: false,

@@ -14,6 +14,7 @@ import type {
   NoteValidationService,
   PromotionOrchestratorService,
   ReviewCommandService,
+  RetrieveContextCache,
   RetrieveContextService,
   RerankerProvider,
   SessionArchiveStore,
@@ -36,6 +37,7 @@ import {
   DecisionSummaryService as ConcreteDecisionSummaryService,
   ImportOrchestrationService as ConcreteImportOrchestrationService,
   HierarchicalRetrievalService as ConcreteHierarchicalRetrievalService,
+  InMemoryRetrieveContextCache,
   NoteValidationService as ConcreteNoteValidationService,
   PromotionOrchestratorService as ConcretePromotionOrchestratorService,
   ReviewCommandService as ConcreteReviewCommandService,
@@ -204,6 +206,7 @@ export function buildServiceContainer(
     roleProviderRegistry.getDraftingProvider("mimisbrunnr_primary");
   const rerankerProvider =
     roleProviderRegistry.getRerankerProvider("reranker_primary");
+  const retrieveContextCache: RetrieveContextCache = new InMemoryRetrieveContextCache();
 
   const noteValidationService = new ConcreteNoteValidationService();
   const auditHistoryService = new ConcreteAuditHistoryService(auditLog);
@@ -229,7 +232,8 @@ export function buildServiceContainer(
     localReasoningProvider,
     paidEscalationProvider,
     rerankerProvider,
-    auditHistoryService
+    auditHistoryService,
+    retrieveContextCache
   });
   const promotionOrchestratorService = new ConcretePromotionOrchestratorService(
     stagingNoteRepository,
@@ -241,7 +245,8 @@ export function buildServiceContainer(
     lexicalIndex,
     vectorIndex,
     embeddingProvider,
-    contextRepresentationService
+    contextRepresentationService,
+    retrieveContextCache
   );
   const retrieveContextService = new ConcreteRetrieveContextService({
     lexicalIndex,
@@ -252,7 +257,8 @@ export function buildServiceContainer(
     paidEscalationProvider,
     rerankerProvider,
     auditHistoryService,
-    hierarchicalRetrievalService
+    hierarchicalRetrievalService,
+    retrieveContextCache
   });
   const contextPacketService = new ConcreteContextPacketService(metadataControlStore);
   const decisionSummaryService = new ConcreteDecisionSummaryService(

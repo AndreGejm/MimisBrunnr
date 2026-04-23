@@ -1,0 +1,44 @@
+server:
+  id: kubernetes-read
+  displayName: Kubernetes Read
+  source: peer
+  kind: peer
+  trustClass: ops-read
+  mutationLevel: read
+  tools:
+    - toolId: kubernetes.context.inspect
+      displayName: Inspect Kubernetes Context
+      category: k8s-read
+      trustClass: ops-read
+      mutationLevel: read
+      semanticCapabilityId: kubernetes.context.inspect
+    - toolId: kubernetes.namespaces.list
+      displayName: List Kubernetes Namespaces
+      category: k8s-read
+      trustClass: ops-read
+      mutationLevel: read
+      semanticCapabilityId: kubernetes.namespace.list
+    - toolId: kubernetes.workloads.list
+      displayName: List Kubernetes Workloads
+      category: k8s-read
+      trustClass: ops-read
+      mutationLevel: read
+      semanticCapabilityId: kubernetes.workload.list
+    - toolId: kubernetes.pods.list
+      displayName: List Kubernetes Pods
+      category: k8s-read
+      trustClass: ops-read
+      mutationLevel: read
+      semanticCapabilityId: kubernetes.pod.list
+    - toolId: kubernetes.events.list
+      displayName: List Kubernetes Events
+      category: k8s-events-read
+      trustClass: ops-read
+      mutationLevel: read
+      semanticCapabilityId: kubernetes.events.list
+    - toolId: kubernetes.logs.query
+      displayName: Query Kubernetes Logs
+      category: k8s-logs-read
+      trustClass: ops-read
+      mutationLevel: read
+      semanticCapabilityId: kubernetes.logs.query

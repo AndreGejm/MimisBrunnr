@@ -60,6 +60,9 @@ test("hierarchical retrieval is opt-in and preserves bounded packet guarantees",
 
   assert.equal(hierarchicalResult.ok, true);
   assert.equal(hierarchicalResult.data.trace.strategy, "hierarchical");
+  assert.ok(hierarchicalResult.data.retrievalHealth);
+  assert.match(hierarchicalResult.data.retrievalHealth.status, /healthy|degraded|unhealthy/);
+  assert.equal(typeof hierarchicalResult.data.retrievalHealth.deliveredCandidates, "number");
   assert.ok(hierarchicalResult.data.packet.evidence.length <= 3);
   assert.ok(Array.isArray(hierarchicalResult.data.trace.events));
   assert.ok(hierarchicalResult.data.trace.events.length > 0);

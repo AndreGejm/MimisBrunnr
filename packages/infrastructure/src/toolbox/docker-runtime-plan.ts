@@ -47,6 +47,18 @@ export interface DockerMcpRuntimeCompatibilityReport {
   nextSteps: string[];
 }
 
+export interface DockerMcpGatewayProfileCompatibilityReport {
+  supported: boolean;
+  executable: string;
+  probeCommand: string[];
+  gatewayRunDetected: boolean;
+  profileFlagDetected: boolean;
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+  nextSteps: string[];
+}
+
 export interface DockerMcpRuntimeCommandResult {
   argv: string[];
   exitCode: number | null;
@@ -185,6 +197,38 @@ export function probeDockerMcpProfileSupport(
           "Upgrade to a Docker MCP Toolkit build that exposes `docker mcp profile`.",
           "Enable the profiles feature with `docker mcp feature enable profiles` if it is available in your installation.",
           "Re-run the sync after `docker mcp --help` lists `profile` under available commands."
+        ]
+  };
+}
+
+export function probeDockerMcpGatewayProfileSupport(
+  executable = "docker",
+  executableArgs: string[] = []
+): DockerMcpGatewayProfileCompatibilityReport {
+  const probeCommand = ["mcp", "gateway", "run", "--help"];
+  const probe = spawnSync(executable, [...executableArgs, ...probeCommand], {
+    encoding: "utf8"
+  });
+  const stdout = normalizeTextOutput(probe.stdout);
+  const stderr = normalizeTextOutput(probe.stderr);
+  const gatewayRunDetected =
+    probe.status === 0 && /Usage:\s+docker\s+mcp\s+gateway\s+run/i.test(stdout);
+  const profileFlagDetected = /^\s*--profile(?:\s|,|$)/im.test(stdout);
+  return {
+    supported: gatewayRunDetected && profileFlagDetected,
+    executable,
+    probeCommand,
+    gatewayRunDetected,
+    profileFlagDetected,
+    stdout,
+    stderr,
+    exitCode: probe.status,
+    nextSteps: gatewayRunDetected && profileFlagDetected
+      ? []
+      : [
+          "Upgrade to Docker Desktop 4.62 or later so `docker mcp gateway run --profile <profile-id>` is available.",
+          "Re-run `docker mcp gateway run --help` and confirm it lists `--profile`.",
+          "Use profile-scoped client commands only after the gateway supports profile selection."
         ]
   };
 }

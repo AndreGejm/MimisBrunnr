@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -36,6 +36,96 @@ test("namespace service keeps canonical and staging notes distinct", async (t) =
   assert.equal(stagingNode.ownerScope, "mimisbrunnr");
   assert.equal(stagingNode.uri, `mimir://mimisbrunnr/note/${staging.draftNoteId}`);
   assert.notEqual(canonicalNode.authorityState, stagingNode.authorityState);
+});
+
+test("namespace service projects session archives into the sessions scope", async (t) => {
+  const { container } = await createHarness(t);
+  assert.ok(container.services.contextNamespaceService);
+
+  const { services } = container;
+  const archive = await createSessionArchive(services);
+
+  const scopedResult = await services.contextNamespaceService.listTree({
+    ownerScope: "sessions",
+    authorityStates: ["session"]
+  });
+
+  assert.equal(scopedResult.ok, true);
+  assert.equal(scopedResult.data.nodes.length, 1);
+  assert.deepEqual(scopedResult.data.nodes[0], {
+    uri: archive.uri,
+    ownerScope: "sessions",
+    contextKind: "session_archive",
+    authorityState: "session",
+    sourceType: "session_archive",
+    sourceRef: archive.archiveId,
+    freshness: {
+      validFrom: archive.createdAt,
+      validUntil: archive.createdAt,
+      freshnessClass: "current",
+      freshnessReason: "Immutable session archive."
+    },
+    representationAvailability: {
+      L0: false,
+      L1: false,
+      L2: true
+    },
+    promotionStatus: "not_applicable",
+    supersessionStatus: "archived",
+    createdAt: archive.createdAt,
+    updatedAt: archive.createdAt
+  });
+
+  const readResult = await services.contextNamespaceService.readNode({
+    uri: archive.uri
+  });
+  assert.equal(readResult.ok, true);
+  assert.deepEqual(readResult.data.node, scopedResult.data.nodes[0]);
+});
+
+test("namespace service projects imported artifacts into the imports scope", async (t) => {
+  const { container, root } = await createHarness(t);
+  assert.ok(container.services.contextNamespaceService);
+
+  const { services } = container;
+  const importJob = await createImportedArtifact(services, root);
+
+  const scopedResult = await services.contextNamespaceService.listTree({
+    ownerScope: "imports",
+    authorityStates: ["imported"]
+  });
+
+  assert.equal(scopedResult.ok, true);
+  assert.equal(scopedResult.data.nodes.length, 1);
+  assert.deepEqual(scopedResult.data.nodes[0], {
+    uri: `mimir://imports/resource/${importJob.importJobId}`,
+    ownerScope: "imports",
+    contextKind: "resource",
+    authorityState: "imported",
+    sourceType: "import_artifact",
+    sourceRef: importJob.importJobId,
+    freshness: {
+      validFrom: importJob.createdAt,
+      validUntil: importJob.updatedAt,
+      freshnessClass: "current",
+      freshnessReason: "Imported artifacts remain read-only until reviewed."
+    },
+    representationAvailability: {
+      L0: false,
+      L1: false,
+      L2: true
+    },
+    promotionStatus: "not_applicable",
+    supersessionStatus: "not_applicable",
+    createdAt: importJob.createdAt,
+    updatedAt: importJob.updatedAt
+  });
+
+  const readResult = await services.contextNamespaceService.readNode({
+    uri: `mimir://imports/resource/${importJob.importJobId}`
+  });
+  assert.equal(readResult.ok, true);
+  assert.deepEqual(readResult.data.node, scopedResult.data.nodes[0]);
 });
 
 async function createHarness(t) {
@@ -131,6 +221,52 @@ async function createStagingDraft(services) {
 
   assert.equal(result.ok, true);
   return result.data;
+}
+
+async function createSessionArchive(services) {
+  const result = await services.sessionArchiveService.createArchive({
+    sessionId: "context-namespace-session",
+    messages: [
+      {
+        role: "user",
+        content: "Summarize the namespace projection rules."
+      },
+      {
+        role: "assistant",
+        content: "Canonical and staging nodes stay distinct in the namespace."
+      }
+    ]
+  });
+
+  assert.equal(result.ok, true);
+  return result.data.archive;
+}
+
+async function createImportedArtifact(services, root) {
+  const sourcePath = path.join(root, "imports", "namespace-import.md");
+  await mkdir(path.dirname(sourcePath), { recursive: true });
+  await writeFile(
+    sourcePath,
+    [
+      "# Namespace Import",
+      "",
+      "Imported artifacts should appear in the shared imports namespace.",
+      "",
+      "## Details",
+      "",
+      "This source stays imported until explicitly reviewed."
+    ].join("\n"),
+    "utf8"
+  );
+
+  const result = await services.importOrchestrationService.importResource({
+    actor: actor("operator"),
+    sourcePath,
+    importKind: "document"
+  });
+
+  assert.equal(result.ok, true);
+  return result.data.importJob;
 }
 
 function actor(role) {

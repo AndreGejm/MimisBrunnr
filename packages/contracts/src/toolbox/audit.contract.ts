@@ -18,6 +18,7 @@ export interface ToolboxAuditEvent {
   sessionMode: "legacy-direct" | "toolbox-bootstrap" | "toolbox-activated";
   manifestRevision: string;
   profileId?: string;
+  profileRevision?: string;
   clientId?: string;
   toolboxId?: string;
   leaseId?: string;
@@ -29,6 +30,7 @@ export interface ToolboxAuditDiagnostics {
   sessionMode: "legacy-direct" | "toolbox-bootstrap" | "toolbox-activated";
   manifestRevision: string;
   profileId?: string;
+  profileRevision?: string;
   clientId?: string;
   toolboxId?: string;
   leaseId?: string;
@@ -37,6 +39,14 @@ export interface ToolboxAuditDiagnostics {
   approvedToolbox?: string;
   approvedProfile?: string;
   fallbackProfile?: string;
+  approval?: {
+    required: boolean;
+    granted: boolean;
+    grantedBy?: string;
+    grantedAt?: string;
+    reason?: string;
+    toolboxId?: string;
+  };
   reasonCode?: string;
 }
 
@@ -45,6 +55,7 @@ export interface ToolboxAuditDetail {
   sessionMode?: "legacy-direct" | "toolbox-bootstrap" | "toolbox-activated";
   manifestRevision?: string;
   profileId?: string;
+  profileRevision?: string;
   clientId?: string;
   toolboxId?: string;
   leaseId?: string;
@@ -53,5 +64,13 @@ export interface ToolboxAuditDetail {
   approvedToolbox?: string;
   approvedProfile?: string;
   fallbackProfile?: string;
+  approval?: {
+    required: boolean;
+    granted: boolean;
+    grantedBy?: string;
+    grantedAt?: string;
+    reason?: string;
+    toolboxId?: string;
+  };
   [key: string]: unknown;
 }

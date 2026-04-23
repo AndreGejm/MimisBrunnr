@@ -20,6 +20,8 @@ import {
   AuthIssuerLifecycleService,
   buildMimirControlSurface,
   buildServiceContainer,
+  applyDockerMcpRuntimePlan,
+  buildDockerMcpRuntimeApplyPlan,
   compileDockerMcpRuntimePlan,
   compileToolboxPolicyFromDirectory,
   dispatchRuntimeCommand,
@@ -27,6 +29,8 @@ import {
   FileIssuedTokenRevocationStore,
   issueActorAccessToken,
   loadEnvironment,
+  probeDockerMcpGatewayProfileSupport,
+  probeDockerMcpProfileSupport,
   recordIssuedAuthTokenAudit,
   recordRevokedAuthTokenAudit,
   SqliteAuthIssuerControlStore,
@@ -71,6 +75,7 @@ interface ParsedCli {
     version: boolean;
     pretty: boolean;
     stdin: boolean;
+    apply: boolean;
     inputPath?: string;
     inlineJson?: string;
   };
@@ -184,7 +189,23 @@ async function main(): Promise<void> {
           profiles: Object.keys(policy.profiles).sort(),
           servers: Object.keys(policy.servers).sort(),
           intents: Object.keys(policy.intents).sort(),
-          clients: Object.keys(policy.clients).sort()
+          clients: Object.keys(policy.clients).sort(),
+          dockerMcp: {
+            profileSupport: probeDockerMcpProfileSupport(
+              process.env.MIMIR_DOCKER_EXECUTABLE?.trim() || "docker",
+              parseJsonStringArrayEnv(
+                process.env.MIMIR_DOCKER_EXECUTABLE_ARGS_JSON,
+                "MIMIR_DOCKER_EXECUTABLE_ARGS_JSON"
+              )
+            ),
+            gatewayProfileSupport: probeDockerMcpGatewayProfileSupport(
+              process.env.MIMIR_DOCKER_EXECUTABLE?.trim() || "docker",
+              parseJsonStringArrayEnv(
+                process.env.MIMIR_DOCKER_EXECUTABLE_ARGS_JSON,
+                "MIMIR_DOCKER_EXECUTABLE_ARGS_JSON"
+              )
+            )
+          }
         },
         parsed.options.pretty
       );
@@ -210,12 +231,40 @@ async function main(): Promise<void> {
         optionalCliString(payload.generatedAt, "generatedAt")
         ?? new Date().toISOString();
       const plan = compileDockerMcpRuntimePlan(policy, { generatedAt });
+      const dryRun = !parsed.options.apply;
+      const applyPlan = buildDockerMcpRuntimeApplyPlan(plan);
+      if (!dryRun) {
+        const execution = applyDockerMcpRuntimePlan(plan, {
+          executable: process.env.MIMIR_DOCKER_EXECUTABLE?.trim() || "docker",
+          executableArgs: parseJsonStringArrayEnv(
+            process.env.MIMIR_DOCKER_EXECUTABLE_ARGS_JSON,
+            "MIMIR_DOCKER_EXECUTABLE_ARGS_JSON"
+          )
+        });
+        writeJson(
+          {
+            ok: execution.status === "applied",
+            dryRun: false,
+            manifestDirectory,
+            plan,
+            apply: execution
+          },
+          parsed.options.pretty
+        );
+        process.exitCode = execution.status === "applied" ? 0 : 1;
+        return;
+      }
       writeJson(
         {
           ok: true,
           dryRun: true,
           manifestDirectory,
-          plan
+          plan,
+          apply: {
+            status: "dry-run",
+            attempted: false,
+            commands: applyPlan.commands
+          }
         },
         parsed.options.pretty
       );
@@ -290,8 +339,9 @@ async function main(): Promise<void> {
                 payload.requiredCategories,
                 "requiredCategories"
               ),
-              taskSummary: optionalCliString(payload.taskSummary, "taskSummary"),
-              clientId: optionalCliString(payload.clientId, "clientId")
+            taskSummary: optionalCliString(payload.taskSummary, "taskSummary"),
+              clientId: optionalCliString(payload.clientId, "clientId"),
+              approval: optionalToolboxApproval(payload.approval)
             })
           },
           parsed.options.pretty
@@ -850,7 +900,8 @@ function parseCli(argv: string[]): ParsedCli {
     help: false,
     version: false,
     pretty: true,
-    stdin: false
+    stdin: false,
+    apply: false
   };
 
   let command: CommandName | undefined;
@@ -888,6 +939,11 @@ function parseCli(argv: string[]): ParsedCli {
       continue;
     }
 
+    if (value === "--apply") {
+      options.apply = true;
+      continue;
+    }
+
     if (value === "--input") {
       const next = argv[index + 1];
       if (!next) {
@@ -922,6 +978,10 @@ function parseCli(argv: string[]): ParsedCli {
 
   if (options.version) {
     command = "version";
+  }
+
+  if (options.apply && command !== "sync-mcp-profiles") {
+    throw new Error("--apply is only supported by sync-mcp-profiles.");
   }
 
   return { command, options };
@@ -1021,6 +1081,38 @@ function parseJson(value: string): JsonRecord {
     throw new Error("Command input must be a JSON object.");
   }
   return parsed as JsonRecord;
+}
+
+function parseJsonStringArrayEnv(value: string | undefined, envName: string): string[] {
+  if (!value?.trim()) {
+    return [];
+  }
+
+  const parsed = JSON.parse(value) as unknown;
+  if (!Array.isArray(parsed) || parsed.some((entry) => typeof entry !== "string")) {
+    throw new Error(`${envName} must be a JSON array of strings.`);
+  }
+
+  return parsed;
+}
+
+function optionalToolboxApproval(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const approval = value as Record<string, unknown>;
+  const grantedBy = optionalCliString(approval.grantedBy, "approval.grantedBy");
+  if (!grantedBy) {
+    return undefined;
+  }
+
+  return {
+    grantedBy,
+    grantedAt: optionalCliString(approval.grantedAt, "approval.grantedAt"),
+    reason: optionalCliString(approval.reason, "approval.reason"),
+    toolboxId: optionalCliString(approval.toolboxId, "approval.toolboxId")
+  };
 }
 
 async function readStdin(): Promise<string> {
@@ -1199,7 +1291,7 @@ Commands:
   auth-issued-tokens   List recorded issued actor tokens and their lifecycle state
   auth-introspect-token  Inspect a static or issued actor token against the current auth policy
   check-mcp-profiles   Validate repo-managed Docker MCP toolbox manifests and emit the compiled contract summary
-  sync-mcp-profiles    Compile a deterministic Docker MCP runtime plan from the checked-in toolbox manifests
+  sync-mcp-profiles    Compile a deterministic Docker MCP runtime plan; pass --apply to refresh Docker MCP profiles
   list-toolboxes       List intent-level toolboxes before peer MCP tools are exposed
   describe-toolbox     Describe one toolbox, its categories, and anti-use-cases
   request-toolbox-activation  Approve a profile-bound toolbox handoff and issue a lease when configured
@@ -1244,7 +1336,7 @@ Notes:
   - auth-issued-tokens accepts optional JSON input with actor, actorId, asOf, includeRevoked, issuedByActorId, revokedByActorId, lifecycleStatus, and limit.
   - auth-introspect-token expects JSON input with token and optional asOf, expectedTransport, expectedCommand, or expectedAdministrativeAction.
   - check-mcp-profiles accepts optional JSON input with manifestDirectory.
-  - sync-mcp-profiles accepts optional JSON input with manifestDirectory and generatedAt.
+  - sync-mcp-profiles accepts optional JSON input with manifestDirectory and generatedAt; --apply probes Docker MCP profile support and exits non-zero when the local Docker MCP Toolkit cannot apply profiles.
   - list-toolboxes accepts optional JSON input with manifestDirectory, activeProfileId, and clientId.
   - describe-toolbox expects JSON input with toolboxId and optional manifestDirectory, activeProfileId, and clientId.
   - request-toolbox-activation expects JSON input with requestedToolbox or requiredCategories, plus optional taskSummary, clientId, manifestDirectory, and activeProfileId.

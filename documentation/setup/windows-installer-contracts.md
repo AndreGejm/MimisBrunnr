@@ -19,6 +19,7 @@ Implemented files:
 - `scripts/installers/windows/lib/client-access.ps1`
 - `scripts/installers/windows/lib/repo-bootstrap.ps1`
 - `scripts/installers/windows/lib/toolbox-assets.ps1`
+- `scripts/installers/windows/lib/toolbox-control.ps1`
 - `scripts/installers/windows/lib/docker-mcp-toolkit.ps1`
 - `scripts/installers/windows/lib/adapters/node-json-script.ps1`
 - `scripts/installers/windows/lib/adapters/process-capture.ps1`
@@ -30,6 +31,7 @@ The backend currently wraps these existing repo helpers:
 - `scripts/doctor-default-access.mjs`
 - `scripts/docker/audit-toolbox-assets.mjs`
 - `scripts/docker/sync-mcp-profiles.mjs`
+- `corepack pnpm cli -- <toolbox-command>`
 - the live `docker mcp` toolkit CLI
 
 The backend also includes one implemented client definition:
@@ -130,6 +132,7 @@ Current behavior:
   - `apps/mimir-api/dist/main.js`
   - `apps/mimir-cli/dist/main.js`
   - `apps/mimir-mcp/dist/main.js`
+  - `apps/mimir-control-mcp/dist/main.js`
 
 Current reason codes:
 
@@ -219,6 +222,89 @@ Current behavior:
 Current reason codes:
 
 - `toolbox_runtime_prepared`
+
+### `audit-toolbox-control-surface`
+
+Purpose:
+
+- verify that the real toolbox discovery surfaces are available through the
+  repo CLI
+- summarize the available toolbox catalog for installer use without issuing
+  activation
+- persist the result into installer state files
+
+Current behavior:
+
+- invokes:
+  - `corepack pnpm cli -- list-toolboxes --json {}`
+  - `corepack pnpm cli -- describe-toolbox --json ...`
+- reports:
+  - selected installer client id
+  - toolbox count
+  - approval-required toolbox count
+  - toolbox ids
+  - one described toolbox summary including workflow, profile, example-task, and
+    active-tool counts
+
+Current reason codes:
+
+- `toolbox_control_surface_audited`
+- `toolbox_control_surface_empty`
+
+### `audit-active-toolbox-session`
+
+Purpose:
+
+- verify the current active toolbox session surface through the repo CLI
+- report workflow, profile, client overlay, and filtered tool buckets without
+  mutating session state
+- persist the result into installer state files
+
+Current behavior:
+
+- invokes:
+  - `corepack pnpm cli -- list-active-toolbox --json {}`
+  - `corepack pnpm cli -- list-active-tools --json {}`
+- reports:
+  - active workflow summary
+  - active profile summary
+  - active client summary
+  - counts and payloads for `declaredTools`, `activeTools`, and
+    `suppressedTools`
+
+Current reason codes:
+
+- `toolbox_active_session_audited`
+
+### `audit-toolbox-client-handoff`
+
+Purpose:
+
+- verify reconnect handoff readiness for the selected installer client without
+  activating a toolbox
+- combine installer client-access health with runtime client handoff metadata
+- persist the result into installer state files
+
+Current behavior:
+
+- invokes the existing installer client-access audit
+- invokes:
+  - `corepack pnpm cli -- list-active-toolbox --json {}`
+- reports:
+  - installer client-access summary
+  - runtime client handoff metadata
+  - reconnect contract fields for:
+    - `MAB_TOOLBOX_ACTIVE_PROFILE`
+    - `MAB_TOOLBOX_CLIENT_ID`
+    - `MAB_TOOLBOX_SESSION_MODE`
+    - optional `MAB_TOOLBOX_SESSION_POLICY_TOKEN`
+  - readiness booleans for access configuration, runtime-client match,
+    handoff-strategy detection, and preset availability
+
+Current reason codes:
+
+- `toolbox_client_handoff_ready`
+- `toolbox_client_handoff_follow_up`
 
 ### `audit-docker-mcp-toolkit`
 
@@ -484,6 +570,21 @@ Current session state shape:
 - the `node` invocation used to run `scripts/install-default-access.mjs --dry-run`
 - the `node` invocation used to run `scripts/install-default-access.mjs`
 
+`audit-toolbox-control-surface` records two commands today:
+
+- `corepack pnpm cli -- list-toolboxes --json {}`
+- `corepack pnpm cli -- describe-toolbox --json ...`
+
+`audit-active-toolbox-session` records two commands today:
+
+- `corepack pnpm cli -- list-active-toolbox --json {}`
+- `corepack pnpm cli -- list-active-tools --json {}`
+
+`audit-toolbox-client-handoff` records two commands today:
+
+- the `node` invocation used to run `scripts/doctor-default-access.mjs`
+- `corepack pnpm cli -- list-active-toolbox --json {}`
+
 `show-state` records no subprocesses.
 
 ## Client abstraction
@@ -530,4 +631,5 @@ These are explicitly not implemented yet:
 - client-specific overlay generation
 - Docker Desktop profile apply/sync through the installer backend
 - Docker MCP Toolkit server/client/config/profile mutation through the installer backend
+- toolbox activation or approval issuance through the installer backend
 - installer-mediated rollback execution for the write plan

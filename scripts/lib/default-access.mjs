@@ -118,6 +118,141 @@ export function evaluateDockerToolAssets(repoRoot) {
   };
 }
 
+export function evaluateDockerMcpProfileSupport({
+  executable = "docker",
+  executableArgs = []
+} = {}) {
+  const probeCommand = ["mcp", "--help"];
+  let probe;
+  try {
+    probe = spawnSync(executable, [...executableArgs, ...probeCommand], {
+      encoding: "utf8"
+    });
+  } catch (error) {
+    return {
+      supported: false,
+      executable,
+      probeCommand,
+      availableCommands: [],
+      profileCommandDetected: false,
+      stdout: "",
+      stderr: "",
+      exitCode: null,
+      error: error instanceof Error ? error.message : String(error),
+      nextSteps: dockerMcpProfileNextSteps()
+    };
+  }
+
+  const stdout = normalizeTextOutput(probe.stdout);
+  const stderr = normalizeTextOutput(probe.stderr);
+  const availableCommands = parseDockerMcpCommands(stdout);
+  const profileCommandDetected = availableCommands.includes("profile");
+
+  return {
+    supported: profileCommandDetected && probe.status === 0,
+    executable,
+    probeCommand,
+    availableCommands,
+    profileCommandDetected,
+    stdout,
+    stderr,
+    exitCode: probe.status,
+    error: probe.error ? probe.error.message : null,
+    nextSteps: profileCommandDetected ? [] : dockerMcpProfileNextSteps()
+  };
+}
+
+export function evaluateDockerMcpGatewayProfileSupport({
+  executable = "docker",
+  executableArgs = []
+} = {}) {
+  const probeCommand = ["mcp", "gateway", "run", "--help"];
+  let probe;
+  try {
+    probe = spawnSync(executable, [...executableArgs, ...probeCommand], {
+      encoding: "utf8"
+    });
+  } catch (error) {
+    return {
+      supported: false,
+      executable,
+      probeCommand,
+      gatewayRunDetected: false,
+      profileFlagDetected: false,
+      stdout: "",
+      stderr: "",
+      exitCode: null,
+      error: error instanceof Error ? error.message : String(error),
+      nextSteps: dockerMcpGatewayProfileNextSteps()
+    };
+  }
+
+  const stdout = normalizeTextOutput(probe.stdout);
+  const stderr = normalizeTextOutput(probe.stderr);
+  const gatewayRunDetected =
+    probe.status === 0 && /Usage:\s+docker\s+mcp\s+gateway\s+run/i.test(stdout);
+  const profileFlagDetected = /^\s*--profile(?:\s|,|$)/im.test(stdout);
+
+  return {
+    supported: gatewayRunDetected && profileFlagDetected,
+    executable,
+    probeCommand,
+    gatewayRunDetected,
+    profileFlagDetected,
+    stdout,
+    stderr,
+    exitCode: probe.status,
+    error: probe.error ? probe.error.message : null,
+    nextSteps:
+      gatewayRunDetected && profileFlagDetected
+        ? []
+        : dockerMcpGatewayProfileNextSteps()
+  };
+}
+
+function dockerMcpProfileNextSteps() {
+  return [
+    "Upgrade to a Docker MCP Toolkit build that exposes `docker mcp profile`.",
+    "Enable the profiles feature with `docker mcp feature enable profiles` if it is available in your installation.",
+    "Re-run the sync after `docker mcp --help` lists `profile` under available commands."
+  ];
+}
+
+function dockerMcpGatewayProfileNextSteps() {
+  return [
+    "Upgrade to Docker Desktop 4.62 or later so `docker mcp gateway run --profile <profile-id>` is available.",
+    "Re-run `docker mcp gateway run --help` and confirm it lists `--profile`.",
+    "Use profile-scoped client commands only after the gateway supports profile selection."
+  ];
+}
+
+function parseDockerMcpCommands(stdout) {
+  const commands = [];
+  const lines = stdout.split(/\r?\n/);
+  let inCommandSection = false;
+  for (const line of lines) {
+    if (/^Available Commands:/i.test(line)) {
+      inCommandSection = true;
+      continue;
+    }
+    if (!inCommandSection) {
+      continue;
+    }
+    if (!line.trim()) {
+      break;
+    }
+    const match = line.match(/^\s{2,}([a-z][a-z0-9-]*)\s{2,}/i);
+    if (match) {
+      commands.push(match[1]);
+    }
+  }
+  return commands;
+}
+
+function normalizeTextOutput(value) {
+  return typeof value === "string" ? value : "";
+}
+
 function listDockerToolManifestFiles(registryDir) {
   if (!existsSync(registryDir)) {
     return [];
@@ -447,7 +582,12 @@ export function evaluateDefaultAccess({
   launcherBinDir = getDefaultWindowsLauncherBinDir(),
   manifestPath = getDefaultInstallationManifestPath(),
   serverName = "mimir",
-  pathValue = process.env.PATH ?? ""
+  pathValue = process.env.PATH ?? "",
+  dockerExecutable = process.env.MIMIR_DOCKER_EXECUTABLE?.trim() || "docker",
+  dockerExecutableArgs = parseJsonStringArrayEnv(
+    process.env.MIMIR_DOCKER_EXECUTABLE_ARGS_JSON,
+    "MIMIR_DOCKER_EXECUTABLE_ARGS_JSON"
+  )
 }) {
   const cliWrapperPath = getCliWrapperPath(repoRoot);
   const mcpWrapperPath = getMcpWrapperPath(repoRoot);
@@ -465,6 +605,16 @@ export function evaluateDefaultAccess({
   const codexConfigured = hasCodexMcpServerBlock(configText, serverName);
 
   const dockerTools = evaluateDockerToolAssets(repoRoot);
+  const dockerMcp = {
+    profileSupport: evaluateDockerMcpProfileSupport({
+      executable: dockerExecutable,
+      executableArgs: dockerExecutableArgs
+    }),
+    gatewayProfileSupport: evaluateDockerMcpGatewayProfileSupport({
+      executable: dockerExecutable,
+      executableArgs: dockerExecutableArgs
+    })
+  };
 
   const report = {
     status: "degraded",
@@ -508,6 +658,7 @@ export function evaluateDefaultAccess({
       content: manifest.value
     },
     dockerTools,
+    dockerMcp,
     recommendations: []
   };
 
@@ -546,6 +697,18 @@ export function evaluateDefaultAccess({
     );
   }
 
+  if (!dockerMcp.profileSupport.supported) {
+    report.recommendations.push(
+      "Upgrade or enable Docker MCP profile support before using sync-mcp-profiles --apply for on-demand toolbox profiles."
+    );
+  }
+
+  if (!dockerMcp.gatewayProfileSupport.supported) {
+    report.recommendations.push(
+      "Upgrade Docker MCP gateway profile support before connecting clients with profile-scoped toolbox sessions."
+    );
+  }
+
   if (!report.manifest.exists) {
     report.recommendations.push("Write the fixed install manifest via install-default-access.mjs.");
   } else if (!report.manifest.valid) {
@@ -553,6 +716,22 @@ export function evaluateDefaultAccess({
   }
 
   return report;
+}
+
+function parseJsonStringArrayEnv(value, envName) {
+  if (!value?.trim()) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed) || parsed.some((entry) => typeof entry !== "string")) {
+      return [];
+    }
+    return parsed;
+  } catch {
+    return [];
+  }
 }
 
 export function ensureBuiltEntrypoint(repoRoot, entrypointPath) {

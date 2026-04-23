@@ -1,14 +1,19 @@
 import { randomUUID } from "node:crypto";
 import type { AuditHistoryService } from "@mimir/application";
 import type {
+  ToolboxActiveToolboxResponse,
   CompiledToolboxClientOverlay,
+  CompiledToolboxIntent,
   CompiledToolboxPolicy,
   CompiledToolboxProfile,
   CompiledToolboxToolDescriptor,
+  ToolboxApprovalGrant,
   ToolboxActivationResponse,
   ToolboxAuditDetail,
   ToolboxAuditDiagnostics,
   ToolboxAuditEvent,
+  ToolboxDescribeResponse,
+  ToolboxMutationLevel,
   ToolboxDeactivationResponse,
   ToolboxSessionHandoff
 } from "@mimir/contracts";
@@ -25,6 +30,7 @@ interface RequestToolboxActivationInput {
   requiredCategories?: string[];
   taskSummary?: string;
   clientId?: string;
+  approval?: ToolboxApprovalGrant;
 }
 
 export interface MimirControlSurfaceOptions {
@@ -39,6 +45,11 @@ export interface MimirControlSurfaceOptions {
 }
 
 const TOOLBOX_AUDIT_SOURCE = "mimir-toolbox-control-surface";
+const TOOLBOX_MUTATION_LEVEL_RANK: Record<ToolboxMutationLevel, number> = {
+  read: 10,
+  write: 20,
+  admin: 30
+};
 const TOOLBOX_AUDIT_ACTOR = {
   actorId: "toolbox-control-surface",
   actorRole: "system" as const,
@@ -77,6 +88,8 @@ export class MimirControlSurface {
       toolboxes: Object.values(this.policy.intents).map((intent) => ({
         id: intent.id,
         displayName: intent.displayName,
+        summary: intent.summary,
+        exampleTasks: intent.exampleTasks,
         targetProfile: intent.targetProfile,
         trustClass: intent.trustClass,
         requiresApproval: intent.requiresApproval,
@@ -89,13 +102,17 @@ export class MimirControlSurface {
     return this.withPersistedToolboxAudit("list_toolboxes", response);
   }
 
-  async describeToolbox(toolboxId: string) {
+  async describeToolbox(toolboxId: string): Promise<ToolboxDescribeResponse> {
     const toolbox = this.policy.intents[toolboxId];
     if (!toolbox) {
       throw new Error(`Unknown toolbox '${toolboxId}'.`);
     }
 
     const profile = this.policy.profiles[toolbox.targetProfile];
+    const visibility = this.buildToolVisibilityReport(
+      profile,
+      this.policy.clients[this.options.clientId]
+    );
     const occurredAt = new Date().toISOString();
     const diagnostics = this.buildDiagnostics({
       toolboxId: toolbox.id,
@@ -115,23 +132,47 @@ export class MimirControlSurface {
         diagnostics
       })
     });
-    const response = {
+    const response: ToolboxDescribeResponse = {
       reasonCode: "toolbox_discovery",
       diagnostics,
       auditEvents: [auditEvent],
       toolbox: {
         id: toolbox.id,
         displayName: toolbox.displayName,
+        summary: toolbox.summary,
+        exampleTasks: toolbox.exampleTasks,
         targetProfile: toolbox.targetProfile,
         trustClass: toolbox.trustClass,
         requiresApproval: toolbox.requiresApproval,
         allowedCategories: toolbox.allowedCategories,
         deniedCategories: toolbox.deniedCategories,
-        fallbackProfile: toolbox.fallbackProfile,
-        tools: this.buildToolVisibilityReport(
-          profile,
-          this.policy.clients[this.options.clientId]
-        ).activeTools,
+        fallbackProfile: toolbox.fallbackProfile ?? null,
+        workflow: {
+          activationMode: toolbox.activationMode,
+          sessionMode: profile.sessionMode,
+          requiresApproval: toolbox.requiresApproval,
+          fallbackProfile: toolbox.fallbackProfile ?? null
+        },
+        profile: {
+          id: profile.id,
+          displayName: profile.displayName,
+          sessionMode: profile.sessionMode,
+          composite: profile.composite,
+          baseProfiles: profile.baseProfiles,
+          compositeReason: profile.compositeReason,
+          fallbackProfile: profile.fallbackProfile ?? null,
+          profileRevision: profile.profileRevision
+        },
+        tools: visibility.activeTools,
+        suppressedTools: visibility.suppressedTools.map((tool) => ({
+          toolId: tool.toolId,
+          displayName: tool.displayName,
+          serverId: tool.serverId,
+          category: tool.category,
+          semanticCapabilityId: tool.semanticCapabilityId,
+          reasons: tool.suppressionReasons ?? [],
+          boundary: "client-overlay-reduction" as const
+        })),
         antiUseCases: toolbox.deniedCategories.map((category) => ({
           type: "denied_category",
           category
@@ -147,6 +188,7 @@ export class MimirControlSurface {
     const occurredAt = new Date().toISOString();
     const requestedCategories = input.requiredCategories ?? [];
     const approvedClientId = input.clientId ?? this.options.clientId;
+    const approval = normalizeApprovalGrant(input.approval);
     const baseDiagnostics = this.buildDiagnostics({
       reasonCode: "toolbox_activation",
       requestedToolbox: input.requestedToolbox,
@@ -202,15 +244,224 @@ export class MimirControlSurface {
         requestedToolbox: input.requestedToolbox ?? null,
         taskSummary: input.taskSummary ?? null,
         fallbackProfile: "bootstrap",
+        downgradeTarget: "bootstrap",
         sessionMode: "reconnect" as const,
         handoff,
-        leaseToken: null
+        leaseToken: null,
+        leaseExpiresAt: null
       };
 
       return this.withPersistedToolboxAudit("request_toolbox_activation", response);
     }
 
     const approvedProfile = this.policy.profiles[toolbox.targetProfile];
+    const approvalState = buildApprovalState(toolbox, approval);
+    if (toolbox.requiresApproval) {
+      if (approvalState.granted && approvalState.toolboxId !== toolbox.id) {
+        const reasonCode = "toolbox_activation_denied_invalid_approval";
+        const fallbackProfile = toolbox.fallbackProfile ?? "bootstrap";
+        const fallbackTargetProfile = this.policy.profiles[fallbackProfile] ?? this.policy.profiles.bootstrap;
+        const handoff = this.buildSessionHandoff({
+          profile: fallbackTargetProfile,
+          clientId: approvedClientId,
+          fallbackProfile,
+          lease: {
+            issued: false,
+            leaseId: null,
+            reasonCode
+          }
+        });
+        const diagnostics = {
+          ...this.buildDiagnostics({
+            reasonCode,
+            requestedToolbox: input.requestedToolbox,
+            requiredCategories: requestedCategories,
+            approvedToolbox: toolbox.id,
+            profileId: approvedProfile.id,
+            toolboxId: toolbox.id,
+            clientId: approvedClientId,
+            approvedProfile: approvedProfile.id,
+            fallbackProfile,
+            approval: approvalState
+          }),
+          lease: {
+            issued: false,
+            leaseId: null,
+            reasonCode
+          }
+        };
+        const response: ToolboxActivationResponse = {
+          approved: false,
+          reasonCode,
+          clientId: approvedClientId,
+          diagnostics,
+          details: {
+            request: {
+              requestedToolbox: input.requestedToolbox ?? null,
+              requiredCategories: requestedCategories,
+              taskSummary: input.taskSummary ?? null,
+              clientId: approvedClientId
+            },
+            approval: {
+              toolboxId: toolbox.id,
+              profileId: approvedProfile.id,
+              trustClass: toolbox.trustClass,
+              requiresApproval: toolbox.requiresApproval,
+              fallbackProfile,
+              granted: false,
+              grantedBy: approvalState.grantedBy,
+              grantedAt: approvalState.grantedAt,
+              reason: approvalState.reason
+            },
+            reconnect: {
+              ...handoff,
+              generated: true,
+              reasonCode
+            },
+            lease: {
+              issued: false,
+              leaseId: null,
+              reasonCode
+            }
+          },
+          auditEvents: [
+            this.buildAuditEvent("toolbox_activation_denied", occurredAt, {
+              outcome: "rejected",
+              toolboxId: toolbox.id,
+              profileId: approvedProfile.id,
+              clientId: approvedClientId,
+              details: this.buildAuditDetails({
+                reasonCode,
+                diagnostics,
+                requestedToolbox: input.requestedToolbox,
+                requiredCategories: requestedCategories,
+                taskSummary: input.taskSummary,
+                approvedToolbox: toolbox.id,
+                toolboxId: toolbox.id,
+                profileId: approvedProfile.id,
+                clientId: approvedClientId,
+                approvedProfile: approvedProfile.id,
+                fallbackProfile,
+                approval: approvalState
+              })
+            })
+          ],
+          requestedToolbox: input.requestedToolbox ?? null,
+          taskSummary: input.taskSummary ?? null,
+          fallbackProfile,
+          downgradeTarget: fallbackProfile,
+          sessionMode: "reconnect" as const,
+          handoff,
+          leaseToken: null,
+          leaseExpiresAt: null
+        };
+
+        return this.withPersistedToolboxAudit("request_toolbox_activation", response);
+      }
+
+      if (!approvalState.granted) {
+        const reasonCode = "toolbox_activation_denied_requires_approval";
+        const fallbackProfile = toolbox.fallbackProfile ?? "bootstrap";
+        const fallbackTargetProfile = this.policy.profiles[fallbackProfile] ?? this.policy.profiles.bootstrap;
+        const handoff = this.buildSessionHandoff({
+          profile: fallbackTargetProfile,
+          clientId: approvedClientId,
+          fallbackProfile,
+          lease: {
+            issued: false,
+            leaseId: null,
+            reasonCode
+          }
+        });
+        const diagnostics = {
+          ...this.buildDiagnostics({
+            reasonCode,
+            requestedToolbox: input.requestedToolbox,
+            requiredCategories: requestedCategories,
+            approvedToolbox: toolbox.id,
+            profileId: approvedProfile.id,
+            toolboxId: toolbox.id,
+            clientId: approvedClientId,
+            approvedProfile: approvedProfile.id,
+            fallbackProfile,
+            approval: approvalState
+          }),
+          lease: {
+            issued: false,
+            leaseId: null,
+            reasonCode
+          }
+        };
+        const response: ToolboxActivationResponse = {
+          approved: false,
+          reasonCode,
+          clientId: approvedClientId,
+          diagnostics,
+          details: {
+            request: {
+              requestedToolbox: input.requestedToolbox ?? null,
+              requiredCategories: requestedCategories,
+              taskSummary: input.taskSummary ?? null,
+              clientId: approvedClientId
+            },
+            approval: {
+              toolboxId: toolbox.id,
+              profileId: approvedProfile.id,
+              trustClass: toolbox.trustClass,
+              requiresApproval: toolbox.requiresApproval,
+              fallbackProfile,
+              granted: false,
+              grantedBy: approvalState.grantedBy,
+              grantedAt: approvalState.grantedAt,
+              reason: approvalState.reason
+            },
+            reconnect: {
+              ...handoff,
+              generated: true,
+              reasonCode
+            },
+            lease: {
+              issued: false,
+              leaseId: null,
+              reasonCode
+            }
+          },
+          auditEvents: [
+            this.buildAuditEvent("toolbox_activation_denied", occurredAt, {
+              outcome: "rejected",
+              toolboxId: toolbox.id,
+              profileId: approvedProfile.id,
+              clientId: approvedClientId,
+              details: this.buildAuditDetails({
+                reasonCode,
+                diagnostics,
+                requestedToolbox: input.requestedToolbox,
+                requiredCategories: requestedCategories,
+                taskSummary: input.taskSummary,
+                approvedToolbox: toolbox.id,
+                toolboxId: toolbox.id,
+                profileId: approvedProfile.id,
+                clientId: approvedClientId,
+                approvedProfile: approvedProfile.id,
+                fallbackProfile,
+                approval: approvalState
+              })
+            })
+          ],
+          requestedToolbox: input.requestedToolbox ?? null,
+          taskSummary: input.taskSummary ?? null,
+          fallbackProfile,
+          downgradeTarget: fallbackProfile,
+          sessionMode: "reconnect" as const,
+          handoff,
+          leaseToken: null,
+          leaseExpiresAt: null
+        };
+
+        return this.withPersistedToolboxAudit("request_toolbox_activation", response);
+      }
+    }
+
     const issuedAt = occurredAt;
     const leaseResult = this.issueLease({
       approvedClientId,
@@ -242,7 +493,8 @@ export class MimirControlSurface {
           toolboxId: toolbox.id,
           clientId: approvedClientId,
           approvedProfile: approvedProfile.id,
-          fallbackProfile
+          fallbackProfile,
+          approval: approvalState
         }),
         lease: {
           issued: false,
@@ -266,7 +518,8 @@ export class MimirControlSurface {
           profileId: approvedProfile.id,
           clientId: approvedClientId,
           approvedProfile: approvedProfile.id,
-          fallbackProfile
+          fallbackProfile,
+          approval: approvalState
         })
       });
       const leaseRejected = this.buildAuditEvent("toolbox_lease_rejected", occurredAt, {
@@ -297,6 +550,17 @@ export class MimirControlSurface {
             taskSummary: input.taskSummary ?? null,
             clientId: approvedClientId
           },
+          approval: {
+            toolboxId: toolbox.id,
+            profileId: approvedProfile.id,
+            trustClass: toolbox.trustClass,
+            requiresApproval: toolbox.requiresApproval,
+            fallbackProfile,
+            granted: approvalState.granted,
+            grantedBy: approvalState.grantedBy,
+            grantedAt: approvalState.grantedAt,
+            reason: approvalState.reason
+          },
           reconnect: {
             ...handoff,
             generated: true,
@@ -312,8 +576,10 @@ export class MimirControlSurface {
         requestedToolbox: input.requestedToolbox ?? null,
         taskSummary: input.taskSummary ?? null,
         fallbackProfile,
+        downgradeTarget: fallbackProfile,
         sessionMode: "reconnect" as const,
         leaseToken: null,
+        leaseExpiresAt: null,
         handoff
       };
 
@@ -327,7 +593,9 @@ export class MimirControlSurface {
       lease: {
         issued: leaseResult.issued,
         leaseId: leaseResult.leaseId ?? null,
-        reasonCode: leaseResult.reasonCode
+        reasonCode: leaseResult.reasonCode,
+        issuedAt: leaseResult.issuedAt,
+        expiresAt: leaseResult.expiresAt
       }
     });
     const diagnostics = this.buildDiagnostics({
@@ -338,7 +606,8 @@ export class MimirControlSurface {
       clientId: approvedClientId,
       approvedProfile: approvedProfile.id,
       fallbackProfile: toolbox.fallbackProfile ?? "bootstrap",
-      leaseId: leaseResult.leaseId
+      leaseId: leaseResult.leaseId,
+      approval: approvalState
     });
     const activationDetails = this.buildAuditDetails({
       reasonCode: "toolbox_activation_approved",
@@ -351,7 +620,8 @@ export class MimirControlSurface {
       profileId: approvedProfile.id,
       clientId: approvedClientId,
       approvedProfile: approvedProfile.id,
-      fallbackProfile: toolbox.fallbackProfile ?? "bootstrap"
+      fallbackProfile: toolbox.fallbackProfile ?? "bootstrap",
+      approval: approvalState
     });
     const reconnectDetails = this.buildAuditDetails({
       reasonCode: "toolbox_reconnect_generated",
@@ -403,7 +673,9 @@ export class MimirControlSurface {
         lease: {
           issued: leaseResult.issued,
           reasonCode: leaseResult.reasonCode,
-          leaseId: leaseResult.leaseId ?? null
+          leaseId: leaseResult.leaseId ?? null,
+          issuedAt: leaseResult.issuedAt,
+          expiresAt: leaseResult.expiresAt
         }
       },
       details: {
@@ -418,7 +690,11 @@ export class MimirControlSurface {
           profileId: approvedProfile.id,
           trustClass: toolbox.trustClass,
           requiresApproval: toolbox.requiresApproval,
-          fallbackProfile: toolbox.fallbackProfile ?? "bootstrap"
+          fallbackProfile: toolbox.fallbackProfile ?? "bootstrap",
+          granted: approvalState.granted,
+          grantedBy: approvalState.grantedBy,
+          grantedAt: approvalState.grantedAt,
+          reason: approvalState.reason
         },
         reconnect: {
           ...handoff,
@@ -428,7 +704,9 @@ export class MimirControlSurface {
         lease: {
           issued: leaseResult.issued,
           reasonCode: leaseResult.reasonCode,
-          leaseId: leaseResult.leaseId ?? null
+          leaseId: leaseResult.leaseId ?? null,
+          issuedAt: leaseResult.issuedAt,
+          expiresAt: leaseResult.expiresAt
         }
       },
       auditEvents: [
@@ -453,27 +731,62 @@ export class MimirControlSurface {
       approvedToolbox: toolbox.id,
       approvedProfile: toolbox.targetProfile,
       fallbackProfile: toolbox.fallbackProfile ?? "bootstrap",
+      downgradeTarget: toolbox.fallbackProfile ?? "bootstrap",
       sessionMode: "reconnect" as const,
       clientId: approvedClientId,
       leaseToken: leaseResult.leaseToken,
+      leaseExpiresAt: leaseResult.expiresAt ?? null,
       handoff
     };
 
     return this.withPersistedToolboxAudit("request_toolbox_activation", response);
   }
 
-  async listActiveToolbox() {
+  async listActiveToolbox(): Promise<ToolboxActiveToolboxResponse> {
     const profile = this.policy.profiles[this.options.activeProfileId];
+    const client = this.policy.clients[this.options.clientId];
+    const workflowIntent = this.findIntentForProfile(profile.id);
+    const visibility = this.buildToolVisibilityReport(profile, client);
     return {
+      workflow: {
+        toolboxId: workflowIntent?.id ?? null,
+        activationMode: workflowIntent?.activationMode ?? null,
+        sessionMode: profile.sessionMode,
+        requiresApproval: workflowIntent?.requiresApproval ?? false,
+        fallbackProfile: profile.fallbackProfile ?? null
+      },
       profile: {
         id: profile.id,
         displayName: profile.displayName,
         sessionMode: profile.sessionMode,
-        composite: profile.composite
+        composite: profile.composite,
+        baseProfiles: profile.baseProfiles,
+        compositeReason: profile.compositeReason,
+        fallbackProfile: profile.fallbackProfile ?? null,
+        allowedCategories: profile.allowedCategories,
+        deniedCategories: profile.deniedCategories,
+        semanticCapabilities: profile.semanticCapabilities,
+        profileRevision: profile.profileRevision
       },
       client: {
         id: this.options.clientId,
-        displayName: this.policy.clients[this.options.clientId].displayName
+        displayName: client.displayName,
+        handoffStrategy: client.handoffStrategy,
+        handoffPresetRef: client.handoffPresetRef,
+        clientPresetRef: client.handoffPresetRef,
+        suppressServerIds: client.suppressServerIds,
+        suppressToolIds: client.suppressToolIds,
+        suppressCategories: client.suppressCategories,
+        suppressedSemanticCapabilities: client.suppressedSemanticCapabilities,
+        suppressedTools: visibility.suppressedTools.map((tool) => ({
+          toolId: tool.toolId,
+          displayName: tool.displayName,
+          serverId: tool.serverId,
+          category: tool.category,
+          semanticCapabilityId: tool.semanticCapabilityId,
+          reasons: tool.suppressionReasons ?? [],
+          boundary: "client-overlay-reduction" as const
+        }))
       }
     };
   }
@@ -495,6 +808,8 @@ export class MimirControlSurface {
   async deactivateToolbox(leaseToken?: string) {
     const occurredAt = new Date().toISOString();
     const profile = this.policy.profiles[this.options.activeProfileId];
+    const downgradeTarget = profile.fallbackProfile ?? "bootstrap";
+    const downgradeProfile = this.policy.profiles[downgradeTarget] ?? this.policy.profiles.bootstrap;
     const leaseInspection = this.inspectLeaseToken(leaseToken);
     const leaseRevoked = Boolean(
       leaseInspection.verified &&
@@ -507,9 +822,9 @@ export class MimirControlSurface {
     }
 
     const handoff = this.buildSessionHandoff({
-      profile: this.policy.profiles.bootstrap,
+      profile: downgradeProfile,
       clientId: this.options.clientId,
-      fallbackProfile: "bootstrap",
+      fallbackProfile: downgradeTarget,
       lease: {
         issued: false,
         leaseId: null,
@@ -589,7 +904,7 @@ export class MimirControlSurface {
         })
       ],
       activeProfile: this.options.activeProfileId,
-      downgradeTarget: this.options.activeProfileId === "bootstrap" ? "bootstrap" : "bootstrap",
+      downgradeTarget,
       sessionMode: "reconnect" as const,
       clientId: this.options.clientId,
       handoff
@@ -610,12 +925,66 @@ export class MimirControlSurface {
 
     if (input.requiredCategories?.length) {
       const requestedCategories = new Set(input.requiredCategories);
-      return Object.values(this.policy.intents).find((intent) =>
+      const candidates = Object.values(this.policy.intents).filter((intent) =>
         [...requestedCategories].every((category) => intent.allowedCategories.includes(category))
       );
+      if (candidates.length === 0) {
+        return undefined;
+      }
+
+      return candidates
+        .slice()
+        .sort((left, right) =>
+          this.compareToolboxIntentCandidates(left, right, requestedCategories)
+        )[0];
     }
 
     return undefined;
+  }
+
+  private compareToolboxIntentCandidates(
+    left: CompiledToolboxIntent,
+    right: CompiledToolboxIntent,
+    requestedCategories: Set<string>
+  ): number {
+    const score = (intent: CompiledToolboxIntent) => ({
+      requiresApproval: intent.requiresApproval ? 1 : 0,
+      mutationRank: this.getIntentMutationRank(intent),
+      trustLevel: this.policy.trustClasses[intent.trustClass]?.level ?? Number.MAX_SAFE_INTEGER,
+      extraCategoryCount: intent.allowedCategories.filter(
+        (category) => !requestedCategories.has(category)
+      ).length,
+      allowedCategoryCount: intent.allowedCategories.length,
+      id: intent.id
+    });
+
+    const leftScore = score(left);
+    const rightScore = score(right);
+
+    return (
+      leftScore.requiresApproval - rightScore.requiresApproval
+      || leftScore.mutationRank - rightScore.mutationRank
+      || leftScore.trustLevel - rightScore.trustLevel
+      || leftScore.extraCategoryCount - rightScore.extraCategoryCount
+      || leftScore.allowedCategoryCount - rightScore.allowedCategoryCount
+      || leftScore.id.localeCompare(rightScore.id)
+    );
+  }
+
+  private findIntentForProfile(profileId: string): CompiledToolboxIntent | undefined {
+    return Object.values(this.policy.intents).find(
+      (intent) => intent.targetProfile === profileId
+    );
+  }
+
+  private getIntentMutationRank(intent: CompiledToolboxIntent): number {
+    return intent.allowedCategories.reduce((highestRank, categoryId) => {
+      const mutationLevel = this.policy.categories[categoryId]?.mutationLevel;
+      return Math.max(
+        highestRank,
+        mutationLevel ? TOOLBOX_MUTATION_LEVEL_RANK[mutationLevel] : TOOLBOX_MUTATION_LEVEL_RANK.admin
+      );
+    }, TOOLBOX_MUTATION_LEVEL_RANK.read);
   }
 
   private buildToolVisibilityReport(
@@ -688,6 +1057,8 @@ export class MimirControlSurface {
       issued: boolean;
       leaseId: string | null;
       reasonCode?: string;
+      issuedAt?: string;
+      expiresAt?: string;
     };
   }): ToolboxSessionHandoff {
     const client = this.policy.clients[input.clientId];
@@ -696,12 +1067,17 @@ export class MimirControlSurface {
       targetProfileId: input.profile.id,
       targetSessionMode: input.profile.sessionMode,
       fallbackProfileId: input.fallbackProfile,
+      downgradeTarget: input.fallbackProfile,
       clientId: input.clientId,
+      handoffStrategy: client.handoffStrategy,
+      handoffPresetRef: client.handoffPresetRef,
+      clientPresetRef: client.handoffPresetRef,
       client: {
         id: client.id,
         displayName: client.displayName,
         handoffStrategy: client.handoffStrategy,
-        handoffPresetRef: client.handoffPresetRef
+        handoffPresetRef: client.handoffPresetRef,
+        clientPresetRef: client.handoffPresetRef
       },
       manifestRevision: this.policy.manifestRevision,
       profileRevision: input.profile.profileRevision,
@@ -725,13 +1101,17 @@ export class MimirControlSurface {
             issued: true,
             leaseId: input.lease.leaseId,
             reasonCode: input.lease.reasonCode,
+            issuedAt: input.lease.issuedAt,
+            expiresAt: input.lease.expiresAt,
             sessionPolicyTokenField: "leaseToken",
             sessionPolicyTokenEnvVar: "MAB_TOOLBOX_SESSION_POLICY_TOKEN"
           }
         : {
             issued: false,
             leaseId: input.lease.leaseId,
-            reasonCode: input.lease.reasonCode
+            reasonCode: input.lease.reasonCode,
+            issuedAt: input.lease.issuedAt,
+            expiresAt: input.lease.expiresAt
           }
     };
   }
@@ -741,13 +1121,16 @@ export class MimirControlSurface {
     occurredAt: string,
     overrides: Partial<ToolboxAuditEvent>
   ): ToolboxAuditEvent {
+    const profileId = overrides.profileId ?? this.options.activeProfileId;
     return {
       eventId: randomUUID(),
       type,
       occurredAt,
       sessionMode: this.policy.profiles[this.options.activeProfileId].sessionMode,
       manifestRevision: this.policy.manifestRevision,
-      profileId: this.options.activeProfileId,
+      profileId,
+      profileRevision:
+        overrides.profileRevision ?? this.resolveProfileRevision(profileId),
       clientId: this.options.clientId,
       outcome: "accepted",
       ...overrides
@@ -795,6 +1178,7 @@ export class MimirControlSurface {
       sessionMode: event.sessionMode,
       manifestRevision: event.manifestRevision,
       profileId: event.profileId,
+      profileRevision: event.profileRevision,
       clientId: event.clientId,
       toolboxId: event.toolboxId,
       leaseId: event.leaseId,
@@ -811,6 +1195,8 @@ export class MimirControlSurface {
       sessionMode: detail.sessionMode,
       manifestRevision: detail.manifestRevision ?? this.policy.manifestRevision,
       profileId: detail.profileId,
+      profileRevision:
+        detail.profileRevision ?? this.resolveProfileRevision(detail.profileId),
       clientId: detail.clientId ?? this.options.clientId,
       toolboxId: detail.toolboxId,
       leaseId: detail.leaseId,
@@ -819,6 +1205,7 @@ export class MimirControlSurface {
       approvedToolbox: detail.approvedToolbox,
       approvedProfile: detail.approvedProfile,
       fallbackProfile: detail.fallbackProfile,
+      approval: detail.approval,
       diagnostics: detail.diagnostics
     });
   }
@@ -826,10 +1213,13 @@ export class MimirControlSurface {
   private buildDiagnostics(
     details: Partial<ToolboxAuditDiagnostics> & { reasonCode: string }
   ): ToolboxAuditDiagnostics {
+    const profileId = details.profileId ?? this.options.activeProfileId;
     return compactObject({
       sessionMode: this.policy.profiles[this.options.activeProfileId].sessionMode,
       manifestRevision: this.policy.manifestRevision,
-      profileId: details.profileId ?? this.options.activeProfileId,
+      profileId,
+      profileRevision:
+        details.profileRevision ?? this.resolveProfileRevision(profileId),
       clientId: details.clientId ?? this.options.clientId,
       toolboxId: details.toolboxId,
       leaseId: details.leaseId,
@@ -838,8 +1228,16 @@ export class MimirControlSurface {
       approvedToolbox: details.approvedToolbox,
       approvedProfile: details.approvedProfile,
       fallbackProfile: details.fallbackProfile,
+      approval: details.approval,
       reasonCode: details.reasonCode
     });
+  }
+
+  private resolveProfileRevision(profileId?: string): string | undefined {
+    if (!profileId) {
+      return undefined;
+    }
+    return this.policy.profiles[profileId]?.profileRevision;
   }
 
   private issueLease(input: {
@@ -852,6 +1250,8 @@ export class MimirControlSurface {
     leaseId?: string;
     issued: boolean;
     reasonCode?: string;
+    issuedAt?: string;
+    expiresAt?: string;
   } {
     if (!this.options.leaseIssuerSecret) {
       return {
@@ -861,6 +1261,7 @@ export class MimirControlSurface {
       };
     }
 
+    const expiresAt = new Date(Date.now() + 30 * 60_000).toISOString();
     const leaseToken = issueToolboxSessionLease(
       {
         version: 1,
@@ -875,7 +1276,7 @@ export class MimirControlSurface {
         manifestRevision: this.policy.manifestRevision,
         profileRevision: input.approvedProfile.profileRevision,
         issuedAt: input.issuedAt,
-        expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+        expiresAt,
         nonce: randomUUID()
       },
       this.options.leaseIssuerSecret
@@ -885,7 +1286,9 @@ export class MimirControlSurface {
       leaseToken,
       leaseId: safeReadLeaseId(leaseToken, this.options.leaseIssuerSecret),
       issued: true,
-      reasonCode: "toolbox_lease_issued"
+      reasonCode: "toolbox_lease_issued",
+      issuedAt: input.issuedAt,
+      expiresAt
     };
   }
 
@@ -946,6 +1349,35 @@ export function buildMimirControlSurface(
   options: MimirControlSurfaceOptions
 ): MimirControlSurface {
   return new MimirControlSurface(options);
+}
+
+function normalizeApprovalGrant(
+  approval?: ToolboxApprovalGrant
+): ToolboxApprovalGrant | undefined {
+  if (!approval?.grantedBy?.trim()) {
+    return undefined;
+  }
+
+  return compactObject({
+    grantedBy: approval.grantedBy.trim(),
+    grantedAt: approval.grantedAt?.trim() || undefined,
+    reason: approval.reason?.trim() || undefined,
+    toolboxId: approval.toolboxId?.trim() || undefined
+  });
+}
+
+function buildApprovalState(
+  toolbox: CompiledToolboxIntent,
+  approval?: ToolboxApprovalGrant
+): NonNullable<ToolboxAuditDiagnostics["approval"]> {
+  return compactObject({
+    required: toolbox.requiresApproval,
+    granted: Boolean(approval?.grantedBy),
+    grantedBy: approval?.grantedBy,
+    grantedAt: approval?.grantedAt,
+    reason: approval?.reason,
+    toolboxId: approval?.toolboxId ?? toolbox.id
+  });
 }
 
 function safeReadLeaseId(leaseToken: string, issuerSecret?: string): string | undefined {

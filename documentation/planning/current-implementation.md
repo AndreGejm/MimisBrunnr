@@ -24,6 +24,10 @@ The running architecture is a local-first monorepo with clear boundaries:
   - thin HTTP transport
 - `apps/mimir-mcp`
   - thin MCP stdio transport
+- `apps/mimir-control-mcp`
+  - toolbox discovery and approval MCP transport
+- `docker/mcp`
+  - repo-managed toolbox manifests for categories, trust classes, intents, peers, profiles, and client overlays
 - `runtimes/local_experts`
   - vendored Python coding runtime used by the coding domain
 
@@ -65,6 +69,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - bounded batch refresh-draft creation for current freshness candidates across CLI, HTTP, MCP, and orchestrator surfaces
 - idempotent refresh-draft reuse so the same stale canonical note does not spawn duplicate open refresh drafts
 - retrieval warnings when bounded evidence includes expired, expiring-soon, or not-yet-valid notes
+- shared context namespace projection for canonical notes, staging drafts, imported artifacts, and session archives
 - bounded context packet assembly
 - hard token-budget and summary-sentence enforcement during packet assembly
 - `tagFilters` enforced across lexical retrieval, vector retrieval, and fusion
@@ -83,6 +88,7 @@ The running architecture is a local-first monorepo with clear boundaries:
 - durable promotion outbox with replayable canonical, metadata, FTS, and vector sync processing
 - duplicate detection
 - supersede and current-state logic
+- contract-enforced authority-state invariants for context node descriptors, including source-type, promotion-status, and supersession-status combinations
 - actor-registry-backed authn/authz across CLI, HTTP, MCP, and orchestrator command dispatch
 - file-backed actor-registry loading with rotated credential windows and entry validity support
 - issuer-secret-backed short-lived issued tokens for registered actors
@@ -93,6 +99,19 @@ The running architecture is a local-first monorepo with clear boundaries:
 - promotion event recording
 - audit-history queries
 - a documented Git-centric versioning contract with runtime release metadata surfaces
+
+### Docker toolbox control plane
+
+- repo-managed toolbox manifests under `docker/mcp` for categories, trust classes, intents, server descriptors, profiles, and client overlays
+- deterministic toolbox compiler pipeline with normalized IR, `manifestRevision`, per-profile `profileRevision`, duplicate semantic capability checks, and overlay no-widening enforcement
+- explicit toolbox session modes: `legacy-direct`, `toolbox-bootstrap`, and `toolbox-activated`
+- `mimir-control` discovery and approval surface with `list_toolboxes`, `describe_toolbox`, `request_toolbox_activation`, `list_active_toolbox`, `list_active_tools`, and `deactivate_toolbox`
+- profile-bound activation handoffs with reconnect metadata, downgrade targets, approval details, client preset references, and structured diagnostics
+- revision-bound, audience-bound toolbox session leases with revocation and expiry enforcement
+- overlay suppression diagnostics, including suppressed semantic capabilities and machine-readable `suppressedTools`
+- category-owned peer curation for docs/web research, GitHub read/write split, Grafana observe, Docker read/admin split, and Kubernetes read-only observation
+- operator approval gating for `runtime-admin`, `delivery-admin`, and `full`
+- Docker MCP runtime planning and sync from compiled policy, plus Windows installer audit and plan-first toolbox operations
 
 ### Local model and coding stack
 
@@ -141,6 +160,14 @@ The running architecture is a local-first monorepo with clear boundaries:
 - `validate-note`
 - `promote-note`
 - `query-history`
+- `check-mcp-profiles`
+- `sync-mcp-profiles`
+- `list-toolboxes`
+- `describe-toolbox`
+- `request-toolbox-activation`
+- `list-active-toolbox`
+- `list-active-tools`
+- `deactivate-toolbox`
 
 ### HTTP
 
@@ -180,12 +207,23 @@ The running architecture is a local-first monorepo with clear boundaries:
 - `promote_note`
 - `query_history`
 
+### Toolbox control MCP tools
+
+- `list_toolboxes`
+- `describe_toolbox`
+- `request_toolbox_activation`
+- `list_active_toolbox`
+- `list_active_tools`
+- `deactivate_toolbox`
+
 ## Partial Or Incomplete Areas
 
 These areas have enabling structure but are not fully complete:
 
 - richer temporal-validity governance beyond validity windows, refresh-candidate reporting, bounded batch refresh-draft creation, idempotent refresh-draft reuse, explicit refresh-draft creation, freshness warnings, and stale ranking
 - hierarchical retrieval rollout beyond the current `flat` default, explicit opt-in strategy selection, trace metadata, packet-diff checks, and the documented rollback path back to `flat`
+- broader namespace coverage beyond canonical notes, staging drafts, imported artifacts, session archives, and the current contract-level authority invariants
+- broader toolbox rollout beyond the current curated peer bands, including target-machine Docker Toolkit validation and future approval-gated Kubernetes mutation
 
 See [`backlog.md`](./backlog.md) for the linked backlog items.
 

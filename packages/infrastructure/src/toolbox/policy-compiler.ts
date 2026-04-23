@@ -408,6 +408,11 @@ function readIntents(document: JsonRecord): Record<string, ToolboxIntentManifest
           intentId,
           {
             displayName: requireString(intent.displayName, `intents.${intentId}.displayName`),
+            summary: requireString(intent.summary, `intents.${intentId}.summary`),
+            exampleTasks: requireStringArray(
+              intent.exampleTasks,
+              `intents.${intentId}.exampleTasks`
+            ),
             targetProfile: requireString(intent.targetProfile, `intents.${intentId}.targetProfile`),
             trustClass: requireString(intent.trustClass, `intents.${intentId}.trustClass`),
             requiresApproval: requireBoolean(intent.requiresApproval, `intents.${intentId}.requiresApproval`),
