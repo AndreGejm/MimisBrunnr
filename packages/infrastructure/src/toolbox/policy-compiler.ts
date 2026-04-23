@@ -16,6 +16,7 @@ import type {
   ToolboxMutationLevel,
   ToolboxProfileManifest,
   ToolboxRuntimeBindingManifest,
+  ToolboxServerUsageClass,
   ToolboxServerManifest,
   ToolboxTrustClassManifest
 } from "@mimir/contracts";
@@ -35,6 +36,7 @@ const MUTATION_LEVELS = new Set<ToolboxMutationLevel>(["read", "write", "admin"]
 const PROFILE_SESSION_MODES = new Set(["toolbox-bootstrap", "toolbox-activated"]);
 const SERVER_KINDS = new Set(["control", "semantic", "peer"]);
 const SERVER_SOURCES = new Set(["owned", "peer"]);
+const SERVER_USAGE_CLASSES = new Set(["general", "docs-only"]);
 const DOCKER_APPLY_MODES = new Set(["catalog", "descriptor-only"]);
 const RUNTIME_BINDING_KINDS = new Set(["docker-catalog", "descriptor-only", "local-stdio"]);
 
@@ -132,6 +134,14 @@ function validateToolboxManifestSet(manifests: ToolboxManifestSet): void {
       throw new Error(
         `Peer server '${serverId}' must declare runtimeBinding or dockerRuntime apply metadata.`
       );
+    }
+    if (server.usageClass === "docs-only") {
+      if (server.source !== "peer") {
+        throw new Error(`Server '${serverId}' with usageClass: docs-only must have source: peer.`);
+      }
+      if (server.mutationLevel !== "read") {
+        throw new Error(`Server '${serverId}' with usageClass: docs-only must have mutationLevel: read.`);
+      }
     }
 
     for (const tool of server.tools) {
@@ -416,6 +426,11 @@ function readServer(document: JsonRecord, field: string): ToolboxServerManifest 
     displayName: requireString(server.displayName, `${field}.displayName`),
     source: requireStringEnum(server.source, `${field}.source`, SERVER_SOURCES) as "owned" | "peer",
     kind: requireStringEnum(server.kind, `${field}.kind`, SERVER_KINDS) as "control" | "semantic" | "peer",
+    usageClass: optionalStringEnum(
+      server.usageClass,
+      `${field}.usageClass`,
+      SERVER_USAGE_CLASSES
+    ) as ToolboxServerUsageClass | undefined,
     trustClass: requireString(server.trustClass, `${field}.trustClass`),
     mutationLevel: requireMutationLevel(
       requireString(server.mutationLevel, `${field}.mutationLevel`),

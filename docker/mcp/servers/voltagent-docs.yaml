@@ -3,6 +3,7 @@ server:
   displayName: VoltAgent Docs
   source: peer
   kind: peer
+  usageClass: docs-only
   trustClass: external-read
   mutationLevel: read
   runtimeBinding:

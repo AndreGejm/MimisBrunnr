@@ -445,6 +445,12 @@ test("mimir-cli surfaces Codex client materialization metadata and sync-toolbox-
     activationPayload.activation.handoff.clientMaterialization.path,
     expectedMaterializationPath
   );
+  assert.deepEqual(
+    activationPayload.activation.handoff.clientMaterialization.serverUsageClasses,
+    {
+      "voltagent-docs": "docs-only"
+    }
+  );
 
   const activeToolboxResult = await runCliCommand(
     ["list-active-toolbox", "--json", "{}", "--no-pretty"],
@@ -460,7 +466,10 @@ test("mimir-cli surfaces Codex client materialization metadata and sync-toolbox-
   assert.equal(activeToolboxPayload.profile.id, "core-dev+voltagent-docs");
   assert.deepEqual(activeToolboxPayload.client.clientMaterialization, {
     format: "codex-mcp-json",
-    path: expectedMaterializationPath
+    path: expectedMaterializationPath,
+    serverUsageClasses: {
+      "voltagent-docs": "docs-only"
+    }
   });
 
   const activeToolsResult = await runCliCommand(
@@ -528,6 +537,9 @@ test("mimir-cli surfaces Codex client materialization metadata and sync-toolbox-
   assert.equal(dryRunPayload.materialization.format, "codex-mcp-json");
   assert.equal(dryRunPayload.materialization.path, expectedMaterializationPath);
   assert.deepEqual(dryRunPayload.materialization.serverIds, ["voltagent-docs"]);
+  assert.deepEqual(dryRunPayload.materialization.serverUsageClasses, {
+    "voltagent-docs": "docs-only"
+  });
   assert.deepEqual(dryRunPayload.materialization.content, {
     mcpServers: {
       "voltagent-docs": {

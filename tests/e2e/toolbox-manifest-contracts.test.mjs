@@ -380,6 +380,7 @@ test("compileToolboxPolicyFromDirectory accepts local-stdio peer runtime binding
         "  displayName: VoltAgent Docs",
         "  source: peer",
         "  kind: peer",
+        "  usageClass: docs-only",
         "  trustClass: external-read",
         "  mutationLevel: read",
         "  runtimeBinding:",
@@ -429,7 +430,43 @@ test("compileToolboxPolicyFromDirectory accepts local-stdio peer runtime binding
       args: ["-y", "@voltagent/docs-mcp"],
       configTarget: "codex-mcp-json"
     });
+    assert.equal(compiled.servers["voltagent-docs"].usageClass, "docs-only");
     assert.equal(compiled.servers["voltagent-docs"].dockerRuntime, undefined);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("compileToolboxPolicyFromDirectory rejects docs-only usage on non-peer or mutating servers", () => {
+  const root = createFixtureRoot();
+  try {
+    seedBaseFixture(root);
+    writeUtf8(
+      root,
+      "servers/owned-docs-only.yaml",
+      [
+        "server:",
+        "  id: owned-docs-only",
+        "  displayName: Owned Docs Only",
+        "  source: owned",
+        "  kind: semantic",
+        "  usageClass: docs-only",
+        "  trustClass: local-readwrite",
+        "  mutationLevel: write",
+        "  tools:",
+        "    - toolId: owned.docs.write",
+        "      displayName: Owned Docs Write",
+        "      category: repo-write",
+        "      trustClass: local-readwrite",
+        "      mutationLevel: write",
+        "      semanticCapabilityId: owned.docs.write"
+      ].join("\n")
+    );
+
+    assert.throws(
+      () => compileToolboxPolicyFromDirectory(root),
+      /usageClass: docs-only must have source: peer/i
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -1789,6 +1826,7 @@ test("checked-in VoltAgent toolbox manifests declare local-stdio Codex materiali
   assert.ok(server, "voltagent-docs server must exist");
   assert.equal(server.source, "peer");
   assert.equal(server.kind, "peer");
+  assert.equal(server.usageClass, "docs-only");
   assert.equal(server.runtimeBinding?.kind, "local-stdio");
   assert.equal(server.runtimeBinding?.configTarget, "codex-mcp-json");
   assert.equal(server.runtimeBinding?.command, "npx");

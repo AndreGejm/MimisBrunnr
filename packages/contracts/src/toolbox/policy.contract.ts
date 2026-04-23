@@ -1,4 +1,5 @@
 export type ToolboxMutationLevel = "read" | "write" | "admin";
+export type ToolboxServerUsageClass = "general" | "docs-only";
 export type ToolboxSessionMode = "toolbox-bootstrap" | "toolbox-activated";
 export type ToolboxSessionEntryMode =
   | "legacy-direct"
@@ -79,6 +80,7 @@ export interface ToolboxServerManifest {
   displayName: string;
   source: "owned" | "peer";
   kind: "control" | "semantic" | "peer";
+  usageClass?: ToolboxServerUsageClass;
   trustClass: string;
   mutationLevel: ToolboxMutationLevel;
   tools: ToolboxServerToolManifest[];

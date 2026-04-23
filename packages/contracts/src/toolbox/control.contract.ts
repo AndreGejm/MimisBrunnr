@@ -5,7 +5,8 @@ import type {
 import type {
   ToolboxSessionEntryMode,
   ToolboxSessionMode,
-  CompiledToolboxToolDescriptor
+  CompiledToolboxToolDescriptor,
+  ToolboxServerUsageClass
 } from "./policy.contract.js";
 
 export interface ToolboxApprovalGrant {
@@ -28,6 +29,7 @@ export interface ToolboxHandoffLeaseDescriptor {
 export interface ToolboxClientMaterializationDescriptor {
   format: "codex-mcp-json";
   path: string;
+  serverUsageClasses?: Record<string, ToolboxServerUsageClass>;
 }
 
 export interface ToolboxSessionHandoff {

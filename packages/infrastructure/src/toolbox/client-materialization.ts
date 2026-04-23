@@ -5,6 +5,7 @@ import type {
   CompiledToolboxPolicy,
   CompiledToolboxProfile,
   CompiledToolboxToolDescriptor,
+  ToolboxServerUsageClass,
   ToolboxClientMaterializationDescriptor
 } from "@mimir/contracts";
 
@@ -22,6 +23,7 @@ export interface CodexClientMaterializationContent {
 export interface CodexClientMaterializationPlan
   extends ToolboxClientMaterializationDescriptor {
   serverIds: string[];
+  serverUsageClasses: Record<string, ToolboxServerUsageClass>;
   content: CodexClientMaterializationContent;
 }
 
@@ -43,7 +45,8 @@ export function buildCodexClientMaterializationDescriptor(input: {
   }
   return {
     format: plan.format,
-    path: plan.path
+    path: plan.path,
+    serverUsageClasses: { ...plan.serverUsageClasses }
   };
 }
 
@@ -102,6 +105,12 @@ export function buildCodexClientMaterializationPlan(input: {
       return [serverId, config];
     })
   );
+  const serverUsageClasses = Object.fromEntries(
+    localStdioServerIds.map((serverId) => [
+      serverId,
+      input.policy.servers[serverId].usageClass ?? "general"
+    ])
+  ) as Record<string, ToolboxServerUsageClass>;
 
   return {
     format: "codex-mcp-json",
@@ -111,6 +120,7 @@ export function buildCodexClientMaterializationPlan(input: {
         : defaultCodexClientMaterializationPath(input.rootDirectory)
     ),
     serverIds: localStdioServerIds,
+    serverUsageClasses,
     content: {
       mcpServers
     }
