@@ -15,6 +15,7 @@ import type {
   ToolboxDescribeResponse,
   ToolboxClientMaterializationDescriptor,
   ToolboxMutationLevel,
+  ToolboxServerSummary,
   ToolboxDeactivationResponse,
   ToolboxSessionHandoff
 } from "@mimir/contracts";
@@ -170,6 +171,7 @@ export class MimirControlSurface {
           fallbackProfile: profile.fallbackProfile ?? null,
           profileRevision: profile.profileRevision
         },
+        servers: this.buildServerSummaries(profile),
         tools: visibility.activeTools,
         suppressedTools: visibility.suppressedTools.map((tool) => ({
           toolId: tool.toolId,
@@ -778,7 +780,8 @@ export class MimirControlSurface {
         allowedCategories: profile.allowedCategories,
         deniedCategories: profile.deniedCategories,
         semanticCapabilities: profile.semanticCapabilities,
-        profileRevision: profile.profileRevision
+        profileRevision: profile.profileRevision,
+        servers: this.buildServerSummaries(profile)
       },
       client: {
         id: this.options.clientId,
@@ -1059,6 +1062,28 @@ export class MimirControlSurface {
       activeTools,
       suppressedTools
     };
+  }
+
+  private buildServerSummaries(
+    profile: CompiledToolboxProfile
+  ): ToolboxServerSummary[] {
+    return profile.includeServers.map((serverId) => {
+      const server = this.policy.servers[serverId];
+      return {
+        id: server.id,
+        displayName: server.displayName,
+        source: server.source,
+        kind: server.kind,
+        usageClass: server.usageClass ?? "general",
+        trustClass: server.trustClass,
+        mutationLevel: server.mutationLevel,
+        runtimeBindingKind: server.runtimeBinding?.kind ?? null,
+        clientMaterializationTarget:
+          server.runtimeBinding?.kind === "local-stdio"
+            ? (server.runtimeBinding.configTarget ?? null)
+            : null
+      };
+    });
   }
 
   private collectSuppressionReasons(

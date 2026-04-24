@@ -3,6 +3,8 @@ import type {
   ToolboxAuditEvent
 } from "./audit.contract.js";
 import type {
+  ToolboxMutationLevel,
+  ToolboxRuntimeBindingManifest,
   ToolboxSessionEntryMode,
   ToolboxSessionMode,
   CompiledToolboxToolDescriptor,
@@ -146,6 +148,18 @@ export interface ToolboxAntiUseCaseSummary {
   category: string;
 }
 
+export interface ToolboxServerSummary {
+  id: string;
+  displayName: string;
+  source: "owned" | "peer";
+  kind: "control" | "semantic" | "peer";
+  usageClass: ToolboxServerUsageClass;
+  trustClass: string;
+  mutationLevel: ToolboxMutationLevel;
+  runtimeBindingKind: ToolboxRuntimeBindingManifest["kind"] | null;
+  clientMaterializationTarget: "codex-mcp-json" | null;
+}
+
 export interface ToolboxDiscoveryProfileSummary {
   id: string;
   displayName: string;
@@ -177,6 +191,7 @@ export interface ToolboxDescribeEntry {
   fallbackProfile: string | null;
   workflow: ToolboxDiscoveryWorkflowSummary;
   profile: ToolboxDiscoveryProfileSummary;
+  servers: ToolboxServerSummary[];
   tools: CompiledToolboxToolDescriptor[];
   suppressedTools: ToolboxSuppressedToolSummary[];
   antiUseCases: ToolboxAntiUseCaseSummary[];
@@ -209,6 +224,7 @@ export interface ToolboxActiveProfileSummary {
   deniedCategories: string[];
   semanticCapabilities: string[];
   profileRevision: string;
+  servers: ToolboxServerSummary[];
 }
 
 export interface ToolboxActiveClientSummary {

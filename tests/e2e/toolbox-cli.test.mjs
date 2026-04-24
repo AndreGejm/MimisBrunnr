@@ -96,6 +96,15 @@ test("mimir-cli exposes toolbox discovery, activation, and sync commands from re
     { type: "denied_category", category: "deployment" }
   ]);
   assert.ok(
+    describePayload.toolbox.servers.some(
+      (server) =>
+        server.id === "mimir-core" &&
+        server.usageClass === "general" &&
+        server.source === "owned" &&
+        server.kind === "semantic"
+    )
+  );
+  assert.ok(
     describePayload.toolbox.suppressedTools.some(
       (tool) =>
         tool.toolId === "github.search" &&
@@ -452,6 +461,29 @@ test("mimir-cli surfaces Codex client materialization metadata and sync-toolbox-
     }
   );
 
+  const describeVoltagentResult = await runCliCommand(
+    [
+      "describe-toolbox",
+      "--json",
+      JSON.stringify({ toolboxId: "core-dev+voltagent-docs" }),
+      "--no-pretty"
+    ],
+    activationEnv,
+    workspaceRoot
+  );
+  assert.equal(describeVoltagentResult.exitCode, 0, describeVoltagentResult.stderr);
+  const describeVoltagentPayload = JSON.parse(describeVoltagentResult.stdout);
+  assert.equal(describeVoltagentPayload.ok, true);
+  assert.ok(
+    describeVoltagentPayload.toolbox.servers.some(
+      (server) =>
+        server.id === "voltagent-docs" &&
+        server.usageClass === "docs-only" &&
+        server.runtimeBindingKind === "local-stdio" &&
+        server.clientMaterializationTarget === "codex-mcp-json"
+    )
+  );
+
   const activeToolboxResult = await runCliCommand(
     ["list-active-toolbox", "--json", "{}", "--no-pretty"],
     {
@@ -471,6 +503,15 @@ test("mimir-cli surfaces Codex client materialization metadata and sync-toolbox-
       "voltagent-docs": "docs-only"
     }
   });
+  assert.ok(
+    activeToolboxPayload.profile.servers.some(
+      (server) =>
+        server.id === "voltagent-docs" &&
+        server.usageClass === "docs-only" &&
+        server.runtimeBindingKind === "local-stdio" &&
+        server.clientMaterializationTarget === "codex-mcp-json"
+    )
+  );
 
   const activeToolsResult = await runCliCommand(
     ["list-active-tools", "--json", "{}", "--no-pretty"],

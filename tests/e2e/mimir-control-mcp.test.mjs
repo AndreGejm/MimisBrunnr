@@ -253,6 +253,28 @@ test("mimir-control MCP exposes toolbox discovery tools and bootstrap-safe activ
 
     writeMcpMessage(child.stdin, {
       jsonrpc: "2.0",
+      id: 33,
+      method: "tools/call",
+      params: {
+        name: "describe_toolbox",
+        arguments: {
+          toolboxId: "core-dev+voltagent-docs"
+        }
+      }
+    });
+    const describeVoltAgentToolbox = await transport.next();
+    assert.ok(
+      describeVoltAgentToolbox.result.structuredContent.toolbox.servers.some(
+        (server) =>
+          server.id === "voltagent-docs" &&
+          server.usageClass === "docs-only" &&
+          server.runtimeBindingKind === "local-stdio" &&
+          server.clientMaterializationTarget === "codex-mcp-json"
+      )
+    );
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
       id: 31,
       method: "tools/call",
       params: {
@@ -357,6 +379,14 @@ test("mimir-control MCP exposes toolbox discovery tools and bootstrap-safe activ
     );
     assert.equal(activeToolbox.result.structuredContent.workflow.requiresApproval, false);
     assert.equal(activeToolbox.result.structuredContent.workflow.fallbackProfile, null);
+    assert.ok(
+      activeToolbox.result.structuredContent.profile.servers.some(
+        (server) =>
+          server.id === "mimir-control" &&
+          server.usageClass === "general" &&
+          server.source === "owned"
+      )
+    );
 
     writeMcpMessage(child.stdin, {
       jsonrpc: "2.0",
