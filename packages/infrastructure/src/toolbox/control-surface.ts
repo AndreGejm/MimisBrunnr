@@ -1132,6 +1132,7 @@ export class MimirControlSurface {
       targetSessionMode: input.profile.sessionMode,
       fallbackProfileId: input.fallbackProfile,
       downgradeTarget: input.fallbackProfile,
+      servers: this.buildServerSummaries(input.profile),
       clientId: input.clientId,
       handoffStrategy: client.handoffStrategy,
       handoffPresetRef: client.handoffPresetRef,

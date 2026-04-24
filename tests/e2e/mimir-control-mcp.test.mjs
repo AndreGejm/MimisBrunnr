@@ -351,6 +351,15 @@ test("mimir-control MCP exposes toolbox discovery tools and bootstrap-safe activ
       activation.result.structuredContent.handoff.environment.MAB_TOOLBOX_SESSION_POLICY_TOKEN,
       "{{leaseToken}}"
     );
+    assert.ok(
+      activation.result.structuredContent.handoff.servers.some(
+        (server) =>
+          server.id === "mimir-core" &&
+          server.usageClass === "general" &&
+          server.source === "owned" &&
+          server.kind === "semantic"
+      )
+    );
     assert.match(
       activation.result.structuredContent.leaseExpiresAt,
       /^\d{4}-\d{2}-\d{2}T/

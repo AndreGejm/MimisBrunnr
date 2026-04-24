@@ -40,6 +40,7 @@ export interface ToolboxSessionHandoff {
   targetSessionMode: ToolboxSessionMode;
   fallbackProfileId: string;
   downgradeTarget: string;
+  servers: ToolboxServerSummary[];
   clientId: string;
   handoffStrategy: "env-reconnect" | "manual-env-reconnect";
   handoffPresetRef?: string;

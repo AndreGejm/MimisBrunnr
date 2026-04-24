@@ -247,6 +247,15 @@ test("mimir-cli exposes toolbox discovery, activation, and sync commands from re
     activationPayload.activation.handoff.environment.MAB_TOOLBOX_SESSION_POLICY_TOKEN,
     "{{leaseToken}}"
   );
+  assert.ok(
+    activationPayload.activation.handoff.servers.some(
+      (server) =>
+        server.id === "mimir-core" &&
+        server.usageClass === "general" &&
+        server.source === "owned" &&
+        server.kind === "semantic"
+    )
+  );
   assert.equal(
     activationPayload.activation.handoff.actorDefaults.sessionPolicyTokenFromEnv,
     "MAB_TOOLBOX_SESSION_POLICY_TOKEN"
@@ -459,6 +468,15 @@ test("mimir-cli surfaces Codex client materialization metadata and sync-toolbox-
     {
       "voltagent-docs": "docs-only"
     }
+  );
+  assert.ok(
+    activationPayload.activation.handoff.servers.some(
+      (server) =>
+        server.id === "voltagent-docs" &&
+        server.usageClass === "docs-only" &&
+        server.runtimeBindingKind === "local-stdio" &&
+        server.clientMaterializationTarget === "codex-mcp-json"
+    )
   );
 
   const describeVoltagentResult = await runCliCommand(
