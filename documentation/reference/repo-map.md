@@ -12,10 +12,12 @@ This map is based on tracked repository content. It intentionally separates trac
 | `pnpm-workspace.yaml` | workspace definition |
 | `pnpm-lock.yaml` | lockfile |
 | `.env.example` | reference env template |
+| `.github/workflows/` | targeted GitHub Actions workflows for VoltAgent contract and canary coverage |
 | `apps/` | transport entrypoints |
 | `packages/` | layered TypeScript code |
 | `docker/` | Dockerfiles, compose profiles, and Docker AI tool manifests |
-| `documentation/` | canonical docs plus planning/history docs |
+| `documentation/` | canonical setup, runtime, operations, reference, and release docs |
+| `docs/` | internal planning/spec snapshots for recent work |
 | `runtimes/` | vendored Python coding runtime |
 | `tests/` | end-to-end test suite |
 | `scripts/` | launcher wrappers, access installers, installer backend, diagnostics, review GUI, and governed cleanup wrapper |
@@ -200,12 +202,14 @@ External source adapters are gatekeeper surfaces for user-owned files. The curre
 
 - `documentation/planning/*`
 - `documentation/superpowers/plans/*`
+- `documentation/superpowers/specs/*`
+- `docs/superpowers/plans/*`
+- `docs/superpowers/specs/*`
 
 ## Tracked absences
 
 The tracked repo currently has no:
 
-- `.github/` workflow definitions
 - Kubernetes manifests
 - Terraform
 - migration directory
@@ -234,6 +238,6 @@ Those are not part of the tracked repository unless they are later committed.
 
 - None
 
-### TODO gaps
+### Documentation maintenance note
 
-- If tracked CI workflows or installer artifacts are added later, expand the top-level map and tracked absences sections
+- Expand the top-level map and tracked absences sections if the repo adds new tracked workflow, installer, or packaging surfaces

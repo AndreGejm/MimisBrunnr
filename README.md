@@ -39,7 +39,7 @@ The tracked repository currently implements:
 
 The tracked repository does not currently include:
 
-- GitHub Actions or other tracked CI/CD definitions
+- a full tracked CI/CD pipeline for docs, builds, tests, packaging, and release publication
 - Kubernetes, Helm, Terraform, or deployment descriptors beyond the tracked local Docker profiles
 - a tracked migration system for SQLite
 - a tracked dotenv loader for Node processes
@@ -428,7 +428,8 @@ python3 -m pytest runtimes/local_experts/tests/test_safety_gate.py -v # macOS/Li
 apps/          transport entrypoints
 packages/      layered TypeScript modules
 docker/        Dockerfile and local compose profile
-documentation/          canonical docs plus planning/history docs
+documentation/ canonical setup, runtime, operations, reference, and release docs
+docs/          internal planning/spec snapshots for recent work
 runtimes/      vendored Python coding runtime
 tests/         end-to-end transport and service tests
 scripts/       launcher, installer backend, doctor, review, and cleanup helpers
@@ -451,13 +452,16 @@ Full map: `documentation/reference/repo-map.md`
 - `documentation/agents/ai-navigation-guide.md`
 - `documentation/release/contributor-beta-readiness.md`
 
-`documentation/planning/` is useful for history and rollout context, but it is not the primary source of truth for the current runtime.
+`documentation/` is the canonical source for current runtime, setup, operations,
+reference, and release docs. `documentation/planning/`, `documentation/superpowers/`,
+and `docs/superpowers/` are historical or internal planning material; they are
+useful for rollout context, but they are not release contract docs.
 
 ## Known limitations and active documentation risks
 
 - namespace browsing is currently backed by rows in the `notes` table; imported jobs and session archives are stored, but they are not exposed through the namespace tree
 - the Docker MCP session profile still assumes Qdrant and the model endpoint are managed intentionally outside the session container
-- there is no tracked CI pipeline validating docs, builds, or tests automatically
+- tracked GitHub Actions currently cover targeted VoltAgent contract and upstream canary checks, but there is no full release pipeline validating docs, builds, tests, packaging, and release publication together
 
 ## AI-agent navigation
 
@@ -481,6 +485,6 @@ Start here if you are using an automated reviewer or coding agent:
 
 - The generic MCP client command example will need minor format changes depending on the client you use
 
-### TODO gaps
+### Documentation maintenance note
 
 - If the repo adds dotenv loading, CI, deployment descriptors, migration tooling, or another Docker/MCP runtime shape, update this README and the setup/reference docs together

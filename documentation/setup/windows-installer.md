@@ -25,6 +25,9 @@ Current supported operations:
 - `apply-client-access`
 - `show-state`
 
+Replace `<REPO_ROOT>` in the command examples below with the absolute path to
+your local checkout.
+
 These operations are intentionally narrow. They do not clone the repo, prepare
 model-backed mode, or provide a full GUI bootstrap yet. They currently:
 
@@ -77,7 +80,7 @@ What this does:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
   -Operation audit-install-surface `
-  -RepoRoot F:\Dev\scripts\Mimir\mimir `
+  -RepoRoot <REPO_ROOT> `
   -Json
 ```
 
@@ -97,7 +100,7 @@ What this does:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
   -Operation plan-client-access `
-  -RepoRoot F:\Dev\scripts\Mimir\mimir `
+  -RepoRoot <REPO_ROOT> `
   -Json
 ```
 
@@ -117,7 +120,7 @@ What this does:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
   -Operation prepare-repo-workspace `
-  -RepoRoot F:\Dev\scripts\Mimir\mimir `
+  -RepoRoot <REPO_ROOT> `
   -Json
 ```
 
@@ -152,7 +155,7 @@ What this does not do:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
   -Operation audit-toolbox-control-surface `
-  -RepoRoot F:\Dev\scripts\Mimir\mimir `
+  -RepoRoot <REPO_ROOT> `
   -Json
 ```
 
@@ -172,7 +175,7 @@ What this does:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
   -Operation audit-active-toolbox-session `
-  -RepoRoot F:\Dev\scripts\Mimir\mimir `
+  -RepoRoot <REPO_ROOT> `
   -Json
 ```
 
@@ -192,7 +195,7 @@ What this does:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
   -Operation audit-toolbox-client-handoff `
-  -RepoRoot F:\Dev\scripts\Mimir\mimir `
+  -RepoRoot <REPO_ROOT> `
   -ClientName codex `
   -Json
 ```
@@ -221,7 +224,7 @@ What this does not do:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
   -Operation audit-toolbox-assets `
-  -RepoRoot F:\Dev\scripts\Mimir\mimir `
+  -RepoRoot <REPO_ROOT> `
   -Json
 ```
 
@@ -242,7 +245,7 @@ What this does:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
   -Operation prepare-toolbox-runtime `
-  -RepoRoot F:\Dev\scripts\Mimir\mimir `
+  -RepoRoot <REPO_ROOT> `
   -Json
 ```
 
@@ -268,7 +271,7 @@ What this does not do:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
   -Operation plan-docker-mcp-toolkit-apply `
-  -RepoRoot F:\Dev\scripts\Mimir\mimir `
+  -RepoRoot <REPO_ROOT> `
   -Json
 ```
 
@@ -313,7 +316,7 @@ Why this exists:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
   -Operation audit-docker-mcp-toolkit `
-  -RepoRoot F:\Dev\scripts\Mimir\mimir `
+  -RepoRoot <REPO_ROOT> `
   -Json
 ```
 
@@ -341,7 +344,7 @@ What this does not do:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
   -Operation apply-client-access `
-  -RepoRoot F:\Dev\scripts\Mimir\mimir `
+  -RepoRoot <REPO_ROOT> `
   -Json
 ```
 
