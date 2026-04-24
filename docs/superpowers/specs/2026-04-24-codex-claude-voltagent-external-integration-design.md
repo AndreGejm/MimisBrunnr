@@ -263,6 +263,12 @@ Recommended components:
 Owns VoltAgent startup, skill registration, workspace configuration, model
 providers, hooks, and subagent registration.
 
+If this runtime uses custom `hooks.onPrepareMessages`, it must also explicitly
+enable `workspaceSkillsPrompt` or chain
+`workspace.createSkillsPromptHook(...)`. VoltAgent otherwise skips automatic
+workspace-skill prompt injection when a custom message-preparation hook is
+present.
+
 ### `MimirCommandAdapter`
 
 Owns MCP requests to Mimir and exposes a narrow typed client API, for example:
@@ -295,6 +301,22 @@ Optional client-local cache for stable read surfaces like:
 
 This cache must be ephemeral or client-owned. Durable authoritative state stays
 in Mimir.
+
+## VoltAgent workflows
+
+VoltAgent workflows may be used on the external client side for client-owned
+planning, orchestration, and multi-step paid-agent execution.
+
+Rules:
+
+- workflow state and history are client-owned operational state
+- VoltAgent workflow memory is not authoritative durable memory
+- mimisbrunnr remains the system of record for governed durable memory
+- workflow suspension, retries, and observability must not be treated as a
+  replacement for Mimir review, audit, or promotion flows
+
+Workflow usage is optional. It is a client-side orchestration feature, not a
+Mimir concern.
 
 ## Security and trust boundary
 
@@ -427,8 +449,10 @@ This external integration is correct only if all of the following are true:
    a bounded Mimir-owned helper role.
 5. No Mimir command or toolbox profile is introduced for `workspace_*` skill
    surfaces.
-6. Mimir contracts remain provider-agnostic.
-7. Mimir-side VoltAgent upgrades remain isolated to bounded helper roles.
+6. VoltAgent `Workspace` and `workspace_*` features are introduced only in the
+   external client package, never in Mimir.
+7. Mimir contracts remain provider-agnostic.
+8. Mimir-side VoltAgent upgrades remain isolated to bounded helper roles.
 
 ## Rejection rule for future proposals
 
