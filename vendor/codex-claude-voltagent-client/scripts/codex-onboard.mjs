@@ -9,6 +9,7 @@ import {
 } from "../plugins/codex-voltagent-default/scripts/lib/home-plugin-install.mjs";
 import {
   createDoctor,
+  resolveClientConfigPath,
   runRuntimeProbe
 } from "../plugins/codex-voltagent-default/scripts/lib/client-config.mjs";
 import {
@@ -74,6 +75,13 @@ async function main() {
   installNativeCodexSkills(nativeInstallLayout);
 
   const config = await createValidatedClientConfig(parsed.initArgs);
+  const resolvedConfig = resolveClientConfigPath({
+    explicitConfigPath: parsed.initArgs.configExplicit
+      ? parsed.initArgs.configPath
+      : undefined,
+    workspaceRoot: parsed.initArgs.workspaceRoot,
+    homeRoot: parsed.installArgs.homeRoot
+  });
 
   writeClientConfigFile(parsed.initArgs.configPath, config, parsed.initArgs.force);
 
@@ -102,6 +110,8 @@ async function main() {
     join(pluginPath, ".codex-plugin", "plugin.json")
   );
   const doctor = createDoctor(config, {
+    configPath: resolvedConfig.configPath,
+    configSource: resolvedConfig.configSource,
     workspaceRoot: parsed.initArgs.workspaceRoot,
     homeRoot: parsed.installArgs.homeRoot,
     pluginShellPresent,
@@ -151,7 +161,8 @@ async function main() {
           pluginPath: pluginInstall?.pluginPath ?? null
         },
         config: {
-          configPath: parsed.initArgs.configPath,
+          configPath: resolvedConfig.configPath,
+          configSource: resolvedConfig.configSource,
           mode: config.runtime.mode,
           workspaceRoot: parsed.initArgs.workspaceRoot ?? null,
           claudeEnabled: config.claude.enabled,

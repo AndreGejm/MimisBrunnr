@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { loadClientModule } from "./plugin-runtime-paths.mjs";
+import { defaultHomeGlobalConfigPath } from "./client-config.mjs";
 
 const allowedModes = new Set([
   "local-only",
@@ -116,6 +117,7 @@ function readCodexMimirConfig(homeRoot = homedir()) {
 export function parseInitArgs(argv, options = {}) {
   const homeRoot = resolve(options.homeRoot ?? homedir());
   const parsed = {
+    configExplicit: false,
     configPath: undefined,
     workspaceRoot: resolve(process.cwd()),
     mode: "voltagent-default",
@@ -135,6 +137,7 @@ export function parseInitArgs(argv, options = {}) {
     }
 
     if (token === "--config") {
+      parsed.configExplicit = true;
       parsed.configPath = resolve(argv[index + 1]);
       index += 1;
       continue;
@@ -221,10 +224,7 @@ export function parseInitArgs(argv, options = {}) {
   }
 
   if (!parsed.configPath) {
-    parsed.configPath = resolve(
-      parsed.workspaceRoot ?? process.cwd(),
-      "client-config.json"
-    );
+    parsed.configPath = resolve(defaultHomeGlobalConfigPath(homeRoot));
   }
 
   return parsed;
@@ -364,7 +364,9 @@ export async function createValidatedClientConfig(args) {
     },
     runtime: {
       mode: args.mode,
-      trustedWorkspaceRoots: args.workspaceRoot ? [args.workspaceRoot] : []
+      workspaceTrustMode:
+        args.mode === "local-only" ? "explicit-roots" : "all-workspaces",
+      trustedWorkspaceRoots: []
     },
     claude: buildClaudeConfig(args.mode, args.primaryModel)
   };

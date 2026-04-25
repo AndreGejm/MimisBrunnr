@@ -1,12 +1,14 @@
 import { listProfiles, parseCliArgs, readClientConfig } from "./lib/client-config.mjs";
 
 try {
-  const { configPath } = parseCliArgs(process.argv.slice(2));
+  const { configPath, configSource } = parseCliArgs(process.argv.slice(2));
   const config = readClientConfig(configPath);
 
   process.stdout.write(
     `${JSON.stringify(
       {
+        configPath,
+        configSource,
         enabled: config.claude.enabled,
         profiles: listProfiles(config)
       },

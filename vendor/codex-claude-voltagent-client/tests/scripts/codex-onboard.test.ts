@@ -83,7 +83,7 @@ function runRepoScript(
 }
 
 describe("repo-level Codex onboarding", () => {
-  it("installs native Codex skills, writes workspace config, and runs doctor in one step", () => {
+  it("installs native Codex skills, writes the home-global config, and runs doctor in one step", () => {
     const workspaceRoot = createTempDir("codex-voltagent-onboard-workspace-");
     const stateRoot = createTempDir("codex-voltagent-onboard-state-");
     const { homeRoot, codexConfigPath } = createTempCodexHome(
@@ -104,7 +104,7 @@ describe("repo-level Codex onboarding", () => {
     );
 
     const result = JSON.parse(stdout);
-    const configPath = join(workspaceRoot, "client-config.json");
+    const configPath = join(homeRoot, ".codex", "voltagent", "client-config.json");
     const skillsTarget = join(homeRoot, ".codex", "skills", "voltagent-default");
     const config = JSON.parse(readFileSync(configPath, "utf8"));
 
@@ -118,21 +118,54 @@ describe("repo-level Codex onboarding", () => {
       },
       config: {
         configPath,
+        configSource: "home-global-default",
         mode: "voltagent-default",
         workspaceRoot
       }
     });
     expect(existsSync(skillsTarget)).toBe(true);
     expect(realpathSync(skillsTarget)).toBe(realpathSync(join(repoRoot, "skills")));
-    expect(config.runtime.trustedWorkspaceRoots).toEqual([workspaceRoot]);
+    expect(config.runtime.workspaceTrustMode).toBe("all-workspaces");
+    expect(config.runtime.trustedWorkspaceRoots).toEqual([]);
     expect(config.skills.rootPaths).toEqual([join(homeRoot, ".codex", "skills")]);
     expect(result.doctor.ok).toBe(true);
+    expect(result.doctor.status.configPath).toBe(configPath);
+    expect(result.doctor.status.configSource).toBe("home-global-default");
     expect(result.doctor.status.activation).toEqual({
       nativeCodexSkillsConfigured: true,
       nativeCodexInstallPresent: true,
       pluginShellPresent: false,
       surface: "native-skills-only"
     });
+  });
+
+  it("still allows an explicit workspace-local override config path", () => {
+    const workspaceRoot = createTempDir("codex-voltagent-onboard-workspace-");
+    const { homeRoot, codexConfigPath } = createTempCodexHome(
+      "codex-voltagent-onboard-home-"
+    );
+    const overrideConfigPath = join(workspaceRoot, "client-config.json");
+
+    writeCodexMimirConfig(codexConfigPath, process.execPath, [
+      join(repoRoot, "tests", "fixtures", "fake-mimir-mcp-server.mjs")
+    ]);
+
+    const stdout = runRepoScript(
+      "scripts/codex-onboard.mjs",
+      ["--home-root", homeRoot, "--config", overrideConfigPath],
+      workspaceRoot,
+      {
+        USERPROFILE: homeRoot
+      }
+    );
+
+    const result = JSON.parse(stdout);
+    const config = JSON.parse(readFileSync(overrideConfigPath, "utf8"));
+
+    expect(result.config.configPath).toBe(overrideConfigPath);
+    expect(result.config.configSource).toBe("explicit");
+    expect(config.runtime.workspaceTrustMode).toBe("all-workspaces");
+    expect(config.runtime.trustedWorkspaceRoots).toEqual([]);
   });
 
   it("can optionally install the home-local plugin shell during onboarding", () => {

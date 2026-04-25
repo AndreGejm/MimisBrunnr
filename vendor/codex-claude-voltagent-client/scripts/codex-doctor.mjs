@@ -1,74 +1,26 @@
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import {
   createDoctor,
+  parseCliArgs,
   readClientConfig,
   runRuntimeProbe
 } from "../plugins/codex-voltagent-default/scripts/lib/client-config.mjs";
 import { hasNativeCodexInstall } from "./lib/codex-native-install.mjs";
 
-function parseDoctorArgs(argv) {
-  const parsed = {
-    homeRoot: resolve(homedir()),
-    configPath: undefined,
-    workspaceRoot: resolve(process.cwd()),
-    probeRuntime: false,
-    stateRoot: undefined
-  };
-
-  for (let index = 0; index < argv.length; index += 1) {
-    const token = argv[index];
-
-    if (token === "--") {
-      continue;
-    }
-
-    if (token === "--home-root") {
-      parsed.homeRoot = resolve(argv[index + 1]);
-      index += 1;
-      continue;
-    }
-
-    if (token === "--config") {
-      parsed.configPath = resolve(argv[index + 1]);
-      index += 1;
-      continue;
-    }
-
-    if (token === "--workspace") {
-      parsed.workspaceRoot = resolve(argv[index + 1]);
-      index += 1;
-      continue;
-    }
-
-    if (token === "--probe-runtime") {
-      parsed.probeRuntime = true;
-      continue;
-    }
-
-    if (token === "--state-root") {
-      parsed.stateRoot = resolve(argv[index + 1]);
-      index += 1;
-      continue;
-    }
-
-    throw new Error(`Unknown argument: ${token}`);
-  }
-
-  if (!parsed.configPath) {
-    parsed.configPath = resolve(parsed.workspaceRoot, "client-config.json");
-  }
-
-  return parsed;
-}
-
 try {
-  const parsed = parseDoctorArgs(process.argv.slice(2));
-  const config = readClientConfig(parsed.configPath);
+  const {
+    configPath,
+    configSource,
+    homeRoot,
+    workspaceRoot,
+    probeRuntime,
+    stateRoot
+  } = parseCliArgs(process.argv.slice(2));
+  const config = readClientConfig(configPath);
   const pluginShellPresent = existsSync(
     join(
-      parsed.homeRoot,
+      homeRoot,
       "plugins",
       "codex-voltagent-default",
       ".codex-plugin",
@@ -76,18 +28,20 @@ try {
     )
   );
   const report = createDoctor(config, {
-    workspaceRoot: parsed.workspaceRoot,
-    homeRoot: parsed.homeRoot,
+    configPath,
+    configSource,
+    homeRoot,
+    workspaceRoot,
     pluginShellPresent,
-    nativeCodexInstallPresent: hasNativeCodexInstall(parsed.homeRoot)
+    nativeCodexInstallPresent: hasNativeCodexInstall(homeRoot)
   });
 
-  if (parsed.probeRuntime) {
+  if (probeRuntime) {
     try {
       const probe = runRuntimeProbe({
-        configPath: parsed.configPath,
-        workspaceRoot: parsed.workspaceRoot,
-        stateRoot: parsed.stateRoot
+        configPath,
+        workspaceRoot,
+        stateRoot
       });
 
       report.status.runtimeHealth = probe.runtimeHealth;

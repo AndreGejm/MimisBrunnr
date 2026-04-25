@@ -6,7 +6,9 @@ import {
 } from "./lib/client-config.mjs";
 
 try {
-  const { configPath, workspaceRoot } = parseCliArgs(process.argv.slice(2));
+  const { configPath, configSource, workspaceRoot } = parseCliArgs(
+    process.argv.slice(2)
+  );
   const config = readClientConfig(configPath);
   const updatedConfig = enableDefaultMode(config, workspaceRoot);
 
@@ -16,6 +18,8 @@ try {
     `${JSON.stringify(
       {
         ok: true,
+        configPath,
+        configSource,
         mode: updatedConfig.runtime.mode,
         workspaceRoot,
         trustedWorkspaceRoots: updatedConfig.runtime.trustedWorkspaceRoots
