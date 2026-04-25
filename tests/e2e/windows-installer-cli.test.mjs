@@ -142,7 +142,9 @@ test("windows installer cli plan-client-access returns a dry-run write plan with
   const stateRoot = path.join(root, "state");
   const configPath = path.join(root, "config.toml");
   const manifestPath = path.join(root, "installation.json");
+  const workspacePath = path.join(root, "workspace");
   await mkdir(binDir, { recursive: true });
+  await mkdir(workspacePath, { recursive: true });
   await writeFile(configPath, "# existing config\n", "utf8");
   await writeFile(manifestPath, JSON.stringify({ schemaVersion: 1 }, null, 2), "utf8");
   await writeFile(path.join(binDir, "mimir.cmd"), "@echo off\r\n", "utf8");
@@ -164,6 +166,8 @@ test("windows installer cli plan-client-access returns a dry-run write plan with
     binDir,
     "-ManifestPath",
     manifestPath,
+    "-WorkspacePath",
+    workspacePath,
     "-StateRoot",
     stateRoot,
     "-Json"
@@ -181,6 +185,19 @@ test("windows installer cli plan-client-access returns a dry-run write plan with
   assert.equal(envelope.details.writePlan.applyCommand.serverName, "mimir");
   assert.equal(envelope.details.writePlan.applyCommand.repoRoot, process.cwd());
   assert.ok(Array.isArray(envelope.details.writePlan.writeTargets));
+  assert.equal(envelope.details.clientAccess.codexVoltAgentAccess.workspacePath, workspacePath);
+  assert.equal(
+    envelope.details.clientAccess.codexVoltAgentAccess.workspaceConfigPath,
+    path.join(workspacePath, "client-config.json")
+  );
+  assert.equal(
+    envelope.details.writePlan.codexVoltAgentAccess.workspaceConfigPath,
+    path.join(workspacePath, "client-config.json")
+  );
+  assert.equal(
+    envelope.details.writePlan.codexVoltAgentAccess.nativeSkillPath,
+    path.join(process.env.USERPROFILE ?? process.env.HOME ?? "", ".codex", "skills", "voltagent-default")
+  );
 
   const configTarget = envelope.details.writePlan.writeTargets.find((target) => target.id === "client-config");
   assert.ok(configTarget);
@@ -205,6 +222,24 @@ test("windows installer cli plan-client-access returns a dry-run write plan with
   assert.equal(launcherTarget.mutationKind, "replace_file");
   assert.equal(launcherTarget.backupStrategy, "none");
   assert.equal(launcherTarget.backupPathPattern, null);
+
+  const vendoredConfigTarget = envelope.details.writePlan.writeTargets.find(
+    (target) => target.id === "codex-voltagent-config"
+  );
+  assert.ok(vendoredConfigTarget);
+  assert.equal(vendoredConfigTarget.path, path.join(workspacePath, "client-config.json"));
+  assert.equal(vendoredConfigTarget.exists, false);
+  assert.equal(vendoredConfigTarget.mutationKind, "write_file");
+
+  const nativeSkillTarget = envelope.details.writePlan.writeTargets.find(
+    (target) => target.id === "codex-voltagent-native-skills"
+  );
+  assert.ok(nativeSkillTarget);
+  assert.equal(
+    nativeSkillTarget.path,
+    path.join(process.env.USERPROFILE ?? process.env.HOME ?? "", ".codex", "skills", "voltagent-default")
+  );
+  assert.equal(nativeSkillTarget.mutationKind, "create_link");
 
   const persistedReport = JSON.parse(
     await readFile(path.join(stateRoot, "last-report.json"), "utf8")

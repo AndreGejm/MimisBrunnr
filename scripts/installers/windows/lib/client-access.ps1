@@ -2,6 +2,7 @@ Set-StrictMode -Version Latest
 
 . (Join-Path $PSScriptRoot "write-plan.ps1")
 . (Join-Path $PSScriptRoot "adapters\default-access.ps1")
+. (Join-Path $PSScriptRoot "adapters\codex-voltagent-access.ps1")
 
 function Get-SupportedInstallerClients {
   [CmdletBinding()]
@@ -106,6 +107,8 @@ function Invoke-InstallerClientAccessPlan {
     [Parameter(Mandatory = $true)]
     [string]$ManifestPath,
 
+    [string]$WorkspacePath = "",
+
     [Parameter(Mandatory = $true)]
     [string]$ServerName
   )
@@ -123,6 +126,11 @@ function Invoke-InstallerClientAccessPlan {
 
       $configExists = Test-Path $ConfigPath
       $manifestExists = Test-Path $ManifestPath
+      $codexVoltAgentPlan = Get-CodexVoltAgentPlanMetadata `
+        -RepoRoot $RepoRoot `
+        -WorkspacePath $WorkspacePath
+      $workspaceConfigExists = Test-Path $codexVoltAgentPlan.workspaceConfigPath
+      $nativeSkillExists = Test-Path $codexVoltAgentPlan.nativeSkillPath
       $writeTargets = @(
         (New-InstallerWriteTarget `
           -Id "client-config" `
@@ -137,7 +145,19 @@ function Invoke-InstallerClientAccessPlan {
           -Exists $manifestExists `
           -MutationKind "replace_file" `
           -BackupStrategy $(if ($manifestExists) { "timestamped_copy" } else { "none" }) `
-          -BackupPathPattern $(if ($manifestExists) { Get-InstallerTimestampedBackupPathPattern -Path $ManifestPath } else { $null }))
+          -BackupPathPattern $(if ($manifestExists) { Get-InstallerTimestampedBackupPathPattern -Path $ManifestPath } else { $null })),
+        (New-InstallerWriteTarget `
+          -Id "codex-voltagent-config" `
+          -Path $codexVoltAgentPlan.workspaceConfigPath `
+          -Exists $workspaceConfigExists `
+          -MutationKind "write_file" `
+          -BackupStrategy $(if ($workspaceConfigExists) { "timestamped_copy" } else { "none" }) `
+          -BackupPathPattern $(if ($workspaceConfigExists) { Get-InstallerTimestampedBackupPathPattern -Path $codexVoltAgentPlan.workspaceConfigPath } else { $null })),
+        (New-InstallerWriteTarget `
+          -Id "codex-voltagent-native-skills" `
+          -Path $codexVoltAgentPlan.nativeSkillPath `
+          -Exists $nativeSkillExists `
+          -MutationKind "create_link")
       )
 
       foreach ($launcherFile in @($adapter.plan.launcherFiles)) {
@@ -158,6 +178,12 @@ function Invoke-InstallerClientAccessPlan {
           accessKind = $client.accessKind
           serverName = $ServerName
           configPath = $ConfigPath
+          codexVoltAgentAccess = [pscustomobject]@{
+            vendoredClientRoot = $codexVoltAgentPlan.vendoredClientRoot
+            workspacePath = $codexVoltAgentPlan.workspacePath
+            workspaceConfigPath = $codexVoltAgentPlan.workspaceConfigPath
+            nativeSkillPath = $codexVoltAgentPlan.nativeSkillPath
+          }
         }
         writePlan = [pscustomobject]@{
           applyCommand = [pscustomobject]@{
@@ -166,11 +192,18 @@ function Invoke-InstallerClientAccessPlan {
             workingDirectory = $RepoRoot
             repoRoot = $RepoRoot
             serverName = $ServerName
+            workspacePath = $codexVoltAgentPlan.workspacePath
           }
           launcherBinDir = $BinDir
           manifestPath = $ManifestPath
           launcherFiles = @($adapter.plan.launcherFiles)
           manifest = $adapter.plan.manifest
+          codexVoltAgentAccess = [pscustomobject]@{
+            vendoredClientRoot = $codexVoltAgentPlan.vendoredClientRoot
+            workspacePath = $codexVoltAgentPlan.workspacePath
+            workspaceConfigPath = $codexVoltAgentPlan.workspaceConfigPath
+            nativeSkillPath = $codexVoltAgentPlan.nativeSkillPath
+          }
           writeTargets = @($writeTargets)
         }
       }
@@ -200,6 +233,8 @@ function Invoke-InstallerClientAccessApply {
     [Parameter(Mandatory = $true)]
     [string]$ManifestPath,
 
+    [string]$WorkspacePath = "",
+
     [Parameter(Mandatory = $true)]
     [string]$ServerName
   )
@@ -210,6 +245,7 @@ function Invoke-InstallerClientAccessApply {
     -ConfigPath $ConfigPath `
     -BinDir $BinDir `
     -ManifestPath $ManifestPath `
+    -WorkspacePath $WorkspacePath `
     -ServerName $ServerName
 
   $backupCandidates = @($plan.writePlan.writeTargets | Where-Object { $_.backupStrategy -eq "timestamped_copy" })

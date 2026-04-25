@@ -7,6 +7,7 @@ param(
   [string]$StateRoot = "",
   [string]$ClientName = "codex",
   [string]$ConfigPath = "",
+  [string]$WorkspacePath = "",
   [string]$BinDir = "",
   [string]$ManifestPath = "",
   [string]$ToolboxManifestDir = "",
@@ -62,6 +63,11 @@ if (-not $ServerName) {
 $RepoRoot = [System.IO.Path]::GetFullPath($RepoRoot)
 $StateRoot = [System.IO.Path]::GetFullPath($StateRoot)
 $ConfigPath = [System.IO.Path]::GetFullPath($ConfigPath)
+$WorkspacePath = if ($WorkspacePath) {
+  [System.IO.Path]::GetFullPath($WorkspacePath)
+} else {
+  $RepoRoot
+}
 $BinDir = [System.IO.Path]::GetFullPath($BinDir)
 $ManifestPath = [System.IO.Path]::GetFullPath($ManifestPath)
 $ToolboxManifestDir = [System.IO.Path]::GetFullPath($ToolboxManifestDir)
@@ -92,6 +98,7 @@ switch ($Operation) {
       -ConfigPath $ConfigPath `
       -BinDir $BinDir `
       -ManifestPath $ManifestPath `
+      -WorkspacePath $WorkspacePath `
       -ServerName $ServerName
 
     $report = $adapter.report
@@ -134,6 +141,7 @@ switch ($Operation) {
       -ConfigPath $ConfigPath `
       -BinDir $BinDir `
       -ManifestPath $ManifestPath `
+      -WorkspacePath $WorkspacePath `
       -ServerName $ServerName
 
     $envelope = New-InstallerResultEnvelope `
