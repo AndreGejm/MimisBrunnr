@@ -56,7 +56,10 @@ class ContentLengthTransport {
     private readonly output: NodeJS.WritableStream
   ) {
     input.on("data", (chunk) => {
-      this.buffer = Buffer.concat([this.buffer, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
+      this.buffer = Buffer.concat([
+        this.buffer,
+        Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+      ]);
       this.drain();
     });
   }
@@ -66,35 +69,20 @@ class ContentLengthTransport {
   }
 
   send(message: unknown): void {
-    const body = Buffer.from(JSON.stringify(message), "utf8");
-    const header = Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, "utf8");
-    this.output.write(Buffer.concat([header, body]));
+    this.output.write(`${JSON.stringify(message)}\n`);
   }
 
   private drain(): void {
     while (true) {
-      const separator = this.buffer.indexOf("\r\n\r\n");
-      if (separator === -1) {
+      const lineBreakIndex = this.buffer.indexOf("\n");
+      if (lineBreakIndex === -1) {
         return;
       }
 
-      const headerText = this.buffer.subarray(0, separator).toString("utf8");
-      const contentLength = parseContentLength(headerText);
-      if (contentLength === null) {
-        throw new Error("MCP request is missing a valid Content-Length header.");
-      }
+      const line = this.buffer.toString("utf8", 0, lineBreakIndex).replace(/\r$/, "");
+      this.buffer = this.buffer.subarray(lineBreakIndex + 1);
+      const parsed = JSON.parse(line) as unknown;
 
-      const totalLength = separator + 4 + contentLength;
-      if (this.buffer.length < totalLength) {
-        return;
-      }
-
-      const payload = this.buffer
-        .subarray(separator + 4, totalLength)
-        .toString("utf8");
-      this.buffer = this.buffer.subarray(totalLength);
-
-      const parsed = JSON.parse(payload) as unknown;
       for (const listener of this.listeners) {
         void listener(parsed);
       }
@@ -378,15 +366,6 @@ function isJsonRpcRequest(value: unknown): value is JsonRpcRequest {
       "jsonrpc" in value &&
       "method" in value
   );
-}
-
-function parseContentLength(headers: string): number | null {
-  const match = headers.match(/^Content-Length:\s*(\d+)$/im);
-  if (!match) {
-    return null;
-  }
-
-  return Number.parseInt(match[1], 10);
 }
 
 function isToolError(result: unknown): boolean {

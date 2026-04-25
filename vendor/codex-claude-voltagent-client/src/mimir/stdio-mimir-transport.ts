@@ -1,12 +1,12 @@
 import type { IOType } from "node:child_process";
 import type { Stream } from "node:stream";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import {
+  StdioClientTransport,
+  type StdioServerParameters
+} from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { ClientConfig } from "../config/schema.js";
 import type { MimirTransport } from "./mimir-transport.js";
-import {
-  ContentLengthStdioClientTransport,
-  type ContentLengthStdioServerParameters
-} from "./content-length-stdio-client-transport.js";
 
 export interface MimirClientInfo {
   name?: string;
@@ -32,7 +32,7 @@ type MimirSdkToolResult = Awaited<ReturnType<Client["callTool"]>>;
 function resolveServerParameters(
   config: ClientConfig["mimir"],
   options: StdioMimirTransportOptions
-): ContentLengthStdioServerParameters {
+): StdioServerParameters {
   const [command, ...commandArgs] = config.serverCommand;
 
   if (!command) {
@@ -43,9 +43,27 @@ function resolveServerParameters(
     command,
     args: [...commandArgs, ...config.serverArgs],
     cwd: options.cwd,
-    env: options.env,
+    env: resolveTransportEnvironment(options.env),
     stderr: options.stderr
   };
+}
+
+function resolveTransportEnvironment(
+  env: Record<string, string> | undefined
+): Record<string, string> {
+  if (env) {
+    return env;
+  }
+
+  const inherited: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(process.env)) {
+    if (typeof value === "string") {
+      inherited[key] = value;
+    }
+  }
+
+  return inherited;
 }
 
 function readTextContent(result: MimirSdkToolResult): string | undefined {
@@ -109,9 +127,7 @@ export async function connectStdioMimirTransport(
       capabilities: {}
     }
   );
-  const sdkTransport = new ContentLengthStdioClientTransport(
-    resolveServerParameters(config, options)
-  );
+  const sdkTransport = new StdioClientTransport(resolveServerParameters(config, options));
 
   const requestTimeoutMs = options.requestTimeoutMs ?? 180000;
   const maxTotalTimeoutMs = options.maxTotalTimeoutMs ?? requestTimeoutMs;
