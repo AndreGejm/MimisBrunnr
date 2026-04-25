@@ -55,8 +55,50 @@ function codexConfigPath(homeRoot = homedir()) {
   return join(homeRoot, ".codex", "config.toml");
 }
 
+export function defaultHomeGlobalConfigPath(homeRoot = homedir()) {
+  return join(homeRoot, ".codex", "voltagent", "client-config.json");
+}
+
 function nativeCodexInstallPath(homeRoot = homedir()) {
   return join(nativeCodexSkillsRoot(homeRoot), "voltagent-default");
+}
+
+let lastResolvedConfigContext = null;
+
+function rememberResolvedConfigContext(context) {
+  lastResolvedConfigContext = {
+    configPath: resolve(context.configPath),
+    configSource: context.configSource,
+    workspaceRoot: context.workspaceRoot ? resolve(context.workspaceRoot) : null,
+    homeRoot: resolve(context.homeRoot ?? homedir())
+  };
+
+  return lastResolvedConfigContext;
+}
+
+function currentResolvedConfigContext() {
+  return lastResolvedConfigContext;
+}
+
+function inferResolvedConfigContext(configPath, options = {}) {
+  const resolvedHomeRoot = resolve(options.homeRoot ?? homedir());
+  const resolvedConfigPath = resolve(configPath);
+  const homeGlobalConfigPath = resolve(
+    defaultHomeGlobalConfigPath(resolvedHomeRoot)
+  );
+
+  return {
+    configPath: resolvedConfigPath,
+    configSource:
+      normalizePathForComparison(resolvedConfigPath) ===
+      normalizePathForComparison(homeGlobalConfigPath)
+        ? "home-global-default"
+        : "workspace-override",
+    workspaceRoot: options.workspaceRoot
+      ? resolve(options.workspaceRoot)
+      : dirname(resolvedConfigPath),
+    homeRoot: resolvedHomeRoot
+  };
 }
 
 function usesNativeCodexSkills(skillRoots, homeRoot = homedir()) {
@@ -203,7 +245,8 @@ function isResolvableCommand(command) {
 export function parseCliArgs(argv) {
   const parsed = {
     configPath: undefined,
-    workspaceRoot: undefined,
+    homeRoot: resolve(homedir()),
+    workspaceRoot: resolve(process.cwd()),
     probeRuntime: false,
     stateRoot: undefined
   };
@@ -223,6 +266,12 @@ export function parseCliArgs(argv) {
       continue;
     }
 
+    if (token === "--home-root") {
+      parsed.homeRoot = argv[index + 1];
+      index += 1;
+      continue;
+    }
+
     if (token === "--probe-runtime") {
       parsed.probeRuntime = true;
       continue;
@@ -237,9 +286,16 @@ export function parseCliArgs(argv) {
     throw new Error(`Unknown argument: ${token}`);
   }
 
-  assert(parsed.configPath, "--config is required");
-
-  return parsed;
+  return {
+    ...parsed,
+    ...rememberResolvedConfigContext(
+      resolveClientConfigPath({
+      explicitConfigPath: parsed.configPath,
+      workspaceRoot: parsed.workspaceRoot,
+      homeRoot: parsed.homeRoot
+      })
+    )
+  };
 }
 
 const currentFilePath = fileURLToPath(import.meta.url);
@@ -247,7 +303,39 @@ const currentDirPath = dirname(currentFilePath);
 const probeHelperPath = join(currentDirPath, "client-composition-probe.mjs");
 
 export function readClientConfig(configPath) {
-  const rawConfig = JSON.parse(readFileSync(configPath, "utf8"));
+  const resolvedConfigPath = resolve(configPath);
+  const priorContext = currentResolvedConfigContext();
+  const matchingPriorContext =
+    priorContext &&
+    normalizePathForComparison(priorContext.configPath) ===
+      normalizePathForComparison(resolvedConfigPath)
+      ? priorContext
+      : null;
+
+  let resolvedContext = matchingPriorContext;
+
+  if (!existsSync(resolvedConfigPath)) {
+    if (matchingPriorContext?.configSource === "explicit") {
+      throw new Error(`Config file does not exist: ${resolvedConfigPath}`);
+    }
+
+    resolvedContext = resolveClientConfigPath({
+      workspaceRoot: dirname(resolvedConfigPath),
+      homeRoot: matchingPriorContext?.homeRoot ?? homedir()
+    });
+  } else if (!resolvedContext) {
+    resolvedContext = inferResolvedConfigContext(resolvedConfigPath, {
+      homeRoot: matchingPriorContext?.homeRoot
+    });
+  }
+
+  resolvedContext = rememberResolvedConfigContext(
+    resolvedContext ?? inferResolvedConfigContext(resolvedConfigPath)
+  );
+
+  const rawConfig = JSON.parse(
+    readFileSync(resolvedContext.configPath, "utf8")
+  );
   const config = expectObject(rawConfig, "config");
   const runtime = expectObject(config.runtime ?? {}, "runtime");
   const mimir = expectObject(config.mimir, "mimir");
@@ -256,8 +344,14 @@ export function readClientConfig(configPath) {
   const claude = expectObject(config.claude ?? {}, "claude");
 
   const mode = runtime.mode ?? "local-only";
+  const workspaceTrustMode = runtime.workspaceTrustMode ?? "explicit-roots";
 
   assert(mode && allowedModes.has(mode), "runtime.mode must be a supported mode");
+  assert(
+    workspaceTrustMode === "all-workspaces" ||
+      workspaceTrustMode === "explicit-roots",
+    "runtime.workspaceTrustMode must be all-workspaces or explicit-roots"
+  );
 
   const parsed = {
     configVersion: config.configVersion ?? 1,
@@ -275,6 +369,7 @@ export function readClientConfig(configPath) {
     },
     runtime: {
       mode,
+      workspaceTrustMode,
       trustedWorkspaceRoots: expectStringArray(
         runtime.trustedWorkspaceRoots ?? [],
         "runtime.trustedWorkspaceRoots"
@@ -292,10 +387,11 @@ export function readClientConfig(configPath) {
 
   if (
     parsed.runtime.mode !== "local-only" &&
+    parsed.runtime.workspaceTrustMode === "explicit-roots" &&
     parsed.runtime.trustedWorkspaceRoots.length === 0
   ) {
     throw new Error(
-      "runtime.trustedWorkspaceRoots must contain at least one workspace root when runtime mode is not local-only"
+      "runtime.trustedWorkspaceRoots must contain at least one workspace root when runtime.workspaceTrustMode is explicit-roots"
     );
   }
 
@@ -312,14 +408,54 @@ export function readClientConfig(configPath) {
   return parsed;
 }
 
-export function isTrustedWorkspace(trustedWorkspaceRoots, workspaceRoot) {
+export function resolveClientConfigPath({
+  explicitConfigPath,
+  workspaceRoot,
+  homeRoot = homedir()
+}) {
+  const resolvedHomeRoot = resolve(homeRoot);
+  const resolvedWorkspaceRoot = resolve(workspaceRoot ?? process.cwd());
+
+  if (explicitConfigPath) {
+    return {
+      configPath: resolve(explicitConfigPath),
+      configSource: "explicit",
+      workspaceRoot: resolvedWorkspaceRoot,
+      homeRoot: resolvedHomeRoot
+    };
+  }
+
+  const workspaceConfigPath = resolve(resolvedWorkspaceRoot, "client-config.json");
+
+  if (existsSync(workspaceConfigPath)) {
+    return {
+      configPath: workspaceConfigPath,
+      configSource: "workspace-override",
+      workspaceRoot: resolvedWorkspaceRoot,
+      homeRoot: resolvedHomeRoot
+    };
+  }
+
+  return {
+    configPath: resolve(defaultHomeGlobalConfigPath(resolvedHomeRoot)),
+    configSource: "home-global-default",
+    workspaceRoot: resolvedWorkspaceRoot,
+    homeRoot: resolvedHomeRoot
+  };
+}
+
+export function isTrustedWorkspace(runtime, workspaceRoot) {
+  if (runtime.workspaceTrustMode === "all-workspaces") {
+    return Boolean(workspaceRoot);
+  }
+
   if (!workspaceRoot) {
     return false;
   }
 
   const normalizedWorkspaceRoot = normalizePathForComparison(workspaceRoot);
 
-  return trustedWorkspaceRoots.some((trustedRoot) => {
+  return runtime.trustedWorkspaceRoots.some((trustedRoot) => {
     const normalizedTrustedRoot = normalizePathForComparison(trustedRoot);
 
     return (
@@ -330,17 +466,27 @@ export function isTrustedWorkspace(trustedWorkspaceRoots, workspaceRoot) {
 }
 
 export function createStatus(config, input = {}) {
+  const resolvedContext = input.configPath
+    ? inferResolvedConfigContext(input.configPath, input)
+    : currentResolvedConfigContext();
+
   return {
     configVersion: config.configVersion,
+    configPath: resolvedContext?.configPath ?? null,
+    configSource: input.configSource ?? resolvedContext?.configSource ?? null,
     mode: config.runtime.mode,
-    workspaceTrusted: isTrustedWorkspace(
-      config.runtime.trustedWorkspaceRoots,
-      input.workspaceRoot
-    ),
+    workspaceTrustMode: config.runtime.workspaceTrustMode,
+    workspaceTrusted: isTrustedWorkspace(config.runtime, input.workspaceRoot),
+    workspaceOverrideActive:
+      (input.configSource ?? resolvedContext?.configSource) ===
+      "workspace-override",
     trustedWorkspaceRoots: config.runtime.trustedWorkspaceRoots,
     runtimeHealth: input.runtimeHealth ?? "stopped",
     mimirConnection: input.mimirConnection ?? "disconnected",
-    activation: createActivationStatus(config, input),
+    activation: createActivationStatus(config, {
+      ...input,
+      homeRoot: input.homeRoot ?? resolvedContext?.homeRoot
+    }),
     models: {
       primary: config.models.primary,
       fallback: config.models.fallback
@@ -417,6 +563,12 @@ export function createDoctor(config, input = {}) {
       status: "ok",
       message: "Local-only mode does not require a trusted workspace."
     });
+  } else if (config.runtime.workspaceTrustMode === "all-workspaces") {
+    checks.push({
+      code: "workspace_trust",
+      status: "ok",
+      message: "Global all-workspaces trust mode is active."
+    });
   } else if (!input.workspaceRoot) {
     checks.push({
       code: "workspace_trust",
@@ -492,6 +644,16 @@ export function writeClientConfig(configPath, config) {
 }
 
 export function enableDefaultMode(config, workspaceRoot) {
+  if (config.runtime.workspaceTrustMode === "all-workspaces") {
+    return {
+      ...config,
+      runtime: {
+        ...config.runtime,
+        mode: "voltagent-default"
+      }
+    };
+  }
+
   assert(workspaceRoot, "--workspace is required when enabling default mode");
 
   const trustedWorkspaceRoots = new Set(config.runtime.trustedWorkspaceRoots);

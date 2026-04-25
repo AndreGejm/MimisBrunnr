@@ -6,11 +6,21 @@ import {
 } from "./lib/client-config.mjs";
 
 try {
-  const { configPath, workspaceRoot, probeRuntime, stateRoot } = parseCliArgs(
-    process.argv.slice(2)
-  );
+  const {
+    configPath,
+    configSource,
+    homeRoot,
+    workspaceRoot,
+    probeRuntime,
+    stateRoot
+  } = parseCliArgs(process.argv.slice(2));
   const config = readClientConfig(configPath);
-  const report = createDoctor(config, { workspaceRoot });
+  const report = createDoctor(config, {
+    configPath,
+    configSource,
+    homeRoot,
+    workspaceRoot
+  });
 
   if (probeRuntime) {
     try {

@@ -72,7 +72,64 @@ function createTempConfig(
   );
 
   return {
+    tempDir,
     configPath,
+    workspaceRoot: resolvedWorkspaceRoot
+  };
+}
+
+function createHomeGlobalConfig(
+  overrides: Record<string, unknown> = {},
+  workspaceRoot?: string
+) {
+  const tempDir = mkdtempSync(join(tmpdir(), "codex-voltagent-plugin-home-"));
+  const homeRoot = join(tempDir, "home");
+  const resolvedWorkspaceRoot = workspaceRoot ?? join(tempDir, "workspace");
+  const skillRoot = join(homeRoot, ".codex", "skills");
+  const configPath = join(homeRoot, ".codex", "voltagent", "client-config.json");
+
+  tempDirs.push(tempDir);
+  mkdirSync(skillRoot, { recursive: true });
+  mkdirSync(join(homeRoot, ".codex", "voltagent"), { recursive: true });
+
+  writeFileSync(
+    configPath,
+    JSON.stringify(
+      {
+        configVersion: 1,
+        mimir: {
+          serverCommand: ["node"],
+          serverArgs: ["./tests/fixtures/fake-mimir-mcp-server.mjs"],
+          transport: "stdio"
+        },
+        skills: {
+          rootPaths: [skillRoot]
+        },
+        models: {
+          primary: "openai/gpt-5-mini",
+          fallback: ["anthropic/claude-sonnet-4-20250514"]
+        },
+        runtime: {
+          mode: "voltagent-default",
+          workspaceTrustMode: "all-workspaces",
+          trustedWorkspaceRoots: []
+        },
+        claude: {
+          enabled: false,
+          skillPacks: [],
+          profiles: []
+        },
+        ...overrides
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  return {
+    configPath,
+    homeRoot,
     workspaceRoot: resolvedWorkspaceRoot
   };
 }
@@ -142,8 +199,12 @@ describe("repo-local Codex plugin shell", () => {
 
     expect(status).toMatchObject({
       configVersion: 1,
+      configPath,
+      configSource: "explicit",
       mode: "voltagent-default",
+      workspaceTrustMode: "explicit-roots",
       workspaceTrusted: true,
+      workspaceOverrideActive: false,
       runtimeHealth: "stopped",
       mimirConnection: "disconnected"
     });
@@ -153,6 +214,42 @@ describe("repo-local Codex plugin shell", () => {
       nativeCodexInstallPresent: false,
       pluginShellPresent: true,
       surface: "plugin-shell-only"
+    });
+  });
+
+  it("falls back to the home-global config when no workspace override exists", () => {
+    const { configPath, homeRoot, workspaceRoot } = createHomeGlobalConfig();
+
+    const stdout = execFileSync(
+      process.execPath,
+      [
+        join(pluginRoot, "scripts", "status.mjs"),
+        "--home-root",
+        homeRoot,
+        "--workspace",
+        workspaceRoot
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8"
+      }
+    );
+
+    const status = JSON.parse(stdout);
+
+    expect(status).toMatchObject({
+      configPath,
+      configSource: "home-global-default",
+      mode: "voltagent-default",
+      workspaceTrustMode: "all-workspaces",
+      workspaceTrusted: true,
+      workspaceOverrideActive: false
+    });
+    expect(status.activation).toEqual({
+      nativeCodexSkillsConfigured: true,
+      nativeCodexInstallPresent: true,
+      pluginShellPresent: true,
+      surface: "both"
     });
   });
 
@@ -217,6 +314,42 @@ describe("repo-local Codex plugin shell", () => {
         expect.objectContaining({
           code: "workspace_trust",
           status: "error"
+        })
+      ])
+    );
+  });
+
+  it("reports all-workspaces trust as healthy without explicit roots", () => {
+    const { homeRoot, workspaceRoot } = createHomeGlobalConfig();
+
+    const stdout = execFileSync(
+      process.execPath,
+      [
+        join(pluginRoot, "scripts", "doctor.mjs"),
+        "--home-root",
+        homeRoot,
+        "--workspace",
+        workspaceRoot
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8"
+      }
+    );
+
+    const report = JSON.parse(stdout);
+
+    expect(report.ok).toBe(true);
+    expect(report.workspaceRoot).toBe(workspaceRoot);
+    expect(report.status.configSource).toBe("home-global-default");
+    expect(report.status.workspaceTrustMode).toBe("all-workspaces");
+    expect(report.status.workspaceTrusted).toBe(true);
+    expect(report.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "workspace_trust",
+          status: "ok",
+          message: "Global all-workspaces trust mode is active."
         })
       ])
     );

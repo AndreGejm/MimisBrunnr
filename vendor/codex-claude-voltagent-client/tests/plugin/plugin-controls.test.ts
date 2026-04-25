@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -89,6 +89,76 @@ function createTempConfig(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function createHomeGlobalConfig(overrides: Record<string, unknown> = {}) {
+  const tempDir = mkdtempSync(
+    join(tmpdir(), "codex-voltagent-plugin-controls-home-")
+  );
+  const homeRoot = join(tempDir, "home");
+  const configPath = join(homeRoot, ".codex", "voltagent", "client-config.json");
+
+  tempDirs.push(tempDir);
+  mkdirSync(join(homeRoot, ".codex", "voltagent"), { recursive: true });
+  writeFileSync(
+    configPath,
+    JSON.stringify(
+      {
+        configVersion: 1,
+        mimir: {
+          serverCommand: ["node"],
+          serverArgs: ["./tests/fixtures/fake-mimir-mcp-server.mjs"],
+          transport: "stdio"
+        },
+        skills: {
+          rootPaths: [join(tempDir, "skills")]
+        },
+        models: {
+          primary: "openai/gpt-5-mini",
+          fallback: ["anthropic/claude-sonnet-4-20250514"]
+        },
+        runtime: {
+          mode: "local-only",
+          trustedWorkspaceRoots: []
+        },
+        claude: {
+          enabled: true,
+          skillPacks: [
+            {
+              skillPackId: "debug-core",
+              skills: ["superpowers:systematic-debugging"]
+            }
+          ],
+          profiles: [
+            {
+              profileId: "debug-specialist",
+              roleId: "debug_specialist",
+              skillPackId: "debug-core",
+              model: "anthropic/claude-sonnet-4-20250514",
+              fallback: [],
+              escalationReasons: ["test-failure"],
+              outputMode: "structured",
+              timeouts: {
+                totalMs: 20000,
+                modelMs: 15000
+              },
+              retries: 0
+            }
+          ]
+        },
+        ...overrides
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  return {
+    configPath,
+    homeRoot,
+    tempDir
+  };
+}
+
 function runPluginScript(scriptName: string, args: string[]) {
   return execFileSync(
     process.execPath,
@@ -122,6 +192,29 @@ describe("repo-local Codex plugin controls", () => {
     });
     expect(savedConfig.runtime.mode).toBe("voltagent-default");
     expect(savedConfig.runtime.trustedWorkspaceRoots).toContain(workspaceRoot);
+  });
+
+  it("enables default mode in all-workspaces mode without adding explicit roots", () => {
+    const { configPath } = createTempConfig({
+      runtime: {
+        mode: "local-only",
+        workspaceTrustMode: "all-workspaces",
+        trustedWorkspaceRoots: []
+      }
+    });
+
+    const stdout = runPluginScript("enable.mjs", ["--config", configPath]);
+    const result = JSON.parse(stdout);
+    const savedConfig = JSON.parse(readFileSync(configPath, "utf8"));
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: "voltagent-default",
+      trustedWorkspaceRoots: []
+    });
+    expect(savedConfig.runtime.mode).toBe("voltagent-default");
+    expect(savedConfig.runtime.workspaceTrustMode).toBe("all-workspaces");
+    expect(savedConfig.runtime.trustedWorkspaceRoots).toEqual([]);
   });
 
   it("disables default mode without deleting trusted workspace roots", () => {
@@ -158,6 +251,21 @@ describe("repo-local Codex plugin controls", () => {
         roleId: "debug_specialist",
         skillPackId: "debug-core",
         skills: ["superpowers:systematic-debugging"]
+      })
+    ]);
+  });
+
+  it("uses the home-global config when profiles are requested without --config", () => {
+    const { homeRoot } = createHomeGlobalConfig();
+
+    const stdout = runPluginScript("profiles.mjs", ["--home-root", homeRoot]);
+    const result = JSON.parse(stdout);
+
+    expect(result.enabled).toBe(true);
+    expect(result.profiles).toEqual([
+      expect.objectContaining({
+        profileId: "debug-specialist",
+        skillPackId: "debug-core"
       })
     ]);
   });
