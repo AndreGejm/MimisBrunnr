@@ -108,7 +108,14 @@ corepack pnpm install
 corepack pnpm build
 ```
 
-The root package scripts are the supported install and build entrypoints. `scripts/` contains narrow operator helpers for launcher installation, Codex MCP setup, diagnostics, toolbox audit/sync, review, cleanup, and wrapper entrypoints; it does not contain a one-shot bootstrap script. An experimental Windows installer backend now lives under `scripts/installers/windows/`, but it is currently an environment/audit/repo-prepare/toolbox-audit/toolbox-prepare/docker-mcp-audit/docker-mcp-apply-plan/plan/apply/state contract rather than the full guided bootstrap flow.
+The root package scripts are the supported install and build entrypoints.
+`scripts/` contains narrow operator helpers for launcher installation, Codex
+MCP setup, diagnostics, toolbox audit/sync, review, cleanup, and wrapper
+entrypoints; it does not contain a one-shot cross-platform bootstrap script.
+On Windows, the canonical installer path now lives under
+`scripts/installers/windows/`. That backend provisions both default Mimir
+access and the vendored Codex/VoltAgent client access surface, while Docker
+Desktop and toolbox apply remain optional follow-up work.
 
 If `corepack enable` cannot install a global `pnpm` shim on your machine, run the
 workspace commands as `corepack pnpm ...` directly.
@@ -433,6 +440,7 @@ docs/          internal planning/spec snapshots for recent work
 runtimes/      vendored Python coding runtime
 tests/         end-to-end transport and service tests
 scripts/       launcher, installer backend, doctor, review, and cleanup helpers
+vendor/        vendored external integrations kept source-close for release stability
 ```
 
 Full map: `documentation/reference/repo-map.md`

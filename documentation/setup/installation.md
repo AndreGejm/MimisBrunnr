@@ -45,7 +45,7 @@ remain optional. See [`windows-installer.md`](./windows-installer.md).
 If `corepack enable` cannot install a global `pnpm` shim, run every workspace
 command as `corepack pnpm ...` directly.
 
-## Experimental Windows installer backend
+## Windows installer backend
 
 Current Windows-only backend commands:
 
@@ -95,6 +95,7 @@ What this backend does today:
 
 - reports machine/runtime prerequisites in a stable format
 - prepares a clean local repo checkout through guarded `corepack pnpm install --frozen-lockfile` and `corepack pnpm build`
+- builds the vendored Codex/VoltAgent client as part of installer-owned repo preparation
 - normalizes `doctor-default-access.mjs` into a stable result envelope
 - validates tracked `docker/mcp` toolbox assets through the real compiler and
   Docker runtime-plan path

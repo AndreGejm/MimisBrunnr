@@ -146,11 +146,13 @@ What this does:
 - on a clean repo, runs:
   - `corepack pnpm install --frozen-lockfile`
   - `corepack pnpm build`
+  - `corepack pnpm vendor:codex-voltagent:build`
 - verifies:
   - `apps/mimir-api/dist/main.js`
   - `apps/mimir-cli/dist/main.js`
   - `apps/mimir-mcp/dist/main.js`
   - `apps/mimir-control-mcp/dist/main.js`
+  - `vendor/codex-claude-voltagent-client/dist/index.js`
 - writes installer state files
 
 What this does not do:
