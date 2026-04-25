@@ -1,12 +1,12 @@
 import type { IOType } from "node:child_process";
 import type { Stream } from "node:stream";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import {
-  StdioClientTransport,
-  type StdioServerParameters
-} from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { ClientConfig } from "../config/schema.js";
 import type { MimirTransport } from "./mimir-transport.js";
+import {
+  ContentLengthStdioClientTransport,
+  type ContentLengthStdioServerParameters
+} from "./content-length-stdio-client-transport.js";
 
 export interface MimirClientInfo {
   name?: string;
@@ -18,6 +18,8 @@ export interface StdioMimirTransportOptions {
   cwd?: string;
   env?: Record<string, string>;
   stderr?: IOType | Stream | number;
+  requestTimeoutMs?: number;
+  maxTotalTimeoutMs?: number;
 }
 
 export interface ConnectedMimirTransport {
@@ -30,7 +32,7 @@ type MimirSdkToolResult = Awaited<ReturnType<Client["callTool"]>>;
 function resolveServerParameters(
   config: ClientConfig["mimir"],
   options: StdioMimirTransportOptions
-): StdioServerParameters {
+): ContentLengthStdioServerParameters {
   const [command, ...commandArgs] = config.serverCommand;
 
   if (!command) {
@@ -107,11 +109,17 @@ export async function connectStdioMimirTransport(
       capabilities: {}
     }
   );
-  const sdkTransport = new StdioClientTransport(
+  const sdkTransport = new ContentLengthStdioClientTransport(
     resolveServerParameters(config, options)
   );
 
-  await client.connect(sdkTransport);
+  const requestTimeoutMs = options.requestTimeoutMs ?? 180000;
+  const maxTotalTimeoutMs = options.maxTotalTimeoutMs ?? requestTimeoutMs;
+
+  await client.connect(sdkTransport, {
+    timeout: requestTimeoutMs,
+    maxTotalTimeout: maxTotalTimeoutMs
+  });
 
   return {
     transport: {

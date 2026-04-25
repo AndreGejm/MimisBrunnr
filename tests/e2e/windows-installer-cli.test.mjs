@@ -258,7 +258,10 @@ test("windows installer cli apply-client-access executes the tracked install hel
   const stateRoot = path.join(root, "state");
   const configPath = path.join(root, "config.toml");
   const manifestPath = path.join(root, "installation.json");
+  const workspacePath = path.join(root, "workspace");
+  const homeRoot = path.join(root, "home");
   await mkdir(binDir, { recursive: true });
+  await mkdir(workspacePath, { recursive: true });
   await writeFile(configPath, "# existing config\n", "utf8");
   await writeFile(
     manifestPath,
@@ -285,6 +288,10 @@ test("windows installer cli apply-client-access executes the tracked install hel
       binDir,
       "-ManifestPath",
       manifestPath,
+      "-WorkspacePath",
+      workspacePath,
+      "-HomeRoot",
+      homeRoot,
       "-StateRoot",
       stateRoot,
       "-Json"
@@ -306,10 +313,21 @@ test("windows installer cli apply-client-access executes the tracked install hel
   assert.equal(envelope.details.clientAccess.clientName, "codex");
   assert.equal(envelope.details.clientAccess.configured, true);
   assert.equal(envelope.details.defaultAccess.report.status, "healthy");
-  assert.equal(envelope.commandsRun.length, 2);
+  assert.equal(envelope.commandsRun.length, 4);
   assert.equal(envelope.backupsCreated.length, 2);
   assert.ok(envelope.backupsCreated.every((item) => item.endsWith(".bak")));
   assert.equal(envelope.details.applyResult.writeTargets.length > 0, true);
+  assert.equal(envelope.details.clientAccess.codexVoltAgentAccess.workspacePath, workspacePath);
+  assert.equal(
+    envelope.details.clientAccess.codexVoltAgentAccess.workspaceConfigPath,
+    path.join(workspacePath, "client-config.json")
+  );
+  assert.equal(
+    envelope.details.clientAccess.codexVoltAgentAccess.nativeSkillPath,
+    path.join(homeRoot, ".codex", "skills", "voltagent-default")
+  );
+  assert.equal(envelope.details.codexVoltAgentAccess.onboard.ok, true);
+  assert.equal(envelope.details.codexVoltAgentAccess.doctor.ok, true);
 
   const configContents = await readFile(configPath, "utf8");
   assert.match(configContents, /\[mcp_servers\.mimir\]/);
@@ -319,6 +337,23 @@ test("windows installer cli apply-client-access executes the tracked install hel
 
   const launcherContents = await readFile(path.join(binDir, "mab.cmd"), "utf8");
   assert.match(launcherContents, /launch-mimir-cli\.mjs/);
+
+  const vendoredConfig = JSON.parse(
+    await readFile(path.join(workspacePath, "client-config.json"), "utf8")
+  );
+  assert.equal(vendoredConfig.runtime.mode, "voltagent-default");
+  assert.deepEqual(vendoredConfig.runtime.trustedWorkspaceRoots, [workspacePath]);
+  assert.ok(vendoredConfig.skills.rootPaths.includes(path.join(homeRoot, ".codex", "skills")));
+  assert.equal(
+    vendoredConfig.mimir.serverCommand[0],
+    process.execPath
+  );
+  assert.deepEqual(vendoredConfig.mimir.serverArgs, [
+    path.join(process.cwd(), "scripts", "launch-mimir-mcp.mjs")
+  ]);
+
+  const nativeSkillPath = path.join(homeRoot, ".codex", "skills", "voltagent-default");
+  assert.equal(await pathExists(nativeSkillPath), true);
 
   const persistedReport = JSON.parse(
     await readFile(path.join(stateRoot, "last-report.json"), "utf8")
@@ -1086,7 +1121,10 @@ test("windows installer cli audit-toolbox-client-handoff reports reconnect contr
   const stateRoot = path.join(root, "state");
   const configPath = path.join(root, "config.toml");
   const manifestPath = path.join(root, "installation.json");
+  const workspacePath = path.join(root, "workspace");
+  const homeRoot = path.join(root, "home");
   await mkdir(binDir, { recursive: true });
+  await mkdir(workspacePath, { recursive: true });
   await writeFile(path.join(binDir, "mimir.cmd"), "@echo off\r\nREM placeholder\r\n", "utf8");
   await writeFile(
     path.join(binDir, "corepack.cmd"),
@@ -1120,6 +1158,10 @@ test("windows installer cli audit-toolbox-client-handoff reports reconnect contr
       binDir,
       "-ManifestPath",
       manifestPath,
+      "-WorkspacePath",
+      workspacePath,
+      "-HomeRoot",
+      homeRoot,
       "-StateRoot",
       stateRoot,
       "-Json"
@@ -1192,6 +1234,14 @@ test("windows installer cli audit-toolbox-client-handoff reports reconnect contr
   assert.equal(
     envelope.details.toolboxClientHandoff.handoffContract.sessionPolicyTokenEnvVar,
     "MAB_TOOLBOX_SESSION_POLICY_TOKEN"
+  );
+  assert.equal(
+    await pathExists(path.join(workspacePath, "client-config.json")),
+    true
+  );
+  assert.equal(
+    await pathExists(path.join(homeRoot, ".codex", "skills", "voltagent-default")),
+    true
   );
 
   const persistedReport = JSON.parse(
@@ -1445,4 +1495,16 @@ async function writeLegacyState(targetPath) {
     operations: []
   };
   await writeFile(targetPath, JSON.stringify(payload, null, 2), "utf8");
+}
+
+async function pathExists(targetPath) {
+  try {
+    await readFile(targetPath);
+    return true;
+  } catch (error) {
+    if (error && typeof error === "object" && error.code === "EISDIR") {
+      return true;
+    }
+    return false;
+  }
 }

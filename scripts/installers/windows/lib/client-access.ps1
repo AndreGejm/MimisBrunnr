@@ -109,6 +109,8 @@ function Invoke-InstallerClientAccessPlan {
 
     [string]$WorkspacePath = "",
 
+    [string]$HomeRoot = $HOME,
+
     [Parameter(Mandatory = $true)]
     [string]$ServerName
   )
@@ -128,7 +130,8 @@ function Invoke-InstallerClientAccessPlan {
       $manifestExists = Test-Path $ManifestPath
       $codexVoltAgentPlan = Get-CodexVoltAgentPlanMetadata `
         -RepoRoot $RepoRoot `
-        -WorkspacePath $WorkspacePath
+        -WorkspacePath $WorkspacePath `
+        -HomeRoot $HomeRoot
       $workspaceConfigExists = Test-Path $codexVoltAgentPlan.workspaceConfigPath
       $nativeSkillExists = Test-Path $codexVoltAgentPlan.nativeSkillPath
       $writeTargets = @(
@@ -193,6 +196,7 @@ function Invoke-InstallerClientAccessPlan {
             repoRoot = $RepoRoot
             serverName = $ServerName
             workspacePath = $codexVoltAgentPlan.workspacePath
+            homeRoot = $HomeRoot
           }
           launcherBinDir = $BinDir
           manifestPath = $ManifestPath
@@ -235,6 +239,8 @@ function Invoke-InstallerClientAccessApply {
 
     [string]$WorkspacePath = "",
 
+    [string]$HomeRoot = $HOME,
+
     [Parameter(Mandatory = $true)]
     [string]$ServerName
   )
@@ -246,6 +252,7 @@ function Invoke-InstallerClientAccessApply {
     -BinDir $BinDir `
     -ManifestPath $ManifestPath `
     -WorkspacePath $WorkspacePath `
+    -HomeRoot $HomeRoot `
     -ServerName $ServerName
 
   $backupCandidates = @($plan.writePlan.writeTargets | Where-Object { $_.backupStrategy -eq "timestamped_copy" })
@@ -261,6 +268,21 @@ function Invoke-InstallerClientAccessApply {
     -ManifestPath $ManifestPath `
     -ServerName $ServerName
 
+  $codexVoltAgentPlan = $plan.writePlan.codexVoltAgentAccess
+  if (Test-Path $codexVoltAgentPlan.workspaceConfigPath) {
+    $null = New-InstallerTimestampedBackup -Path $codexVoltAgentPlan.workspaceConfigPath
+  }
+
+  $codexVoltAgentOnboard = Invoke-CodexVoltAgentOnboardAdapter `
+    -RepoRoot $RepoRoot `
+    -WorkspacePath $codexVoltAgentPlan.workspacePath `
+    -HomeRoot $HomeRoot
+
+  $codexVoltAgentDoctor = Invoke-CodexVoltAgentDoctorAdapter `
+    -RepoRoot $RepoRoot `
+    -WorkspacePath $codexVoltAgentPlan.workspacePath `
+    -HomeRoot $HomeRoot
+
   $backupsCreated = @()
   foreach ($target in $backupCandidates) {
     $before = @()
@@ -273,6 +295,32 @@ function Invoke-InstallerClientAccessApply {
     if ($newBackups.Count -gt 0) {
       $backupsCreated += $newBackups
     }
+  }
+
+  $codexVoltAgentConfigured = `
+    $codexVoltAgentOnboard.report.ok -and `
+    $codexVoltAgentDoctor.report.ok -and `
+    (Test-Path $codexVoltAgentPlan.workspaceConfigPath) -and `
+    (Test-Path $codexVoltAgentPlan.nativeSkillPath)
+
+  $recommendations = @($apply.report.recommendations)
+  if (-not $codexVoltAgentConfigured) {
+    $recommendations += "Review the vendored Codex VoltAgent onboarding and doctor reports, then rerun apply-client-access after fixing the reported issue."
+  }
+  if ($codexVoltAgentDoctor.report -and $codexVoltAgentDoctor.report.checks) {
+    $doctorFollowUps = @(
+      $codexVoltAgentDoctor.report.checks |
+        Where-Object { $_.status -ne "ok" } |
+        ForEach-Object { $_.message }
+    )
+    $recommendations += $doctorFollowUps
+  }
+  $recommendations = @($recommendations | Where-Object { $_ -and $_.Trim().Length -gt 0 } | Select-Object -Unique)
+
+  $combinedStatus = if ($apply.report.status -eq "healthy" -and $codexVoltAgentConfigured) {
+    "healthy"
+  } else {
+    "degraded"
   }
 
   $appliedWriteTargets = @(
@@ -291,9 +339,14 @@ function Invoke-InstallerClientAccessApply {
 
   return [pscustomobject]@{
     client = $plan.client
-    commands = @($plan.command, $apply.command)
+    commands = @($plan.command, $apply.command, $codexVoltAgentOnboard.command, $codexVoltAgentDoctor.command)
     backupsCreated = @($backupsCreated)
-    report = $apply.report
+    report = [pscustomobject]@{
+      status = $combinedStatus
+      recommendations = $recommendations
+      defaultAccessStatus = $apply.report.status
+      codexVoltAgentConfigured = $codexVoltAgentConfigured
+    }
     clientAccess = [pscustomobject]@{
       clientName = $plan.clientAccess.clientName
       displayName = $plan.clientAccess.displayName
@@ -301,12 +354,29 @@ function Invoke-InstallerClientAccessApply {
       serverName = $ServerName
       configPath = $ConfigPath
       configured = $apply.report.codexMcp.configured
+      codexVoltAgentAccess = [pscustomobject]@{
+        vendoredClientRoot = $codexVoltAgentPlan.vendoredClientRoot
+        workspacePath = $codexVoltAgentPlan.workspacePath
+        workspaceConfigPath = $codexVoltAgentPlan.workspaceConfigPath
+        nativeSkillPath = $codexVoltAgentPlan.nativeSkillPath
+        configured = $codexVoltAgentConfigured
+      }
+    }
+    defaultAccessReport = $apply.report
+    codexVoltAgentAccess = [pscustomobject]@{
+      onboard = $codexVoltAgentOnboard.report
+      doctor = $codexVoltAgentDoctor.report
     }
     applyResult = [pscustomobject]@{
       writeTargets = $appliedWriteTargets
       launcherBinDir = $BinDir
       manifestPath = $ManifestPath
       launcherFiles = @($plan.writePlan.launcherFiles)
+      codexVoltAgentAccess = [pscustomobject]@{
+        workspacePath = $codexVoltAgentPlan.workspacePath
+        workspaceConfigPath = $codexVoltAgentPlan.workspaceConfigPath
+        nativeSkillPath = $codexVoltAgentPlan.nativeSkillPath
+      }
     }
   }
 }

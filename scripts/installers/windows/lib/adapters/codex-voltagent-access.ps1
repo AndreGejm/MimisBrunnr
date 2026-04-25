@@ -69,3 +69,81 @@ function Get-CodexVoltAgentPlanMetadata {
     nativeSkillPath = Get-CodexVoltAgentNativeSkillPath -HomeRoot $HomeRoot
   }
 }
+
+function Invoke-CodexVoltAgentOnboardAdapter {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$RepoRoot,
+
+    [Parameter(Mandatory = $true)]
+    [string]$WorkspacePath,
+
+    [Parameter(Mandatory = $true)]
+    [string]$HomeRoot
+  )
+
+  $workspaceConfigPath = Get-CodexVoltAgentWorkspaceConfigPath -WorkspacePath $WorkspacePath
+  $mcpWrapperPath = Join-Path $RepoRoot "scripts\launch-mimir-mcp.mjs"
+  $nodeCommand = Get-Command node -ErrorAction SilentlyContinue
+  if (-not $nodeCommand) {
+    throw "Node executable 'node' was not found on PATH."
+  }
+  $arguments = @(
+    "--home-root",
+    $HomeRoot,
+    "--workspace",
+    $WorkspacePath,
+    "--config",
+    $workspaceConfigPath,
+    "--mimir-command",
+    $nodeCommand.Source,
+    "--mimir-arg",
+    $mcpWrapperPath,
+    "--force"
+  )
+
+  $adapter = Invoke-NodeJsonScriptAdapter `
+    -RepoRoot $RepoRoot `
+    -ScriptRelativePath "vendor\codex-claude-voltagent-client\scripts\codex-onboard.mjs" `
+    -ScriptArguments $arguments
+
+  return [pscustomobject]@{
+    command = $adapter.command
+    report = $adapter.payload
+  }
+}
+
+function Invoke-CodexVoltAgentDoctorAdapter {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$RepoRoot,
+
+    [Parameter(Mandatory = $true)]
+    [string]$WorkspacePath,
+
+    [Parameter(Mandatory = $true)]
+    [string]$HomeRoot
+  )
+
+  $workspaceConfigPath = Get-CodexVoltAgentWorkspaceConfigPath -WorkspacePath $WorkspacePath
+  $arguments = @(
+    "--home-root",
+    $HomeRoot,
+    "--workspace",
+    $WorkspacePath,
+    "--config",
+    $workspaceConfigPath
+  )
+
+  $adapter = Invoke-NodeJsonScriptAdapter `
+    -RepoRoot $RepoRoot `
+    -ScriptRelativePath "vendor\codex-claude-voltagent-client\scripts\codex-doctor.mjs" `
+    -ScriptArguments $arguments
+
+  return [pscustomobject]@{
+    command = $adapter.command
+    report = $adapter.payload
+  }
+}

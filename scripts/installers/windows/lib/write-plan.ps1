@@ -30,6 +30,23 @@ function Get-InstallerTimestampedBackupFiles {
   )
 }
 
+function New-InstallerTimestampedBackup {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Path
+  )
+
+  if (-not (Test-Path $Path)) {
+    return $null
+  }
+
+  $stamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH-mm-ss-fffZ")
+  $backupPath = "$Path.$stamp.bak"
+  Copy-Item -LiteralPath $Path -Destination $backupPath -Force
+  return $backupPath
+}
+
 function New-InstallerWriteTarget {
   [CmdletBinding()]
   param(
