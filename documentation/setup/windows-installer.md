@@ -1,8 +1,10 @@
 # Windows Installer Backend
 
-This repository now includes an experimental Windows installer backend under
-`scripts/installers/windows/`. It is a preparatory surface for the future guided
-installer, not a full bootstrap product yet.
+This repository now includes a Windows installer backend under
+`scripts/installers/windows/`. It is the canonical Windows install path for
+provisioning both Mimir access and the vendored Codex/VoltAgent client access
+surface. It is still headless and contract-driven rather than a full GUI
+bootstrap product.
 
 Current entrypoints:
 
@@ -50,9 +52,14 @@ model-backed mode, or provide a full GUI bootstrap yet. They currently:
   surface
 - compare the prepared toolbox runtime commands against the live Docker MCP
   Toolkit capability surface without mutating Docker
-- expose a dry-run write plan for client access using the tracked repo install
-  helper
-- execute the tracked client-access helper and normalize its post-apply result
+- expose a dry-run write plan for both the default Mimir access layer and the
+  vendored Codex/VoltAgent access layer
+- execute the tracked client-access helper path and normalize the combined
+  post-apply result for:
+  - default Mimir access
+  - native Codex skill installation from the vendored subtree
+  - workspace `client-config.json` bootstrap
+  - vendored post-install doctor
 
 That gives later GUI and toolbox work a stable contract instead of forcing it to
 parse ad-hoc logs or assume Codex-specific config paths internally.
@@ -108,8 +115,10 @@ What this does:
 
 - runs `scripts/install-default-access.mjs --dry-run`
 - reports the exact apply command shape without executing it
-- previews the client config write target
+- previews the client config write target for default Mimir access
 - previews the installation manifest write target
+- previews the vendored Codex/VoltAgent workspace config write target
+- previews the vendored native skill link target under `~/.codex/skills`
 - previews every compatibility launcher target under the selected bin directory
 - marks which targets already exist
 - marks which targets would receive timestamped backup copies on apply
@@ -353,10 +362,22 @@ What this does:
 - runs the same dry-run plan path first so the backend can keep a stable write
   target model
 - executes `scripts/install-default-access.mjs`
+- executes vendored Codex/VoltAgent onboarding for the selected workspace
+- executes vendored Codex/VoltAgent doctor for the selected workspace
 - records the actual commands used
-- reports the post-apply default-access health result
+- reports the combined post-apply result for:
+  - default Mimir access health
+  - vendored Codex/VoltAgent onboarding status
+  - vendored Codex/VoltAgent doctor status
 - records any new timestamped backup files created for config or manifest writes
 - writes installer state files
+
+What stays optional:
+
+- Docker Desktop
+- Docker MCP Toolkit apply
+- toolbox runtime apply
+- vendored plugin-shell installation
 
 ### Read persisted installer state
 
@@ -413,6 +434,12 @@ Shared arguments accepted by `cli.ps1`:
     hard-wired to a Codex-only internal module
 - `-ConfigPath`
   - defaults to the config path declared by the selected client definition
+- `-WorkspacePath`
+  - defaults to `<RepoRoot>`
+  - used for vendored Codex/VoltAgent `client-config.json`
+- `-HomeRoot`
+  - defaults to the current user home
+  - used for native Codex skill installation under `~/.codex/skills`
 - `-BinDir`
   - defaults to `%APPDATA%\npm`
 - `-ManifestPath`
@@ -471,10 +498,9 @@ The exact contract and status semantics are documented in
   behind the new generic client layer
 - `prepare-repo-workspace` currently requires a clean git worktree and has no
   repair-mode override yet
-- `plan-client-access` only previews writes; it does not apply them yet through
-  the PowerShell backend
 - `apply-client-access` currently delegates to the tracked default-access Node
-  helper rather than performing file mutation directly in PowerShell
+  helper plus vendored Node onboarding/doctor scripts rather than performing
+  file mutation directly in PowerShell
 - `audit-toolbox-assets` validates toolbox manifests and runtime-plan shape, but
   it does not apply Docker Desktop profile changes yet
 - `prepare-toolbox-runtime` persists the compiled runtime plan, but the apply
