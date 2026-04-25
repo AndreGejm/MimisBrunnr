@@ -444,6 +444,9 @@ test("windows installer cli prepare-repo-workspace validates a clean repo, runs 
   await mkdir(path.join(repoRoot, "apps", "mimir-cli"), { recursive: true });
   await mkdir(path.join(repoRoot, "apps", "mimir-mcp"), { recursive: true });
   await mkdir(path.join(repoRoot, "apps", "mimir-control-mcp"), { recursive: true });
+  await mkdir(path.join(repoRoot, "vendor", "codex-claude-voltagent-client"), {
+    recursive: true
+  });
   await writeFile(
     path.join(repoRoot, "package.json"),
     JSON.stringify(
@@ -459,7 +462,11 @@ test("windows installer cli prepare-repo-workspace validates a clean repo, runs 
     ),
     "utf8"
   );
-  await writeFile(path.join(repoRoot, "pnpm-workspace.yaml"), "packages:\n  - apps/*\n", "utf8");
+  await writeFile(
+    path.join(repoRoot, "pnpm-workspace.yaml"),
+    "packages:\n  - apps/*\n  - vendor/codex-claude-voltagent-client\n",
+    "utf8"
+  );
   await writeFile(path.join(repoRoot, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n", "utf8");
   await writeFile(
     path.join(binDir, "git.cmd"),
@@ -497,6 +504,11 @@ test("windows installer cli prepare-repo-workspace validates a clean repo, runs 
       `  echo export default {}>\"${path.join(repoRoot, "apps", "mimir-control-mcp", "dist", "main.js")}\"`,
       "  exit /b 0",
       ")",
+      "if \"%~1 %~2\"==\"pnpm vendor:codex-voltagent:build\" (",
+      `  if not exist \"${path.join(repoRoot, "vendor", "codex-claude-voltagent-client", "dist")}\" mkdir \"${path.join(repoRoot, "vendor", "codex-claude-voltagent-client", "dist")}\"`,
+      `  echo export {}>\"${path.join(repoRoot, "vendor", "codex-claude-voltagent-client", "dist", "index.js")}\"`,
+      "  exit /b 0",
+      ")",
       "echo unexpected corepack args: %* 1>&2",
       "exit /b 1"
     ].join("\r\n"),
@@ -531,7 +543,7 @@ test("windows installer cli prepare-repo-workspace validates a clean repo, runs 
   assert.equal(envelope.mode, "apply");
   assert.equal(envelope.status, "success");
   assert.equal(envelope.reasonCode, "repo_workspace_prepared");
-  assert.equal(envelope.commandsRun.length, 4);
+  assert.equal(envelope.commandsRun.length, 5);
   assert.equal(envelope.details.repoWorkspace.repoRoot, repoRoot);
   assert.equal(envelope.details.repoWorkspace.isDirty, false);
   assert.equal(envelope.details.repoWorkspace.installAttempted, true);
@@ -543,7 +555,8 @@ test("windows installer cli prepare-repo-workspace validates a clean repo, runs 
       "apps/mimir-api/dist/main.js",
       "apps/mimir-cli/dist/main.js",
       "apps/mimir-mcp/dist/main.js",
-      "apps/mimir-control-mcp/dist/main.js"
+      "apps/mimir-control-mcp/dist/main.js",
+      "vendor/codex-claude-voltagent-client/dist/index.js"
     ]
   );
 
