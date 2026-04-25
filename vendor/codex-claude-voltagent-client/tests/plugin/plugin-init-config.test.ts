@@ -87,8 +87,9 @@ function runRepoPluginScript(
 }
 
 describe("repo-local Codex client config bootstrap", () => {
-  it("writes a default workspace config in the current directory", () => {
+  it("writes the default home-global config", () => {
     const workspaceRoot = createTempWorkspace();
+    const { homeRoot } = createTempCodexHome();
     const stdout = runRepoPluginScript(
       "init-client-config.mjs",
       [
@@ -97,10 +98,18 @@ describe("repo-local Codex client config bootstrap", () => {
         "--mimir-arg",
         join(repoRoot, "tests", "fixtures", "fake-mimir-mcp-server.mjs")
       ],
-      workspaceRoot
+      workspaceRoot,
+      {
+        USERPROFILE: homeRoot
+      }
     );
     const result = JSON.parse(stdout);
-    const configPath = join(workspaceRoot, "client-config.json");
+    const configPath = join(
+      homeRoot,
+      ".codex",
+      "voltagent",
+      "client-config.json"
+    );
     const config = JSON.parse(readFileSync(configPath, "utf8"));
 
     expect(result).toMatchObject({
@@ -111,13 +120,15 @@ describe("repo-local Codex client config bootstrap", () => {
       workspaceRoot
     });
     expect(config.runtime.mode).toBe("voltagent-default");
-    expect(config.runtime.trustedWorkspaceRoots).toEqual([workspaceRoot]);
-    expect(config.skills.rootPaths).toEqual([join(homedir(), ".codex", "skills")]);
+    expect(config.runtime.workspaceTrustMode).toBe("all-workspaces");
+    expect(config.runtime.trustedWorkspaceRoots).toEqual([]);
+    expect(config.skills.rootPaths).toEqual([join(homeRoot, ".codex", "skills")]);
     expect(config.mimir.serverCommand).toEqual([process.execPath]);
   });
 
   it("writes the default Claude profile packs when auto mode is requested", () => {
     const workspaceRoot = createTempWorkspace();
+    const { homeRoot } = createTempCodexHome();
     const stdout = runRepoPluginScript(
       "init-client-config.mjs",
       [
@@ -130,11 +141,17 @@ describe("repo-local Codex client config bootstrap", () => {
         "--skill-root",
         join(workspaceRoot, "skills")
       ],
-      workspaceRoot
+      workspaceRoot,
+      {
+        USERPROFILE: homeRoot
+      }
     );
     const result = JSON.parse(stdout);
     const config = JSON.parse(
-      readFileSync(join(workspaceRoot, "client-config.json"), "utf8")
+      readFileSync(
+        join(homeRoot, ".codex", "voltagent", "client-config.json"),
+        "utf8"
+      )
     );
 
     expect(result.mode).toBe("voltagent+claude-auto");
@@ -166,7 +183,12 @@ describe("repo-local Codex client config bootstrap", () => {
       USERPROFILE: homeRoot
     });
     const result = JSON.parse(stdout);
-    const configPath = join(workspaceRoot, "client-config.json");
+    const configPath = join(
+      homeRoot,
+      ".codex",
+      "voltagent",
+      "client-config.json"
+    );
     const config = JSON.parse(readFileSync(configPath, "utf8"));
 
     expect(result).toMatchObject({
@@ -204,7 +226,10 @@ describe("repo-local Codex client config bootstrap", () => {
     );
 
     const config = JSON.parse(
-      readFileSync(join(workspaceRoot, "client-config.json"), "utf8")
+      readFileSync(
+        join(homeRoot, ".codex", "voltagent", "client-config.json"),
+        "utf8"
+      )
     );
 
     expect(config.mimir.serverCommand).toEqual([process.execPath]);

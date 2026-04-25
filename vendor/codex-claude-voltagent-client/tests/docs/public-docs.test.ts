@@ -65,7 +65,7 @@ describe("public docs and examples", () => {
     expect(readme).toContain("pnpm plugin:install-home");
     expect(readme).toContain("pnpm plugin:init-config");
     expect(readme).toContain("pnpm plugin:bootstrap-default");
-    expect(readme).toContain("client-config.json");
+    expect(readme).toContain("~/.codex/voltagent/client-config.json");
     expect(readme).toContain("repo-local plugin shell");
     expect(readme).toContain("no automatic startup hook");
   });
@@ -108,12 +108,15 @@ describe("public docs and examples", () => {
     expect(readme).toContain("pnpm codex:doctor");
     expect(readme).toContain("single onboarding command");
     expect(readme).toContain("pnpm codex:smoke");
+    expect(readme).toContain("workspace override");
 
     expect(installDoc).toContain("pnpm codex:onboard");
     expect(installDoc).toContain("pnpm codex:doctor");
     expect(installDoc).toContain("pnpm codex:smoke");
+    expect(installDoc).toContain("~/.codex/voltagent/client-config.json");
     expect(activationDoc).toContain("Fresh-machine smoke");
     expect(activationDoc).toContain("pnpm codex:smoke");
+    expect(activationDoc).toContain("Config discovery is intentionally layered");
   });
 
   it("documents the stable default workflow and route policy for Codex users", () => {

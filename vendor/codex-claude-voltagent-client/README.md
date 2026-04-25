@@ -22,8 +22,9 @@ The stable **primary activation path** is **native Codex skill discovery**, not 
 See [`.codex/INSTALL.md`](./.codex/INSTALL.md) for the canonical native Codex skill discovery install flow.
 See [docs/codex-default-activation.md](./docs/codex-default-activation.md) for the stable default workflow, route policy, and Claude escalation rules.
 
-For a single onboarding command that installs native skills, bootstraps
-`client-config.json`, and runs a readiness doctor, use `pnpm codex:onboard`.
+For a single onboarding command that installs native skills, bootstraps the
+home-global config at `~/.codex/voltagent/client-config.json`, and runs a
+readiness doctor, use `pnpm codex:onboard`.
 Run that package command from this repository root and pass `--workspace` when
 the target workspace is elsewhere. For a standalone system-level readiness
 check, use `pnpm codex:doctor` with the same `--workspace` rule.
@@ -58,11 +59,11 @@ activation path.
 Current scope:
 
 - diagnostics-only review scaffolding
-- `status.mjs` for an explicit config and workspace snapshot
+- `status.mjs` for a resolved config and workspace snapshot
 - `doctor.mjs` for deterministic readiness checks
 - `enable.mjs` and `disable.mjs` for explicit mode toggling in the client config
-- `init-client-config.mjs` for bootstrapping a valid client config in the current workspace
-- `bootstrap-default-runtime.mjs` for installing the home-local plugin shell and initializing the workspace config in one step
+- `init-client-config.mjs` for bootstrapping a valid home-global client config with optional workspace override
+- `bootstrap-default-runtime.mjs` for installing the home-local plugin shell and initializing the default config in one step
 - `profiles.mjs` for resolved Claude profile inspection
 - `route-preview.mjs` for deterministic route previews, including Claude auto-selection previews
 - `claude-handoff.mjs` for explicit manual Claude role/skill handoff generation
@@ -85,17 +86,20 @@ Re-run the installer if you move the repository.
 
 You can run the installer directly or through `pnpm plugin:install-home`.
 
-To bootstrap a valid client config in the current workspace:
+To bootstrap the default home-global client config:
 
 ```powershell
 pnpm build
 node .\plugins\codex-voltagent-default\scripts\init-client-config.mjs
 ```
 
-This writes `.\client-config.json`, trusts the current directory for
-`voltagent-default`, seeds the standard Claude profile packs when a Claude
-mode is selected, and auto-reads Codex's existing `mcp_servers.mimir` config
-when present.
+This writes `~/.codex/voltagent/client-config.json`, enables
+`workspaceTrustMode: "all-workspaces"` for `voltagent-default`, seeds the
+standard Claude profile packs when a Claude mode is selected, and auto-reads
+Codex's existing `mcp_servers.mimir` config when present.
+
+Pass `--config <workspace>\client-config.json` when you want a local override
+for one repository instead of the home-global default.
 
 You can also run the same bootstrap through `pnpm plugin:init-config`.
 
@@ -107,8 +111,9 @@ pnpm codex:onboard -- --workspace F:\path\to\target-workspace
 ```
 
 This single onboarding command installs the native Codex skills, initializes
-`client-config.json` in the current workspace, auto-reads Codex's existing
-`mcp_servers.mimir` config when present, and runs a readiness doctor.
+`~/.codex/voltagent/client-config.json` by default, auto-reads Codex's
+existing `mcp_servers.mimir` config when present, and runs a readiness doctor
+for the selected workspace.
 
 For a standalone readiness check against the current workspace:
 

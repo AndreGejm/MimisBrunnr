@@ -254,6 +254,10 @@ export function parseCliArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
 
+    if (token === "--") {
+      continue;
+    }
+
     if (token === "--config") {
       parsed.configPath = argv[index + 1];
       index += 1;

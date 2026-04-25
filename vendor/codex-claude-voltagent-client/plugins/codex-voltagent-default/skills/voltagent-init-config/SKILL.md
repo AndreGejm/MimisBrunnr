@@ -1,11 +1,11 @@
 ---
 name: VoltAgent Init Config
-description: Initialize a client-config.json for the current workspace with explicit Mimir transport settings and optional Claude mode.
+description: Initialize the home-global VoltAgent config with explicit Mimir transport settings and optional Claude mode.
 ---
 
 # VoltAgent Init Config
 
-From the workspace you want to trust by default, run:
+From any workspace, run:
 
 ```powershell
 node .\plugins\codex-voltagent-default\scripts\init-client-config.mjs --mimir-command <command> --mimir-arg <arg>
@@ -13,10 +13,13 @@ node .\plugins\codex-voltagent-default\scripts\init-client-config.mjs --mimir-co
 
 Defaults:
 
-- writes `.\client-config.json`
-- trusts the current working directory as `runtime.trustedWorkspaceRoots[0]`
+- writes `~/.codex/voltagent/client-config.json`
+- enables `workspaceTrustMode: "all-workspaces"`
 - sets `runtime.mode` to `voltagent-default`
 - seeds `skills.rootPaths` with `%USERPROFILE%\.codex\skills`
+
+Use `--config <workspace>\client-config.json` when you want a local override
+instead of the home-global default.
 
 Useful flags:
 

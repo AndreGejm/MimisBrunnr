@@ -12,6 +12,14 @@ Use native Codex skill discovery as the primary activation path:
 
 The plugin shell remains optional and is intended for bootstrap, diagnostics, and route inspection only.
 
+Config discovery is intentionally layered:
+
+1. `<workspace>/client-config.json` when a local override exists
+2. `~/.codex/voltagent/client-config.json` as the default for every workspace
+
+That keeps VoltAgent active by default everywhere while still allowing a single
+repository to opt into a local override when needed.
+
 ## Routing policy
 
 Use the shared client runtime and Mimir boundary like this:
@@ -69,6 +77,10 @@ Use these skills first:
 Bootstrap only when needed:
 
 - `voltagent-bootstrap-default-runtime`
+
+The default bootstrap path writes the home-global config under
+`~/.codex/voltagent/client-config.json`. A workspace-local `client-config.json`
+is optional and only needed when overriding the default behavior for one repo.
 
 ## Fresh-machine smoke
 

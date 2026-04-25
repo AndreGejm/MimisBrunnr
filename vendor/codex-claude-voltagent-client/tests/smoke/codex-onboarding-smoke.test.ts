@@ -129,7 +129,12 @@ describe("fresh-home Codex onboarding smoke", () => {
 
     const onboardResult = JSON.parse(onboardStdout);
     const doctorResult = JSON.parse(doctorStdout);
-    const config = JSON.parse(readFileSync(join(workspaceRoot, "client-config.json"), "utf8"));
+    const config = JSON.parse(
+      readFileSync(
+        join(homeRoot, ".codex", "voltagent", "client-config.json"),
+        "utf8"
+      )
+    );
 
     expect(onboardResult.ok).toBe(true);
     expect(onboardResult.install).toMatchObject({
@@ -138,7 +143,8 @@ describe("fresh-home Codex onboarding smoke", () => {
       targetPath: join(homeRoot, ".codex", "skills", "voltagent-default")
     });
     expect(config.mimir.serverCommand).toEqual([process.execPath]);
-    expect(config.runtime.trustedWorkspaceRoots).toEqual([workspaceRoot]);
+    expect(config.runtime.workspaceTrustMode).toBe("all-workspaces");
+    expect(config.runtime.trustedWorkspaceRoots).toEqual([]);
 
     expect(doctorResult.ok).toBe(true);
     expect(doctorResult.status.activation).toEqual({

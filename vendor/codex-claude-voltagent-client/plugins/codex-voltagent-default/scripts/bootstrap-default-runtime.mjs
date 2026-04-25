@@ -15,7 +15,8 @@ async function main() {
     allowUnknown: true
   });
   const initArgs = parseInitArgs(process.argv.slice(2), {
-    allowUnknown: true
+    allowUnknown: true,
+    homeRoot: installArgs.homeRoot
   });
   const installLayout = createHomeInstallLayout({
     homeRoot: installArgs.homeRoot,

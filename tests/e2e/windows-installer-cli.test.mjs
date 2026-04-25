@@ -143,6 +143,13 @@ test("windows installer cli plan-client-access returns a dry-run write plan with
   const configPath = path.join(root, "config.toml");
   const manifestPath = path.join(root, "installation.json");
   const workspacePath = path.join(root, "workspace");
+  const homeRoot = path.join(root, "home");
+  const globalVoltAgentConfigPath = path.join(
+    homeRoot,
+    ".codex",
+    "voltagent",
+    "client-config.json"
+  );
   await mkdir(binDir, { recursive: true });
   await mkdir(workspacePath, { recursive: true });
   await writeFile(configPath, "# existing config\n", "utf8");
@@ -168,6 +175,8 @@ test("windows installer cli plan-client-access returns a dry-run write plan with
     manifestPath,
     "-WorkspacePath",
     workspacePath,
+    "-HomeRoot",
+    homeRoot,
     "-StateRoot",
     stateRoot,
     "-Json"
@@ -187,16 +196,16 @@ test("windows installer cli plan-client-access returns a dry-run write plan with
   assert.ok(Array.isArray(envelope.details.writePlan.writeTargets));
   assert.equal(envelope.details.clientAccess.codexVoltAgentAccess.workspacePath, workspacePath);
   assert.equal(
-    envelope.details.clientAccess.codexVoltAgentAccess.workspaceConfigPath,
-    path.join(workspacePath, "client-config.json")
+    envelope.details.clientAccess.codexVoltAgentAccess.configPath,
+    globalVoltAgentConfigPath
   );
   assert.equal(
-    envelope.details.writePlan.codexVoltAgentAccess.workspaceConfigPath,
-    path.join(workspacePath, "client-config.json")
+    envelope.details.writePlan.codexVoltAgentAccess.configPath,
+    globalVoltAgentConfigPath
   );
   assert.equal(
     envelope.details.writePlan.codexVoltAgentAccess.nativeSkillPath,
-    path.join(process.env.USERPROFILE ?? process.env.HOME ?? "", ".codex", "skills", "voltagent-default")
+    path.join(homeRoot, ".codex", "skills", "voltagent-default")
   );
 
   const configTarget = envelope.details.writePlan.writeTargets.find((target) => target.id === "client-config");
@@ -224,10 +233,10 @@ test("windows installer cli plan-client-access returns a dry-run write plan with
   assert.equal(launcherTarget.backupPathPattern, null);
 
   const vendoredConfigTarget = envelope.details.writePlan.writeTargets.find(
-    (target) => target.id === "codex-voltagent-config"
+    (target) => target.id === "codex-voltagent-global-config"
   );
   assert.ok(vendoredConfigTarget);
-  assert.equal(vendoredConfigTarget.path, path.join(workspacePath, "client-config.json"));
+  assert.equal(vendoredConfigTarget.path, globalVoltAgentConfigPath);
   assert.equal(vendoredConfigTarget.exists, false);
   assert.equal(vendoredConfigTarget.mutationKind, "write_file");
 
@@ -237,7 +246,7 @@ test("windows installer cli plan-client-access returns a dry-run write plan with
   assert.ok(nativeSkillTarget);
   assert.equal(
     nativeSkillTarget.path,
-    path.join(process.env.USERPROFILE ?? process.env.HOME ?? "", ".codex", "skills", "voltagent-default")
+    path.join(homeRoot, ".codex", "skills", "voltagent-default")
   );
   assert.equal(nativeSkillTarget.mutationKind, "create_link");
 
@@ -260,6 +269,12 @@ test("windows installer cli apply-client-access executes the tracked install hel
   const manifestPath = path.join(root, "installation.json");
   const workspacePath = path.join(root, "workspace");
   const homeRoot = path.join(root, "home");
+  const globalVoltAgentConfigPath = path.join(
+    homeRoot,
+    ".codex",
+    "voltagent",
+    "client-config.json"
+  );
   await mkdir(binDir, { recursive: true });
   await mkdir(workspacePath, { recursive: true });
   await writeFile(configPath, "# existing config\n", "utf8");
@@ -319,8 +334,8 @@ test("windows installer cli apply-client-access executes the tracked install hel
   assert.equal(envelope.details.applyResult.writeTargets.length > 0, true);
   assert.equal(envelope.details.clientAccess.codexVoltAgentAccess.workspacePath, workspacePath);
   assert.equal(
-    envelope.details.clientAccess.codexVoltAgentAccess.workspaceConfigPath,
-    path.join(workspacePath, "client-config.json")
+    envelope.details.clientAccess.codexVoltAgentAccess.configPath,
+    globalVoltAgentConfigPath
   );
   assert.equal(
     envelope.details.clientAccess.codexVoltAgentAccess.nativeSkillPath,
@@ -339,10 +354,11 @@ test("windows installer cli apply-client-access executes the tracked install hel
   assert.match(launcherContents, /launch-mimir-cli\.mjs/);
 
   const vendoredConfig = JSON.parse(
-    await readFile(path.join(workspacePath, "client-config.json"), "utf8")
+    await readFile(globalVoltAgentConfigPath, "utf8")
   );
   assert.equal(vendoredConfig.runtime.mode, "voltagent-default");
-  assert.deepEqual(vendoredConfig.runtime.trustedWorkspaceRoots, [workspacePath]);
+  assert.equal(vendoredConfig.runtime.workspaceTrustMode, "all-workspaces");
+  assert.deepEqual(vendoredConfig.runtime.trustedWorkspaceRoots, []);
   assert.ok(vendoredConfig.skills.rootPaths.includes(path.join(homeRoot, ".codex", "skills")));
   assert.equal(
     vendoredConfig.mimir.serverCommand[0],
@@ -1236,7 +1252,7 @@ test("windows installer cli audit-toolbox-client-handoff reports reconnect contr
     "MAB_TOOLBOX_SESSION_POLICY_TOKEN"
   );
   assert.equal(
-    await pathExists(path.join(workspacePath, "client-config.json")),
+    await pathExists(path.join(homeRoot, ".codex", "voltagent", "client-config.json")),
     true
   );
   assert.equal(

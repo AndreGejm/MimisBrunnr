@@ -58,7 +58,7 @@ model-backed mode, or provide a full GUI bootstrap yet. They currently:
   post-apply result for:
   - default Mimir access
   - native Codex skill installation from the vendored subtree
-  - workspace `client-config.json` bootstrap
+  - home-global VoltAgent config bootstrap under `~/.codex/voltagent/client-config.json`
   - vendored post-install doctor
 
 That gives later GUI and toolbox work a stable contract instead of forcing it to
@@ -117,7 +117,7 @@ What this does:
 - reports the exact apply command shape without executing it
 - previews the client config write target for default Mimir access
 - previews the installation manifest write target
-- previews the vendored Codex/VoltAgent workspace config write target
+- previews the vendored Codex/VoltAgent home-global config write target
 - previews the vendored native skill link target under `~/.codex/skills`
 - previews every compatibility launcher target under the selected bin directory
 - marks which targets already exist
@@ -364,7 +364,7 @@ What this does:
 - runs the same dry-run plan path first so the backend can keep a stable write
   target model
 - executes `scripts/install-default-access.mjs`
-- executes vendored Codex/VoltAgent onboarding for the selected workspace
+- executes vendored Codex/VoltAgent onboarding with the home-global config as the default target
 - executes vendored Codex/VoltAgent doctor for the selected workspace
 - records the actual commands used
 - reports the combined post-apply result for:
@@ -438,7 +438,7 @@ Shared arguments accepted by `cli.ps1`:
   - defaults to the config path declared by the selected client definition
 - `-WorkspacePath`
   - defaults to `<RepoRoot>`
-  - used for vendored Codex/VoltAgent `client-config.json`
+  - used for the vendored post-install doctor and runtime probe
 - `-HomeRoot`
   - defaults to the current user home
   - used for native Codex skill installation under `~/.codex/skills`

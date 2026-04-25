@@ -86,7 +86,7 @@ function runRepoPluginScript(
 }
 
 describe("repo-local Codex default runtime bootstrap", () => {
-  it("installs the home-local plugin and initializes a trusted workspace config in one step", () => {
+  it("installs the home-local plugin and initializes the home-global config in one step", () => {
     const workspaceRoot = createTempDir("codex-voltagent-bootstrap-workspace-");
     const homeRoot = createTempDir("codex-voltagent-bootstrap-home-");
     const stdout = runRepoPluginScript(
@@ -102,7 +102,12 @@ describe("repo-local Codex default runtime bootstrap", () => {
       workspaceRoot
     );
     const result = JSON.parse(stdout);
-    const configPath = join(workspaceRoot, "client-config.json");
+    const configPath = join(
+      homeRoot,
+      ".codex",
+      "voltagent",
+      "client-config.json"
+    );
     const config = JSON.parse(readFileSync(configPath, "utf8"));
     const marketplace = JSON.parse(
       readFileSync(join(homeRoot, ".agents", "plugins", "marketplace.json"), "utf8")
@@ -122,8 +127,9 @@ describe("repo-local Codex default runtime bootstrap", () => {
         claudeEnabled: false
       }
     });
-    expect(config.runtime.trustedWorkspaceRoots).toEqual([workspaceRoot]);
-    expect(config.skills.rootPaths).toEqual([join(homedir(), ".codex", "skills")]);
+    expect(config.runtime.workspaceTrustMode).toBe("all-workspaces");
+    expect(config.runtime.trustedWorkspaceRoots).toEqual([]);
+    expect(config.skills.rootPaths).toEqual([join(homeRoot, ".codex", "skills")]);
     expect(marketplace.plugins).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -152,7 +158,12 @@ describe("repo-local Codex default runtime bootstrap", () => {
       }
     );
     const result = JSON.parse(stdout);
-    const configPath = join(workspaceRoot, "client-config.json");
+    const configPath = join(
+      homeRoot,
+      ".codex",
+      "voltagent",
+      "client-config.json"
+    );
     const config = JSON.parse(readFileSync(configPath, "utf8"));
 
     expect(result).toMatchObject({

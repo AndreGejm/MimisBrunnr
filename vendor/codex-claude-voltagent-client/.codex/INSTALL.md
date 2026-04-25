@@ -18,9 +18,10 @@ pnpm build
 pnpm codex:onboard -- --workspace F:\path\to\target-workspace
 ```
 
-That one-step path installs the native skills, writes `client-config.json` in
-the current workspace, auto-reads Codex's existing `mcp_servers.mimir` config
-when present, and runs the system-level doctor.
+That one-step path installs the native skills, writes the default config to
+`~/.codex/voltagent/client-config.json`, auto-reads Codex's existing
+`mcp_servers.mimir` config when present, and runs the system-level doctor for
+the selected workspace.
 
 For a standalone readiness check in the current workspace:
 

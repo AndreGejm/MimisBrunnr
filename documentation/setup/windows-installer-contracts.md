@@ -164,11 +164,11 @@ Current behavior:
   - default-access client config
   - installation manifest
   - compatibility launchers
-  - vendored Codex/VoltAgent workspace config
+  - vendored Codex/VoltAgent home-global config
   - vendored native Codex skill link
 - marks backup behavior as:
   - `timestamped_copy` for existing config and manifest files
-  - `timestamped_copy` for existing vendored workspace config files
+  - `timestamped_copy` for existing vendored home-global config files
   - `none` for launcher files, because the tracked launcher installer rewrites
     them in place without creating backups
 

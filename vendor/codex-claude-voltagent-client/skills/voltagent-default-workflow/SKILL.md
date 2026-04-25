@@ -29,9 +29,9 @@ Use this as the default Codex workflow when VoltAgent is installed through nativ
 
 ## Recommended workflow
 
-1. Run `voltagent-doctor` if the current workspace has not been bootstrapped.
-2. Run `voltagent-bootstrap-default-runtime` if `client-config.json` is missing.
-3. Use `voltagent-status` to confirm trusted workspace roots, model chain, and Claude readiness.
+1. Run `voltagent-doctor` if the home-global VoltAgent config has not been bootstrapped yet.
+2. Run `voltagent-bootstrap-default-runtime` if `~/.codex/voltagent/client-config.json` is missing.
+3. Use `voltagent-status` to confirm the resolved config source, model chain, and Claude readiness.
 4. Use `voltagent-route-preview` when you need to verify whether work should stay local, go to Mimir, or escalate to Claude.
 5. Use `voltagent-profiles`, `voltagent-claude-handoff`, or `voltagent-claude-auto-handoff` when Claude escalation is warranted.
 

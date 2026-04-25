@@ -38,8 +38,9 @@ On Windows, the canonical installer path now lives under
 - vendored Codex/VoltAgent client access
 
 The combined installer path installs native Codex skills from the vendored
-client subtree, bootstraps workspace `client-config.json`, and runs a
-post-install doctor. Docker Desktop, Docker MCP Toolkit work, and toolbox apply
+client subtree, bootstraps the home-global VoltAgent config at
+`~/.codex/voltagent/client-config.json`, and runs a post-install doctor for the
+selected workspace. Docker Desktop, Docker MCP Toolkit work, and toolbox apply
 remain optional. See [`windows-installer.md`](./windows-installer.md).
 
 If `corepack enable` cannot install a global `pnpm` shim, run every workspace
@@ -104,7 +105,7 @@ What this backend does today:
 - prepares a reviewed Docker Toolkit apply plan and blocks honestly when the
   installed Toolkit surface is incompatible with the compiled commands
 - exposes a dry-run write plan for launcher, client-config, install-manifest,
-  native Codex skill, and vendored workspace-config mutations
+  native Codex skill, and vendored home-global config mutations
 - executes the tracked client-access installer path for both default Mimir
   access and vendored Codex/VoltAgent access, then reports combined health plus
   created backups

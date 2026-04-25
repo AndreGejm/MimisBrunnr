@@ -1,11 +1,11 @@
 ---
 name: VoltAgent Bootstrap Default Runtime
-description: Install the home-local plugin shell and initialize a trusted client-config.json for the current workspace in one step.
+description: Install the home-local plugin shell and initialize the home-global VoltAgent config with optional workspace override in one step.
 ---
 
 # VoltAgent Bootstrap Default Runtime
 
-From the workspace you want to trust by default, run:
+From any workspace, run:
 
 ```powershell
 node .\plugins\codex-voltagent-default\scripts\bootstrap-default-runtime.mjs --mimir-command <command> --mimir-arg <arg>
@@ -19,9 +19,12 @@ This combines:
 Defaults:
 
 - installs the home-local plugin shell and marketplace entry under the current user home
-- writes `.\client-config.json`
-- trusts the current working directory as the default workspace
+- writes `~/.codex/voltagent/client-config.json`
+- enables `workspaceTrustMode: "all-workspaces"` by default
 - sets `runtime.mode` to `voltagent-default`
+
+Use `--config <workspace>\client-config.json` when you want a local override
+instead of the home-global default.
 
 Useful flags:
 
