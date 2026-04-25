@@ -23,7 +23,8 @@ export type SystemCommandName =
   | "revoke-auth-token"
   | "revoke-auth-tokens"
   | "set-auth-issuer-state"
-  | "sync-mcp-profiles";
+  | "sync-mcp-profiles"
+  | "sync-toolbox-client";
 
 export type CliCommandName = SystemCommandName | RuntimeCliCommandName;
 
@@ -51,7 +52,8 @@ export const SYSTEM_COMMAND_NAMES = [
   "revoke-auth-token",
   "revoke-auth-tokens",
   "set-auth-issuer-state",
-  "sync-mcp-profiles"
+  "sync-mcp-profiles",
+  "sync-toolbox-client"
 ] as const satisfies ReadonlyArray<SystemCommandName>;
 
 export const CLI_COMMAND_NAMES: ReadonlyArray<CliCommandName> = [

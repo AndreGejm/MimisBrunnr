@@ -1,0 +1,12 @@
+profile:
+  id: core-dev+voltagent-dev
+  displayName: Core Dev Plus VoltAgent Docs (Legacy Alias)
+  sessionMode: toolbox-activated
+  baseProfiles:
+    - core-dev+docs-research
+  compositeReason: repeated_workflow
+  includeServers:
+    - voltagent-docs
+  allowedCategories: []
+  deniedCategories: []
+  fallbackProfile: core-dev+docs-research

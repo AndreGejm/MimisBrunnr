@@ -39,7 +39,7 @@ The tracked repository currently implements:
 
 The tracked repository does not currently include:
 
-- GitHub Actions or other tracked CI/CD definitions
+- a full tracked CI/CD pipeline for docs, builds, tests, packaging, and release publication
 - Kubernetes, Helm, Terraform, or deployment descriptors beyond the tracked local Docker profiles
 - a tracked migration system for SQLite
 - a tracked dotenv loader for Node processes
@@ -108,7 +108,14 @@ corepack pnpm install
 corepack pnpm build
 ```
 
-The root package scripts are the supported install and build entrypoints. `scripts/` contains narrow operator helpers for launcher installation, Codex MCP setup, diagnostics, toolbox audit/sync, review, cleanup, and wrapper entrypoints; it does not contain a one-shot bootstrap script. An experimental Windows installer backend now lives under `scripts/installers/windows/`, but it is currently an environment/audit/repo-prepare/toolbox-audit/toolbox-prepare/docker-mcp-audit/docker-mcp-apply-plan/plan/apply/state contract rather than the full guided bootstrap flow.
+The root package scripts are the supported install and build entrypoints.
+`scripts/` contains narrow operator helpers for launcher installation, Codex
+MCP setup, diagnostics, toolbox audit/sync, review, cleanup, and wrapper
+entrypoints; it does not contain a one-shot cross-platform bootstrap script.
+On Windows, the canonical installer path now lives under
+`scripts/installers/windows/`. That backend provisions both default Mimir
+access and the vendored Codex/VoltAgent client access surface, while Docker
+Desktop and toolbox apply remain optional follow-up work.
 
 If `corepack enable` cannot install a global `pnpm` shim on your machine, run the
 workspace commands as `corepack pnpm ...` directly.
@@ -428,10 +435,12 @@ python3 -m pytest runtimes/local_experts/tests/test_safety_gate.py -v # macOS/Li
 apps/          transport entrypoints
 packages/      layered TypeScript modules
 docker/        Dockerfile and local compose profile
-documentation/          canonical docs plus planning/history docs
+documentation/ canonical setup, runtime, operations, reference, and release docs
+docs/          internal planning/spec snapshots for recent work
 runtimes/      vendored Python coding runtime
 tests/         end-to-end transport and service tests
 scripts/       launcher, installer backend, doctor, review, and cleanup helpers
+vendor/        vendored external integrations kept source-close for release stability
 ```
 
 Full map: `documentation/reference/repo-map.md`
@@ -451,13 +460,16 @@ Full map: `documentation/reference/repo-map.md`
 - `documentation/agents/ai-navigation-guide.md`
 - `documentation/release/contributor-beta-readiness.md`
 
-`documentation/planning/` is useful for history and rollout context, but it is not the primary source of truth for the current runtime.
+`documentation/` is the canonical source for current runtime, setup, operations,
+reference, and release docs. `documentation/planning/`, `documentation/superpowers/`,
+and `docs/superpowers/` are historical or internal planning material; they are
+useful for rollout context, but they are not release contract docs.
 
 ## Known limitations and active documentation risks
 
 - namespace browsing is currently backed by rows in the `notes` table; imported jobs and session archives are stored, but they are not exposed through the namespace tree
 - the Docker MCP session profile still assumes Qdrant and the model endpoint are managed intentionally outside the session container
-- there is no tracked CI pipeline validating docs, builds, or tests automatically
+- tracked GitHub Actions currently cover targeted VoltAgent contract and upstream canary checks, but there is no full release pipeline validating docs, builds, tests, packaging, and release publication together
 
 ## AI-agent navigation
 
@@ -481,6 +493,6 @@ Start here if you are using an automated reviewer or coding agent:
 
 - The generic MCP client command example will need minor format changes depending on the client you use
 
-### TODO gaps
+### Documentation maintenance note
 
 - If the repo adds dotenv loading, CI, deployment descriptors, migration tooling, or another Docker/MCP runtime shape, update this README and the setup/reference docs together

@@ -7,6 +7,7 @@ import test from "node:test";
 
 const infrastructure = await import("../../packages/infrastructure/dist/index.js");
 const application = await import("../../packages/application/dist/index.js");
+const { z } = await import("../../packages/infrastructure/node_modules/zod/index.js");
 
 function providerBinding(overrides) {
   return {
@@ -33,6 +34,40 @@ function providerTestEnvironment(overrides = {}) {
   });
 }
 
+function createCodingAdvisoryInvocation(overrides = {}) {
+  const requestOverrides = overrides.request ?? {};
+  const localResponseOverrides = overrides.localResponse ?? {};
+
+  return {
+    request: {
+      actor: {
+        actorId: "operator-test",
+        actorRole: "operator",
+        transport: "internal",
+        source: "test-suite",
+        requestId: randomUUID(),
+        initiatedAt: new Date().toISOString(),
+        toolName: "local-model-providers-test"
+      },
+      taskType: "propose_fix",
+      task: "Fix the writer promotion bug.",
+      context: "The local coding runtime could not apply the patch safely.",
+      repoRoot: "F:\\repo",
+      filePath: "src/foo.py",
+      ...requestOverrides
+    },
+    localResponse: {
+      status: "escalate",
+      reason: "Local runtime could not determine a safe patch root.",
+      attempts: 1,
+      escalationMetadata: {
+        providerErrorKind: "transport"
+      },
+      ...localResponseOverrides
+    }
+  };
+}
+
 test("default provider factory registry creates the supported provider adapters", () => {
   const registry = infrastructure.buildDefaultProviderFactoryRegistry();
   const env = providerTestEnvironment();
@@ -53,9 +88,21 @@ test("default provider factory registry creates the supported provider adapters"
     env,
     binding: providerBinding({ providerId: "paid_openai_compat", modelId: "gpt-paid-test" })
   });
+  const voltagentReasoning = registry.createReasoning({
+    env,
+    binding: providerBinding({ providerId: "voltagent_agent", modelId: "openai/gpt-4.1-mini" })
+  });
   const drafting = registry.createDrafting({
     env,
     binding: providerBinding({ providerId: "docker_ollama", modelId: "qwen3:4B-F16" })
+  });
+  const codingAdvisory = registry.createCodingAdvisory({
+    env,
+    binding: providerBinding({
+      role: "coding_advisory",
+      providerId: "voltagent_agent",
+      modelId: "openai/gpt-4.1-mini"
+    })
   });
   const reranker = registry.createReranker({
     env,
@@ -66,7 +113,9 @@ test("default provider factory registry creates the supported provider adapters"
   assert.ok(reasoning instanceof infrastructure.HeuristicLocalReasoningProvider);
   assert.ok(ollamaReasoning instanceof infrastructure.OllamaLocalReasoningProvider);
   assert.ok(paidReasoning instanceof infrastructure.OpenAiCompatibleLocalReasoningProvider);
+  assert.ok(voltagentReasoning instanceof infrastructure.VoltAgentReasoningAdapter);
   assert.ok(drafting instanceof infrastructure.OllamaDraftingProvider);
+  assert.ok(codingAdvisory instanceof infrastructure.VoltAgentCodingAdvisoryAdapter);
   assert.ok(reranker instanceof infrastructure.HeuristicRerankerProvider);
 });
 
@@ -94,6 +143,13 @@ test("default provider factory registry returns undefined for disabled or unavai
     undefined
   );
   assert.equal(
+    registry.createReasoning({
+      env,
+      binding: providerBinding({ providerId: "voltagent_agent", modelId: undefined })
+    }),
+    undefined
+  );
+  assert.equal(
     registry.createDrafting({
       env,
       binding: providerBinding({ providerId: "disabled" })
@@ -104,6 +160,13 @@ test("default provider factory registry returns undefined for disabled or unavai
     registry.createDrafting({
       env,
       binding: providerBinding({ providerId: "internal_heuristic" })
+    }),
+    undefined
+  );
+  assert.equal(
+    registry.createCodingAdvisory({
+      env,
+      binding: providerBinding({ role: "coding_advisory", providerId: "disabled" })
     }),
     undefined
   );
@@ -349,6 +412,879 @@ test("openai-compatible paid reasoning provider parses structured reasoning outp
     "Bearer top-secret",
     "Bearer top-secret"
   ]);
+});
+
+test("voltagent reasoning adapter parses structured responses and records success telemetry", async () => {
+  const calls = [];
+  const provider = new infrastructure.VoltAgentReasoningAdapter({
+    model: "openai/gpt-4.1-mini",
+    timeoutMs: 12_345,
+    credentialEnv: {
+      OPENAI_API_KEY: "test-openai-key"
+    },
+    createAgent: (config) => ({
+      async generateObject(prompt, schema, options) {
+        calls.push({
+          config,
+          prompt,
+          schema,
+          options
+        });
+
+        if (config.name.endsWith("intent")) {
+          return { object: { intent: "architecture_recall" } };
+        }
+        if (config.name.endsWith("answerability")) {
+          return { object: { answerability: "needs_escalation" } };
+        }
+        return { object: { summary: "Escalate to a paid provider for authoritative synthesis." } };
+      }
+    })
+  });
+
+  const intent = await provider.classifyIntent("How is the retrieval architecture composed?");
+  assert.equal(intent, "architecture_recall");
+  assert.deepEqual(provider.consumePaidExecutionTelemetry(), {
+    providerId: "voltagent_agent",
+    modelId: "openai/gpt-4.1-mini",
+    timeoutMs: 12_345,
+    outcomeClass: "success",
+    fallbackApplied: false,
+    retryCount: 0,
+    details: {
+      roleProfile: "paid_escalation"
+    }
+  });
+
+  const answerability = await provider.assessAnswerability({
+    query: "How is the retrieval architecture composed?",
+    intent,
+    candidates: []
+  });
+  assert.equal(answerability, "needs_escalation");
+  assert.deepEqual(provider.consumePaidExecutionTelemetry(), {
+    providerId: "voltagent_agent",
+    modelId: "openai/gpt-4.1-mini",
+    timeoutMs: 12_345,
+    outcomeClass: "success",
+    fallbackApplied: false,
+    retryCount: 0,
+    details: {
+      roleProfile: "paid_escalation"
+    }
+  });
+
+  const uncertainty = await provider.summarizeUncertainty("retrieval architecture", ["no local evidence"]);
+  assert.equal(
+    uncertainty,
+    "Escalate to a paid provider for authoritative synthesis."
+  );
+  assert.deepEqual(provider.consumePaidExecutionTelemetry(), {
+    providerId: "voltagent_agent",
+    modelId: "openai/gpt-4.1-mini",
+    timeoutMs: 12_345,
+    outcomeClass: "success",
+    fallbackApplied: false,
+    retryCount: 0,
+    details: {
+      roleProfile: "paid_escalation"
+    }
+  });
+  assert.equal(calls.length, 3);
+  assert.equal(calls[0].config.memory, false);
+  assert.deepEqual(calls[0].config.tools, []);
+  assert.equal(calls[0].config.model, "openai/gpt-4.1-mini");
+  assert.equal(calls[0].config.maxRetries, 1);
+  assert.equal(typeof calls[0].config.hooks.onRetry, "function");
+  assert.equal(typeof calls[0].config.hooks.onFallback, "function");
+  assert.ok(Array.isArray(calls[0].config.inputMiddlewares));
+  assert.ok(Array.isArray(calls[0].config.outputMiddlewares));
+  assert.ok(calls[0].schema);
+  assert.equal(calls[0].options.maxRetries, 1);
+  assert.ok(calls[0].options.abortSignal instanceof AbortSignal);
+});
+
+test("voltagent reasoning adapter applies paid_escalation normalization to prompts and summaries", async () => {
+  const calls = [];
+  const provider = new infrastructure.VoltAgentReasoningAdapter({
+    model: "openai/gpt-4.1-mini",
+    timeoutMs: 8_000,
+    credentialEnv: {
+      OPENAI_API_KEY: "test-openai-key"
+    },
+    createAgent: (config) => ({
+      async generateObject(prompt, schema, options) {
+        calls.push({
+          config,
+          prompt,
+          schema,
+          options
+        });
+
+        if (config.name.endsWith("intent")) {
+          return { object: { intent: "architecture_recall" } };
+        }
+
+        return {
+          object: {
+            summary: "  Local evidence remains partial and needs verification.  "
+          }
+        };
+      }
+    })
+  });
+
+  const intent = await provider.classifyIntent("   explain the retrieval architecture   ");
+  assert.equal(intent, "architecture_recall");
+  assert.equal(calls[0].prompt, "Query: explain the retrieval architecture");
+  assert.deepEqual(provider.consumePaidExecutionTelemetry(), {
+    providerId: "voltagent_agent",
+    modelId: "openai/gpt-4.1-mini",
+    timeoutMs: 8_000,
+    outcomeClass: "success",
+    fallbackApplied: false,
+    retryCount: 0,
+    details: {
+      roleProfile: "paid_escalation"
+    }
+  });
+
+  const summary = await provider.summarizeUncertainty("  retrieval architecture  ", [
+    "  partial design notes  ",
+    "",
+    "  stale implementation comments  "
+  ]);
+  assert.equal(summary, "Local evidence remains partial and needs verification.");
+  assert.deepEqual(JSON.parse(calls[1].prompt), {
+    query: "retrieval architecture",
+    evidence: ["partial design notes", "stale implementation comments"]
+  });
+  assert.ok(calls[0].config.inputMiddlewares.length >= 1);
+  assert.ok(calls[0].config.outputMiddlewares.length >= 1);
+  assert.ok(calls[0].config.inputGuardrails.length >= 1);
+  assert.ok(calls[0].config.outputGuardrails.length >= 1);
+});
+
+test("voltagent reasoning adapter blocks empty queries with stable guardrail telemetry", async () => {
+  const provider = new infrastructure.VoltAgentReasoningAdapter({
+    model: "openai/gpt-4.1-mini",
+    timeoutMs: 8_000,
+    credentialEnv: {
+      OPENAI_API_KEY: "test-openai-key"
+    },
+    createAgent: () => ({
+      async generateObject() {
+        throw new Error("should not be called");
+      }
+    })
+  });
+
+  await assert.rejects(
+    () => provider.classifyIntent("   "),
+    (error) => {
+      assert.equal(error.code, "voltagent_input_guardrail_blocked");
+      assert.match(error.message, /non-empty query/i);
+      return true;
+    }
+  );
+  assert.deepEqual(provider.consumePaidExecutionTelemetry(), {
+    providerId: "voltagent_agent",
+    modelId: "openai/gpt-4.1-mini",
+    timeoutMs: 8_000,
+    outcomeClass: "provider_error",
+    fallbackApplied: false,
+    retryCount: 0,
+    errorCode: "voltagent_input_guardrail_blocked",
+    details: {
+      roleProfile: "paid_escalation",
+      blockedByGuardrail: "input"
+    }
+  });
+});
+
+test("voltagent reasoning adapter blocks invalid certainty claims in uncertainty summaries", async () => {
+  const provider = new infrastructure.VoltAgentReasoningAdapter({
+    model: "openai/gpt-4.1-mini",
+    timeoutMs: 8_000,
+    credentialEnv: {
+      OPENAI_API_KEY: "test-openai-key"
+    },
+    createAgent: () => ({
+      async generateObject() {
+        return {
+          object: {
+            summary: "No uncertainty remains. This fully answers the question."
+          }
+        };
+      }
+    })
+  });
+
+  await assert.rejects(
+    () => provider.summarizeUncertainty("retrieval architecture", ["partial design notes"]),
+    (error) => {
+      assert.equal(error.code, "voltagent_output_guardrail_blocked");
+      assert.match(error.message, /uncertainty summary/i);
+      return true;
+    }
+  );
+  assert.deepEqual(provider.consumePaidExecutionTelemetry(), {
+    providerId: "voltagent_agent",
+    modelId: "openai/gpt-4.1-mini",
+    timeoutMs: 8_000,
+    outcomeClass: "provider_error",
+    fallbackApplied: false,
+    retryCount: 0,
+    errorCode: "voltagent_output_guardrail_blocked",
+    details: {
+      roleProfile: "paid_escalation",
+      blockedByGuardrail: "output"
+    }
+  });
+});
+
+test("voltagent reasoning adapter records retry and fallback telemetry details for the paid escalation profile", async () => {
+  const provider = new infrastructure.VoltAgentReasoningAdapter({
+    model: "openai/gpt-4.1-mini",
+    fallbackModelIds: ["anthropic/claude-sonnet-4"],
+    timeoutMs: 8_000,
+    credentialEnv: {
+      OPENAI_API_KEY: "test-openai-key",
+      ANTHROPIC_API_KEY: "test-anthropic-key"
+    },
+    createAgent: (config) => ({
+      async generateObject() {
+        await config.hooks.onRetry({
+          source: "llm",
+          agent: {},
+          context: new Map(),
+          operation: "generateObject",
+          modelName: "openai/gpt-4.1-mini",
+          modelIndex: 0,
+          attempt: 0,
+          nextAttempt: 1,
+          maxRetries: 1,
+          error: new Error("retry me")
+        });
+        await config.hooks.onFallback({
+          agent: {},
+          context: new Map(),
+          operation: "generateObject",
+          stage: "execute",
+          fromModel: "openai/gpt-4.1-mini",
+          fromModelIndex: 0,
+          maxRetries: 1,
+          attempt: 1,
+          error: new Error("primary failed"),
+          nextModel: "anthropic/claude-sonnet-4",
+          nextModelIndex: 1
+        });
+
+        return {
+          object: {
+            summary: "Local evidence remains partial and needs verification."
+          }
+        };
+      }
+    })
+  });
+
+  await provider.summarizeUncertainty("retrieval architecture", ["partial notes"]);
+  assert.deepEqual(provider.consumePaidExecutionTelemetry(), {
+    providerId: "voltagent_agent",
+    modelId: "openai/gpt-4.1-mini",
+    timeoutMs: 8_000,
+    outcomeClass: "degraded_fallback",
+    fallbackApplied: true,
+    retryCount: 1,
+    details: {
+      roleProfile: "paid_escalation",
+      retrySources: ["llm"],
+      fallbackModelId: "anthropic/claude-sonnet-4"
+    }
+  });
+});
+
+test("voltagent reasoning adapter falls back with typed telemetry on provider errors", async () => {
+  const fallback = new infrastructure.HeuristicLocalReasoningProvider();
+  const provider = new infrastructure.VoltAgentReasoningAdapter({
+    model: "openai/gpt-4.1-mini",
+    timeoutMs: 4_000,
+    fallback,
+    credentialEnv: {
+      OPENAI_API_KEY: "test-openai-key"
+    },
+    createAgent: () => ({
+      async generateObject() {
+        throw Object.assign(new Error("401 unauthorized: invalid api key"), { status: 401 });
+      }
+    })
+  });
+
+  const intent = await provider.classifyIntent("Why is the writer failing to promote notes?");
+  assert.equal(intent, "debugging");
+  assert.deepEqual(provider.consumePaidExecutionTelemetry(), {
+    providerId: "voltagent_agent",
+    modelId: "openai/gpt-4.1-mini",
+    timeoutMs: 4_000,
+    outcomeClass: "degraded_fallback",
+    fallbackApplied: true,
+    retryCount: 0,
+    errorCode: "voltagent_auth",
+    details: {
+      roleProfile: "paid_escalation"
+    }
+  });
+});
+
+test("voltagent reasoning adapter rejects invalid model ids with stable typed telemetry", async () => {
+  const provider = new infrastructure.VoltAgentReasoningAdapter({
+    model: "gpt-4.1-mini",
+    timeoutMs: 9_000,
+    createAgent: () => ({
+      async generateObject() {
+        throw new Error("should not be called");
+      }
+    })
+  });
+
+  await assert.rejects(
+    () => provider.classifyIntent("How is the retrieval architecture composed?"),
+    (error) => {
+      assert.equal(error.code, "voltagent_invalid_model_id");
+      assert.match(error.message, /provider-prefixed model id/i);
+      return true;
+    }
+  );
+  assert.deepEqual(provider.consumePaidExecutionTelemetry(), {
+    providerId: "voltagent_agent",
+    modelId: "gpt-4.1-mini",
+    timeoutMs: 9_000,
+    outcomeClass: "unsupported_model",
+    fallbackApplied: false,
+    retryCount: 0,
+    errorCode: "voltagent_invalid_model_id",
+    details: {
+      roleProfile: "paid_escalation"
+    }
+  });
+});
+
+test("voltagent harness runtime uses structured outputs and hook telemetry", async () => {
+  const calls = [];
+  const runtime = new infrastructure.VoltAgentHarnessRuntime({
+    providerId: "voltagent_agent",
+    model: "openai/gpt-4.1-mini",
+    timeoutMs: 2_500,
+    maxRetries: 1,
+    createAgent: (config) => ({
+      async generateObject(prompt, schema, options) {
+        calls.push({
+          config,
+          prompt,
+          schema,
+          options
+        });
+
+        await config.hooks.onRetry({
+          source: "llm",
+          agent: {},
+          context: new Map(),
+          operation: "generateObject",
+          modelName: "openai/gpt-4.1-mini",
+          modelIndex: 0,
+          attempt: 0,
+          nextAttempt: 1,
+          maxRetries: 1,
+          error: new Error("retry me")
+        });
+        await config.hooks.onFallback({
+          agent: {},
+          context: new Map(),
+          operation: "generateObject",
+          stage: "execute",
+          fromModel: "openai/gpt-4.1-mini",
+          fromModelIndex: 0,
+          maxRetries: 1,
+          attempt: 1,
+          error: new Error("primary failed"),
+          nextModel: "anthropic/claude-sonnet-4",
+          nextModelIndex: 1
+        });
+
+        return {
+          object: {
+            intent: "architecture_recall"
+          }
+        };
+      }
+    })
+  });
+
+  const result = await runtime.generateObject({
+    taskName: "reasoning-intent",
+    instructions: "Return the detected intent.",
+    prompt: "Query: explain the retrieval architecture",
+    schema: z.object({
+      intent: z.literal("architecture_recall")
+    })
+  });
+
+  assert.deepEqual(result, {
+    intent: "architecture_recall"
+  });
+  assert.deepEqual(runtime.consumePaidExecutionTelemetry(), {
+    providerId: "voltagent_agent",
+    modelId: "openai/gpt-4.1-mini",
+    timeoutMs: 2_500,
+    outcomeClass: "degraded_fallback",
+    fallbackApplied: true,
+    retryCount: 1,
+    details: {
+      retrySources: ["llm"],
+      fallbackModelId: "anthropic/claude-sonnet-4"
+    }
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].config.memory, false);
+  assert.deepEqual(calls[0].config.tools, []);
+  assert.equal(calls[0].config.maxRetries, 1);
+  assert.equal(typeof calls[0].config.hooks.onRetry, "function");
+  assert.equal(typeof calls[0].config.hooks.onFallback, "function");
+  assert.ok(Array.isArray(calls[0].config.inputMiddlewares));
+  assert.ok(Array.isArray(calls[0].config.outputMiddlewares));
+  assert.equal(calls[0].prompt, "Query: explain the retrieval architecture");
+  assert.ok(calls[0].schema);
+  assert.equal(calls[0].options.maxRetries, 1);
+  assert.ok(calls[0].options.abortSignal instanceof AbortSignal);
+});
+
+test("voltagent harness runtime configures ordered fallback models for Claude escalation", async () => {
+  const calls = [];
+  const runtime = new infrastructure.VoltAgentHarnessRuntime({
+    providerId: "voltagent_agent",
+    model: "openai/gpt-4.1-mini",
+    fallbackModelIds: ["anthropic/claude-sonnet-4"],
+    timeoutMs: 2_500,
+    maxRetries: 1,
+    createAgent: (config) => ({
+      async generateObject(prompt, schema, options) {
+        calls.push({
+          config,
+          prompt,
+          schema,
+          options
+        });
+
+        return {
+          object: {
+            intent: "architecture_recall"
+          }
+        };
+      }
+    })
+  });
+
+  const result = await runtime.generateObject({
+    taskName: "reasoning-intent",
+    instructions: "Return the detected intent.",
+    prompt: "Query: explain the retrieval architecture",
+    schema: z.object({
+      intent: z.literal("architecture_recall")
+    })
+  });
+
+  assert.deepEqual(result, {
+    intent: "architecture_recall"
+  });
+  assert.deepEqual(calls[0].config.model, [
+    {
+      id: "primary",
+      model: "openai/gpt-4.1-mini",
+      maxRetries: 1
+    },
+    {
+      id: "fallback_1",
+      model: "anthropic/claude-sonnet-4",
+      maxRetries: 1,
+      enabled: true
+    }
+  ]);
+});
+
+test("voltagent reasoning adapter rejects missing Claude fallback credentials with stable telemetry", async () => {
+  const provider = new infrastructure.VoltAgentReasoningAdapter({
+    model: "openai/gpt-4.1-mini",
+    fallbackModelIds: ["anthropic/claude-sonnet-4"],
+    timeoutMs: 9_000,
+    credentialEnv: {
+      OPENAI_API_KEY: "test-openai-key"
+    },
+    createAgent: () => ({
+      async generateObject() {
+        throw new Error("should not be called");
+      }
+    })
+  });
+
+  await assert.rejects(
+    () => provider.classifyIntent("How is the retrieval architecture composed?"),
+    (error) => {
+      assert.equal(error.code, "voltagent_missing_anthropic_api_key");
+      assert.match(error.message, /ANTHROPIC_API_KEY/);
+      return true;
+    }
+  );
+  assert.deepEqual(provider.consumePaidExecutionTelemetry(), {
+    providerId: "voltagent_agent",
+    modelId: "openai/gpt-4.1-mini",
+    timeoutMs: 9_000,
+    outcomeClass: "invalid_configuration",
+    fallbackApplied: false,
+    retryCount: 0,
+    errorCode: "voltagent_missing_anthropic_api_key",
+    details: {
+      roleProfile: "paid_escalation"
+    }
+  });
+});
+
+test("voltagent coding advisory adapter returns structured advisory and success telemetry", async () => {
+  const calls = [];
+  const provider = new infrastructure.VoltAgentCodingAdvisoryAdapter({
+    model: "openai/gpt-4.1-mini",
+    timeoutMs: 18_000,
+    credentialEnv: {
+      OPENAI_API_KEY: "test-openai-key"
+    },
+    createAgent: (config) => ({
+      async generateObject(prompt, schema, options) {
+        calls.push({
+          config,
+          prompt,
+          schema,
+          options
+        });
+
+        return {
+          object: {
+            recommendedAction: "manual_followup",
+            summary: "Review the failing patch root guard and then retry locally.",
+            suggestedChecks: [
+              "Confirm repoRoot points at a writable git checkout.",
+              "Re-run the local coding task with a bounded file path."
+            ]
+          }
+        };
+      }
+    })
+  });
+
+  const advisory = await provider.adviseOnEscalation(createCodingAdvisoryInvocation());
+
+  assert.deepEqual(advisory, {
+    invoked: true,
+    modelRole: "coding_advisory",
+    providerId: "voltagent_agent",
+    modelId: "openai/gpt-4.1-mini",
+    recommendedAction: "manual_followup",
+    summary: "Review the failing patch root guard and then retry locally.",
+    suggestedChecks: [
+      "Confirm repoRoot points at a writable git checkout.",
+      "Re-run the local coding task with a bounded file path."
+    ]
+  });
+  assert.deepEqual(provider.consumePaidExecutionTelemetry(), {
+    providerId: "voltagent_agent",
+    modelId: "openai/gpt-4.1-mini",
+    timeoutMs: 18_000,
+    outcomeClass: "success",
+    fallbackApplied: false,
+    retryCount: 0,
+    details: {
+      roleProfile: "coding_advisory"
+    }
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].config.memory, false);
+  assert.deepEqual(calls[0].config.tools, []);
+  assert.equal(calls[0].config.model, "openai/gpt-4.1-mini");
+  assert.equal(calls[0].config.maxRetries, 1);
+  assert.ok(Array.isArray(calls[0].config.inputMiddlewares));
+  assert.ok(Array.isArray(calls[0].config.outputMiddlewares));
+  assert.ok(calls[0].schema);
+  assert.ok(calls[0].options.abortSignal instanceof AbortSignal);
+});
+
+test("voltagent coding advisory adapter applies role-specific normalization and telemetry details", async () => {
+  const calls = [];
+  const provider = new infrastructure.VoltAgentCodingAdvisoryAdapter({
+    model: "openai/gpt-4.1-mini",
+    timeoutMs: 18_000,
+    credentialEnv: {
+      OPENAI_API_KEY: "test-openai-key"
+    },
+    createAgent: (config) => ({
+      async generateObject(prompt, schema, options) {
+        calls.push({
+          config,
+          prompt,
+          schema,
+          options
+        });
+
+        return {
+          object: {
+            recommendedAction: "manual_followup",
+            summary: "  Review the failing patch root guard before retrying locally.  ",
+            suggestedChecks: [
+              " Confirm repoRoot points at a writable git checkout. ",
+              "confirm repoRoot points at a writable git checkout.",
+              " Re-run the local coding task with a bounded file path. ",
+              "  "
+            ]
+          }
+        };
+      }
+    })
+  });
+
+  const advisory = await provider.adviseOnEscalation(
+    createCodingAdvisoryInvocation({
+      request: {
+        context: "   ",
+        filePath: "   ",
+        symbolName: "",
+        pytestTarget: "  ",
+        lintTarget: undefined
+      },
+      localResponse: {
+        validations: [
+          {
+            success: false,
+            step: "pytest",
+            exitCode: 1,
+            stdout: "",
+            stderr: "  failing test output  "
+          }
+        ]
+      }
+    })
+  );
+
+  assert.deepEqual(advisory, {
+    invoked: true,
+    modelRole: "coding_advisory",
+    providerId: "voltagent_agent",
+    modelId: "openai/gpt-4.1-mini",
+    recommendedAction: "manual_followup",
+    summary: "Review the failing patch root guard before retrying locally.",
+    suggestedChecks: [
+      "Confirm repoRoot points at a writable git checkout.",
+      "Re-run the local coding task with a bounded file path."
+    ]
+  });
+  assert.deepEqual(provider.consumePaidExecutionTelemetry(), {
+    providerId: "voltagent_agent",
+    modelId: "openai/gpt-4.1-mini",
+    timeoutMs: 18_000,
+    outcomeClass: "success",
+    fallbackApplied: false,
+    retryCount: 0,
+    details: {
+      roleProfile: "coding_advisory"
+    }
+  });
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0].config.inputMiddlewares.length >= 1);
+  assert.ok(calls[0].config.outputMiddlewares.length >= 1);
+  assert.ok(calls[0].config.inputGuardrails.length >= 1);
+  assert.ok(calls[0].config.outputGuardrails.length >= 1);
+  assert.equal(typeof calls[0].config.hooks.onRetry, "function");
+  assert.equal(typeof calls[0].config.hooks.onFallback, "function");
+  assert.deepEqual(JSON.parse(calls[0].prompt), {
+    taskType: "propose_fix",
+    task: "Fix the writer promotion bug.",
+    repoRoot: "F:\\repo",
+    localResponse: {
+      status: "escalate",
+      reason: "Local runtime could not determine a safe patch root.",
+      attempts: 1,
+      validations: [
+        {
+          success: false,
+          step: "pytest",
+          exitCode: 1,
+          stderr: "failing test output"
+        }
+      ],
+      escalationMetadata: {
+        providerErrorKind: "transport"
+      }
+    }
+  });
+});
+
+test("voltagent coding advisory adapter blocks non-escalation responses with stable guardrail telemetry", async () => {
+  const provider = new infrastructure.VoltAgentCodingAdvisoryAdapter({
+    model: "openai/gpt-4.1-mini",
+    timeoutMs: 18_000,
+    credentialEnv: {
+      OPENAI_API_KEY: "test-openai-key"
+    },
+    createAgent: () => ({
+      async generateObject() {
+        throw new Error("should not be called");
+      }
+    })
+  });
+
+  await assert.rejects(
+    () =>
+      provider.adviseOnEscalation(
+        createCodingAdvisoryInvocation({
+          localResponse: {
+            status: "fail",
+            reason: "Local coding failed without escalation metadata."
+          }
+        })
+      ),
+    (error) => {
+      assert.equal(error.code, "voltagent_input_guardrail_blocked");
+      assert.match(error.message, /post-escalation/i);
+      return true;
+    }
+  );
+  assert.deepEqual(provider.consumePaidExecutionTelemetry(), {
+    providerId: "voltagent_agent",
+    modelId: "openai/gpt-4.1-mini",
+    timeoutMs: 18_000,
+    outcomeClass: "provider_error",
+    fallbackApplied: false,
+    retryCount: 0,
+    errorCode: "voltagent_input_guardrail_blocked",
+    details: {
+      roleProfile: "coding_advisory",
+      blockedByGuardrail: "input"
+    }
+  });
+});
+
+test("voltagent coding advisory adapter blocks output that claims the task is already fixed", async () => {
+  const provider = new infrastructure.VoltAgentCodingAdvisoryAdapter({
+    model: "openai/gpt-4.1-mini",
+    timeoutMs: 18_000,
+    credentialEnv: {
+      OPENAI_API_KEY: "test-openai-key"
+    },
+    createAgent: () => ({
+      async generateObject() {
+        return {
+          object: {
+            recommendedAction: "manual_followup",
+            summary: "The task is fixed. Commit the patch and close the ticket.",
+            suggestedChecks: ["Review the generated patch."]
+          }
+        };
+      }
+    })
+  });
+
+  await assert.rejects(
+    () => provider.adviseOnEscalation(createCodingAdvisoryInvocation()),
+    (error) => {
+      assert.equal(error.code, "voltagent_output_guardrail_blocked");
+      assert.match(error.message, /advisory output/i);
+      return true;
+    }
+  );
+  assert.deepEqual(provider.consumePaidExecutionTelemetry(), {
+    providerId: "voltagent_agent",
+    modelId: "openai/gpt-4.1-mini",
+    timeoutMs: 18_000,
+    outcomeClass: "provider_error",
+    fallbackApplied: false,
+    retryCount: 0,
+    errorCode: "voltagent_output_guardrail_blocked",
+    details: {
+      roleProfile: "coding_advisory",
+      blockedByGuardrail: "output"
+    }
+  });
+});
+
+test("voltagent coding advisory adapter records retry and fallback telemetry details for the advisory profile", async () => {
+  const calls = [];
+  const provider = new infrastructure.VoltAgentCodingAdvisoryAdapter({
+    model: "openai/gpt-4.1-mini",
+    fallbackModelIds: ["anthropic/claude-sonnet-4"],
+    timeoutMs: 18_000,
+    credentialEnv: {
+      OPENAI_API_KEY: "test-openai-key",
+      ANTHROPIC_API_KEY: "test-anthropic-key"
+    },
+    createAgent: (config) => ({
+      async generateObject(prompt, schema, options) {
+        calls.push({
+          config,
+          prompt,
+          schema,
+          options
+        });
+
+        await config.hooks.onRetry({
+          source: "llm",
+          agent: {},
+          context: new Map(),
+          operation: "generateObject",
+          modelName: "openai/gpt-4.1-mini",
+          modelIndex: 0,
+          attempt: 0,
+          nextAttempt: 1,
+          maxRetries: 1,
+          error: new Error("retry me")
+        });
+        await config.hooks.onFallback({
+          agent: {},
+          context: new Map(),
+          operation: "generateObject",
+          stage: "execute",
+          fromModel: "openai/gpt-4.1-mini",
+          fromModelIndex: 0,
+          maxRetries: 1,
+          attempt: 1,
+          error: new Error("primary failed"),
+          nextModel: "anthropic/claude-sonnet-4",
+          nextModelIndex: 1
+        });
+
+        return {
+          object: {
+            recommendedAction: "retry_local",
+            summary: "Retry locally after confirming the patch root inputs.",
+            suggestedChecks: ["Confirm the repo root and file path inputs."]
+          }
+        };
+      }
+    })
+  });
+
+  await provider.adviseOnEscalation(createCodingAdvisoryInvocation());
+
+  assert.equal(calls.length, 1);
+  assert.deepEqual(provider.consumePaidExecutionTelemetry(), {
+    providerId: "voltagent_agent",
+    modelId: "openai/gpt-4.1-mini",
+    timeoutMs: 18_000,
+    outcomeClass: "degraded_fallback",
+    fallbackApplied: true,
+    retryCount: 1,
+    details: {
+      roleProfile: "coding_advisory",
+      retrySources: ["llm"],
+      fallbackModelId: "anthropic/claude-sonnet-4"
+    }
+  });
 });
 
 test("ollama reranker provider returns candidates in model-selected order", async () => {

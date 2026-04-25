@@ -31,6 +31,8 @@ The backend currently wraps these existing repo helpers:
 - `scripts/doctor-default-access.mjs`
 - `scripts/docker/audit-toolbox-assets.mjs`
 - `scripts/docker/sync-mcp-profiles.mjs`
+- `vendor/codex-claude-voltagent-client/scripts/codex-onboard.mjs`
+- `vendor/codex-claude-voltagent-client/scripts/codex-doctor.mjs`
 - `corepack pnpm cli -- <toolbox-command>`
 - the live `docker mcp` toolkit CLI
 
@@ -128,11 +130,13 @@ Current behavior:
 - on a clean repo, invokes:
   - `corepack pnpm install --frozen-lockfile`
   - `corepack pnpm build`
+  - `corepack pnpm vendor:codex-voltagent:build`
 - verifies:
   - `apps/mimir-api/dist/main.js`
   - `apps/mimir-cli/dist/main.js`
   - `apps/mimir-mcp/dist/main.js`
   - `apps/mimir-control-mcp/dist/main.js`
+  - `vendor/codex-claude-voltagent-client/dist/index.js`
 
 Current reason codes:
 
@@ -157,11 +161,14 @@ Current behavior:
   adapter
 - emits the exact apply command shape for the tracked install helper
 - previews write targets for:
-  - client config
+  - default-access client config
   - installation manifest
   - compatibility launchers
+  - vendored Codex/VoltAgent workspace config
+  - vendored native Codex skill link
 - marks backup behavior as:
   - `timestamped_copy` for existing config and manifest files
+  - `timestamped_copy` for existing vendored workspace config files
   - `none` for launcher files, because the tracked launcher installer rewrites
     them in place without creating backups
 
@@ -409,9 +416,16 @@ Current behavior:
 - resolves the selected installer client definition
 - runs the same dry-run planning path first so write targets stay explicit
 - executes `scripts/install-default-access.mjs`
-- emits the post-apply default-access report
+- executes vendored `codex-onboard.mjs`
+- executes vendored `codex-doctor.mjs`
+- emits the combined post-apply report, including:
+  - default-access health
+  - vendored onboarding report
+  - vendored doctor report
 - emits `details.applyResult.writeTargets[]` with post-apply existence checks
 - records new timestamped backup files for existing config and manifest paths
+- records new timestamped backup files for existing vendored workspace-config
+  paths
 
 Current reason codes:
 
@@ -482,6 +496,7 @@ Current mutation kinds:
 
 - `upsert_file`
 - `replace_file`
+- `create_link`
 
 Current backup strategies:
 
@@ -536,7 +551,7 @@ Current session state shape:
 
 - the `node` invocation used to run `scripts/install-default-access.mjs --dry-run`
 
-`prepare-repo-workspace` records either two or four commands today:
+`prepare-repo-workspace` records either two or five commands today:
 
 - always:
   - `git rev-parse --show-toplevel`
@@ -544,6 +559,7 @@ Current session state shape:
 - only on a clean repo:
   - `corepack pnpm install --frozen-lockfile`
   - `corepack pnpm build`
+  - `corepack pnpm vendor:codex-voltagent:build`
 
 `audit-toolbox-assets` records exactly one command today:
 
@@ -571,10 +587,14 @@ Current session state shape:
 - `docker mcp feature ls`
 - `docker mcp profile --help`
 
-`apply-client-access` records two commands today:
+`apply-client-access` records four commands today:
 
 - the `node` invocation used to run `scripts/install-default-access.mjs --dry-run`
 - the `node` invocation used to run `scripts/install-default-access.mjs`
+- the `node` invocation used to run
+  `vendor/codex-claude-voltagent-client/scripts/codex-onboard.mjs`
+- the `node` invocation used to run
+  `vendor/codex-claude-voltagent-client/scripts/codex-doctor.mjs`
 
 `audit-toolbox-control-surface` records two commands today:
 

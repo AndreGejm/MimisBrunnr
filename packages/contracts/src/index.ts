@@ -5,6 +5,7 @@ export * from "./common/context-representation-ref.js";
 export * from "./common/retrieval-trace-ref.js";
 export * from "./common/provenance-ref.js";
 export * from "./common/service-result.js";
+export * from "./common/paid-execution-telemetry.js";
 export * from "./drafting/draft-note.contract.js";
 export * from "./history/create-session-archive.contract.js";
 export * from "./history/search-session-archives.contract.js";

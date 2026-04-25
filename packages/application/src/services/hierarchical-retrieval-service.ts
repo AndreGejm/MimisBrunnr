@@ -3,6 +3,7 @@ import {
   DEFAULT_CONTEXT_BUDGET,
   type AssembleContextPacketRequest,
   type ContextCandidate,
+  type PaidExecutionTelemetry,
   type RetrievalHealthReport,
   type RetrieveContextRequest,
   type RetrieveContextResponse,
@@ -25,6 +26,7 @@ import {
 } from "./retrieve-context-cache.js";
 import { RetrievalTraceService } from "./retrieval-trace-service.js";
 import { VectorRetrievalService } from "./vector-retrieval-service.js";
+import { buildPaidExecutionAuditDetail } from "./paid-execution-audit-helper.js";
 
 type RetrieveContextErrorCode = "retrieval_failed";
 
@@ -145,15 +147,15 @@ export class HierarchicalRetrievalService {
         warnings.push("Vector retrieval is degraded; lexical retrieval remains active.");
       }
       warnings.push(...buildFreshnessWarnings(selectedCandidates));
-      const escalationSummary = await this.summarizeEscalationUncertainty(
+      const escalation = await this.summarizeEscalationUncertainty(
         request.query,
         answerability,
         hierarchicalCandidates
       );
-      if (escalationSummary) {
+      if (escalation.summary) {
         packet.uncertainties = mergeUncertainties(
           packet.uncertainties,
-          escalationSummary
+          escalation.summary
         );
         warnings.push("Paid escalation provider enriched the uncertainty summary.");
       } else if (answerability === "needs_escalation" && !this.paidEscalationProvider) {
@@ -176,7 +178,8 @@ export class HierarchicalRetrievalService {
           answerability,
           paidEscalation: {
             configured: Boolean(this.paidEscalationProvider),
-            used: Boolean(escalationSummary)
+            used: Boolean(escalation.summary),
+            telemetry: buildPaidExecutionAuditDetail(escalation.telemetry)
           },
           vectorHealth,
           freshness: summarizeFreshness(selectedCandidates),
@@ -339,9 +342,25 @@ export class HierarchicalRetrievalService {
     query: string,
     answerability: RetrieveContextResponse["packet"]["answerability"],
     candidates: ContextCandidate[]
-  ): Promise<string | undefined> {
-    if (!this.paidEscalationProvider || answerability === "local_answer") {
-      return undefined;
+  ): Promise<{
+    summary?: string;
+    telemetry?: PaidExecutionTelemetry;
+  }> {
+    if (answerability === "local_answer") {
+      return {};
+    }
+
+    if (!this.paidEscalationProvider) {
+      return {
+        telemetry: {
+          providerId: "disabled",
+          timeoutMs: 0,
+          outcomeClass: "disabled",
+          fallbackApplied: false,
+          retryCount: 0,
+          errorCode: "no_paid_provider_configured"
+        }
+      };
     }
 
     const evidence = candidates.slice(0, 4).map((candidate) =>
@@ -349,9 +368,15 @@ export class HierarchicalRetrievalService {
     );
 
     try {
-      return await this.paidEscalationProvider.summarizeUncertainty(query, evidence);
+      const summary = await this.paidEscalationProvider.summarizeUncertainty(query, evidence);
+      return {
+        summary,
+        telemetry: this.paidEscalationProvider.consumePaidExecutionTelemetry?.()
+      };
     } catch {
-      return undefined;
+      return {
+        telemetry: this.paidEscalationProvider.consumePaidExecutionTelemetry?.()
+      };
     }
   }
 }

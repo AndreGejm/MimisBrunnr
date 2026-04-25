@@ -252,6 +252,26 @@ pnpm cli list-active-toolbox --json "{}"
   and machine-readable `suppressedTools` entries with tool id, semantic capability,
   suppression reasons, and the `client-overlay-reduction` boundary marker
 
+Codex local-stdio peers can now be materialized into a deterministic client MCP
+file instead of being forced through Docker profile sync:
+
+```bash
+pnpm cli sync-toolbox-client --json "{\"activeProfileId\":\"core-dev+voltagent-docs\",\"clientId\":\"codex\"}"
+pnpm cli sync-toolbox-client --apply --json "{\"activeProfileId\":\"core-dev+voltagent-docs\",\"clientId\":\"codex\"}"
+```
+
+For the checked-in VoltAgent workflow, this writes `.mimir/toolbox/codex.mcp.json`
+with the `voltagent-docs` local-stdio peer. Docker profile sync omits that peer
+from apply commands and reports it as a client-materialized omission instead of
+blocking the plan.
+
+This VoltAgent peer is intentionally narrow: it is an optional development-only
+docs convenience for Codex. It does not make Mimir the owner of VoltAgent
+skills, workspace roots, or subagent behavior.
+
+The older `core-dev+voltagent-dev` profile id remains accepted as a legacy alias
+during the current compatibility window.
+
 ## Current profile set
 
 - `bootstrap`

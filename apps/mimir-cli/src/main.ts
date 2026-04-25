@@ -41,7 +41,8 @@ import {
   validateRevokeIssuedActorTokensControlRequest,
   validateSetAuthIssuerStateControlRequest,
   TransportValidationError,
-  validateTransportRequest
+  validateTransportRequest,
+  writeCodexClientMaterializationPlan
 } from "@mimir/infrastructure";
 import {
   CLI_COMMAND_NAMES,
@@ -197,7 +198,7 @@ async function main(): Promise<void> {
           apply: {
             status: "dry-run",
             attempted: false,
-            commands: applyPlan.commands
+            ...applyPlan
           }
         },
         parsed.options.pretty
@@ -217,7 +218,8 @@ async function main(): Promise<void> {
     parsed.command === "request-toolbox-activation" ||
     parsed.command === "list-active-toolbox" ||
     parsed.command === "list-active-tools" ||
-    parsed.command === "deactivate-toolbox"
+    parsed.command === "deactivate-toolbox" ||
+    parsed.command === "sync-toolbox-client"
   ) {
     const env = loadEnvironment();
     const payload =
@@ -306,6 +308,28 @@ async function main(): Promise<void> {
             manifestDirectory,
             activeProfileId,
             ...(await controlSurface.listActiveTools())
+          },
+          parsed.options.pretty
+        );
+        process.exitCode = 0;
+        return;
+      }
+
+      if (parsed.command === "sync-toolbox-client") {
+        const materialization = controlSurface.buildClientMaterialization(
+          optionalCliString(payload.outputPath, "outputPath")
+        );
+        if (parsed.options.apply && materialization) {
+          writeCodexClientMaterializationPlan(materialization);
+        }
+        writeJson(
+          {
+            ok: true,
+            dryRun: !parsed.options.apply,
+            manifestDirectory,
+            activeProfileId,
+            clientId,
+            materialization
           },
           parsed.options.pretty
         );
@@ -691,8 +715,12 @@ function parseCli(argv: string[]): ParsedCli {
     command = "version";
   }
 
-  if (options.apply && command !== "sync-mcp-profiles") {
-    throw new Error("--apply is only supported by sync-mcp-profiles.");
+  if (
+    options.apply &&
+    command !== "sync-mcp-profiles" &&
+    command !== "sync-toolbox-client"
+  ) {
+    throw new Error("--apply is only supported by sync-mcp-profiles and sync-toolbox-client.");
   }
 
   return { command, options };
@@ -763,6 +791,7 @@ function buildCliToolboxControlSurface(
       manifestDirectory,
       activeProfileId,
       clientId,
+      clientMaterializationRoot: process.cwd(),
       auditHistoryService: container.services.auditHistoryService,
       leaseIssuer: env.toolboxLeaseIssuer,
       leaseAudience: env.toolboxLeaseAudience,
@@ -957,6 +986,7 @@ Commands:
   auth-introspect-token  Inspect a static or issued actor token against the current auth policy
   check-mcp-profiles   Validate repo-managed Docker MCP toolbox manifests and emit the compiled contract summary
   sync-mcp-profiles    Compile a deterministic Docker MCP runtime plan; pass --apply to refresh Docker MCP profiles
+  sync-toolbox-client  Render Codex local-stdio peers into a deterministic client MCP config; pass --apply to write the file
   list-toolboxes       List intent-level toolboxes before peer MCP tools are exposed
   describe-toolbox     Describe one toolbox, its categories, and anti-use-cases
   request-toolbox-activation  Approve a profile-bound toolbox handoff and issue a lease when configured
@@ -1002,6 +1032,7 @@ Notes:
   - auth-introspect-token expects JSON input with token and optional asOf, expectedTransport, expectedCommand, or expectedAdministrativeAction.
   - check-mcp-profiles accepts optional JSON input with manifestDirectory.
   - sync-mcp-profiles accepts optional JSON input with manifestDirectory and generatedAt; --apply probes Docker MCP profile support and exits non-zero when the local Docker MCP Toolkit cannot apply profiles.
+  - sync-toolbox-client accepts optional JSON input with manifestDirectory, activeProfileId, clientId, and outputPath; --apply writes the rendered Codex MCP config to disk.
   - list-toolboxes accepts optional JSON input with manifestDirectory, activeProfileId, and clientId.
   - describe-toolbox expects JSON input with toolboxId and optional manifestDirectory, activeProfileId, and clientId.
   - request-toolbox-activation expects JSON input with requestedToolbox or requiredCategories, plus optional taskSummary, clientId, manifestDirectory, and activeProfileId.

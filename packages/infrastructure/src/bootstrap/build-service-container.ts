@@ -6,6 +6,7 @@ import type {
   CanonicalNoteService,
   CanonicalNoteRepository,
   ChunkingService,
+  CodingAdvisoryProvider,
   DraftingProvider,
   EmbeddingProvider,
   LexicalIndex,
@@ -49,6 +50,7 @@ import {
 } from "@mimir/application";
 import {
   ActorAuthorizationPolicy,
+  CodingAdvisoryService,
   CodingDomainController,
   MimisbrunnrDomainController,
   MimisbrunnrMemoryController,
@@ -98,6 +100,7 @@ export interface ServicePortRegistry {
   embeddingProvider?: EmbeddingProvider;
   localReasoningProvider?: LocalReasoningProvider;
   draftingProvider?: DraftingProvider;
+  codingAdvisoryProvider?: CodingAdvisoryProvider;
   rerankerProvider?: RerankerProvider;
   externalSourceRegistry: ExternalSourceRegistry;
   modelRoleRegistry: ModelRoleRegistry;
@@ -186,6 +189,12 @@ export function buildServiceContainer(
         binding: modelRoleRegistry.resolve("mimisbrunnr_primary")
       })
     },
+    codingAdvisoryProviders: {
+      coding_advisory: providerFactoryRegistry.createCodingAdvisory({
+        env,
+        binding: modelRoleRegistry.resolve("coding_advisory")
+      })
+    },
     rerankerProviders: {
       reranker_primary: providerFactoryRegistry.createReranker({
         env,
@@ -204,6 +213,8 @@ export function buildServiceContainer(
     roleProviderRegistry.getReasoningProvider("paid_escalation");
   const draftingProvider =
     roleProviderRegistry.getDraftingProvider("mimisbrunnr_primary");
+  const codingAdvisoryProvider =
+    roleProviderRegistry.getCodingAdvisoryProvider("coding_advisory");
   const rerankerProvider =
     roleProviderRegistry.getRerankerProvider("reranker_primary");
   const retrieveContextCache: RetrieveContextCache = new InMemoryRetrieveContextCache();
@@ -350,7 +361,8 @@ export function buildServiceContainer(
       modelRole: "coding_primary",
       modelId: codingPrimaryBinding.modelId
     },
-    toolOutputBudgetService
+    toolOutputBudgetService,
+    new CodingAdvisoryService(codingAdvisoryProvider)
   );
   const toolRegistry = new FileSystemToolRegistry(env.toolRegistryDir);
   const orchestrator = new MimirOrchestrator(
@@ -382,6 +394,7 @@ export function buildServiceContainer(
       embeddingProvider,
       localReasoningProvider,
       draftingProvider,
+      codingAdvisoryProvider,
       rerankerProvider,
       externalSourceRegistry,
       modelRoleRegistry,

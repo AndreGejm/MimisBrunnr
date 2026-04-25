@@ -1,0 +1,59 @@
+{
+  "name": "codex-claude-voltagent-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./config/load-client-config": {
+      "types": "./dist/config/load-client-config.d.ts",
+      "import": "./dist/config/load-client-config.js"
+    },
+    "./entrypoints/create-codex-runtime": {
+      "types": "./dist/entrypoints/create-codex-runtime.d.ts",
+      "import": "./dist/entrypoints/create-codex-runtime.js"
+    },
+    "./entrypoints/create-claude-runtime": {
+      "types": "./dist/entrypoints/create-claude-runtime.d.ts",
+      "import": "./dist/entrypoints/create-claude-runtime.js"
+    },
+    "./entrypoints/create-codex-client": {
+      "types": "./dist/entrypoints/create-codex-client.d.ts",
+      "import": "./dist/entrypoints/create-codex-client.js"
+    },
+    "./entrypoints/create-claude-client": {
+      "types": "./dist/entrypoints/create-claude-client.d.ts",
+      "import": "./dist/entrypoints/create-claude-client.js"
+    },
+    "./router/client-task-router": {
+      "types": "./dist/router/client-task-router.d.ts",
+      "import": "./dist/router/client-task-router.js"
+    }
+  },
+  "scripts": {
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "codex:onboard": "node ./scripts/codex-onboard.mjs",
+    "codex:doctor": "node ./scripts/codex-doctor.mjs",
+    "codex:smoke": "vitest run tests/smoke/boundary-smoke.test.ts tests/smoke/codex-onboarding-smoke.test.ts",
+    "plugin:install-home": "node ./plugins/codex-voltagent-default/scripts/install-home-plugin.mjs",
+    "plugin:init-config": "node ./plugins/codex-voltagent-default/scripts/init-client-config.mjs",
+    "plugin:bootstrap-default": "node ./plugins/codex-voltagent-default/scripts/bootstrap-default-runtime.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "@voltagent/core": "^2.7.2",
+    "lru-cache": "^11.1.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

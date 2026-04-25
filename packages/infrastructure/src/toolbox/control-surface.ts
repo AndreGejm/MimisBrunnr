@@ -13,11 +13,18 @@ import type {
   ToolboxAuditDiagnostics,
   ToolboxAuditEvent,
   ToolboxDescribeResponse,
+  ToolboxClientMaterializationDescriptor,
   ToolboxMutationLevel,
+  ToolboxServerSummary,
   ToolboxDeactivationResponse,
   ToolboxSessionHandoff
 } from "@mimir/contracts";
 import { compileToolboxPolicyFromDirectory } from "./policy-compiler.js";
+import {
+  buildCodexClientMaterializationDescriptor,
+  buildCodexClientMaterializationPlan,
+  type CodexClientMaterializationPlan
+} from "./client-materialization.js";
 import {
   assertToolboxSessionLeaseLifecycle,
   issueToolboxSessionLease,
@@ -38,6 +45,7 @@ export interface MimirControlSurfaceOptions {
   activeProfileId: string;
   clientId: string;
   auditHistoryService: AuditHistoryService;
+  clientMaterializationRoot?: string;
   leaseIssuer?: string;
   leaseAudience?: string;
   leaseIssuerSecret?: string;
@@ -163,6 +171,7 @@ export class MimirControlSurface {
           fallbackProfile: profile.fallbackProfile ?? null,
           profileRevision: profile.profileRevision
         },
+        servers: this.buildServerSummaries(profile),
         tools: visibility.activeTools,
         suppressedTools: visibility.suppressedTools.map((tool) => ({
           toolId: tool.toolId,
@@ -747,6 +756,11 @@ export class MimirControlSurface {
     const client = this.policy.clients[this.options.clientId];
     const workflowIntent = this.findIntentForProfile(profile.id);
     const visibility = this.buildToolVisibilityReport(profile, client);
+    const clientMaterialization = this.buildClientMaterializationDescriptor({
+      profile,
+      client,
+      activeTools: visibility.activeTools
+    });
     return {
       workflow: {
         toolboxId: workflowIntent?.id ?? null,
@@ -766,7 +780,8 @@ export class MimirControlSurface {
         allowedCategories: profile.allowedCategories,
         deniedCategories: profile.deniedCategories,
         semanticCapabilities: profile.semanticCapabilities,
-        profileRevision: profile.profileRevision
+        profileRevision: profile.profileRevision,
+        servers: this.buildServerSummaries(profile)
       },
       client: {
         id: this.options.clientId,
@@ -774,6 +789,9 @@ export class MimirControlSurface {
         handoffStrategy: client.handoffStrategy,
         handoffPresetRef: client.handoffPresetRef,
         clientPresetRef: client.handoffPresetRef,
+        ...(clientMaterialization
+          ? { clientMaterialization }
+          : {}),
         suppressServerIds: client.suppressServerIds,
         suppressToolIds: client.suppressToolIds,
         suppressCategories: client.suppressCategories,
@@ -803,6 +821,25 @@ export class MimirControlSurface {
       activeTools: visibility.activeTools,
       suppressedTools: visibility.suppressedTools
     };
+  }
+
+  buildClientMaterialization(
+    outputPath?: string
+  ): CodexClientMaterializationPlan | null {
+    const profile = this.policy.profiles[this.options.activeProfileId];
+    const client = this.policy.clients[this.options.clientId];
+    const visibility = this.buildToolVisibilityReport(profile, client);
+    return (
+      buildCodexClientMaterializationPlan({
+        policy: this.policy,
+        profile,
+        client,
+        activeTools: visibility.activeTools,
+        rootDirectory:
+          this.options.clientMaterializationRoot ?? process.cwd(),
+        outputPath
+      }) ?? null
+    );
   }
 
   async deactivateToolbox(leaseToken?: string) {
@@ -1027,6 +1064,28 @@ export class MimirControlSurface {
     };
   }
 
+  private buildServerSummaries(
+    profile: CompiledToolboxProfile
+  ): ToolboxServerSummary[] {
+    return profile.includeServers.map((serverId) => {
+      const server = this.policy.servers[serverId];
+      return {
+        id: server.id,
+        displayName: server.displayName,
+        source: server.source,
+        kind: server.kind,
+        usageClass: server.usageClass ?? "general",
+        trustClass: server.trustClass,
+        mutationLevel: server.mutationLevel,
+        runtimeBindingKind: server.runtimeBinding?.kind ?? null,
+        clientMaterializationTarget:
+          server.runtimeBinding?.kind === "local-stdio"
+            ? (server.runtimeBinding.configTarget ?? null)
+            : null
+      };
+    });
+  }
+
   private collectSuppressionReasons(
     tool: CompiledToolboxToolDescriptor,
     client: CompiledToolboxClientOverlay
@@ -1062,22 +1121,34 @@ export class MimirControlSurface {
     };
   }): ToolboxSessionHandoff {
     const client = this.policy.clients[input.clientId];
+    const clientMaterialization = this.buildClientMaterializationDescriptor({
+      profile: input.profile,
+      client,
+      activeTools: this.buildToolVisibilityReport(input.profile, client).activeTools
+    });
     return {
       mode: "reconnect",
       targetProfileId: input.profile.id,
       targetSessionMode: input.profile.sessionMode,
       fallbackProfileId: input.fallbackProfile,
       downgradeTarget: input.fallbackProfile,
+      servers: this.buildServerSummaries(input.profile),
       clientId: input.clientId,
       handoffStrategy: client.handoffStrategy,
       handoffPresetRef: client.handoffPresetRef,
       clientPresetRef: client.handoffPresetRef,
+      ...(clientMaterialization
+        ? { clientMaterialization }
+        : {}),
       client: {
         id: client.id,
         displayName: client.displayName,
         handoffStrategy: client.handoffStrategy,
         handoffPresetRef: client.handoffPresetRef,
-        clientPresetRef: client.handoffPresetRef
+        clientPresetRef: client.handoffPresetRef,
+        ...(clientMaterialization
+          ? { clientMaterialization }
+          : {})
       },
       manifestRevision: this.policy.manifestRevision,
       profileRevision: input.profile.profileRevision,
@@ -1114,6 +1185,20 @@ export class MimirControlSurface {
             expiresAt: input.lease.expiresAt
           }
     };
+  }
+
+  private buildClientMaterializationDescriptor(input: {
+    profile: CompiledToolboxProfile;
+    client: CompiledToolboxClientOverlay;
+    activeTools: CompiledToolboxToolDescriptor[];
+  }): ToolboxClientMaterializationDescriptor | undefined {
+    return buildCodexClientMaterializationDescriptor({
+      policy: this.policy,
+      profile: input.profile,
+      client: input.client,
+      activeTools: input.activeTools,
+      rootDirectory: this.options.clientMaterializationRoot ?? process.cwd()
+    });
   }
 
   private buildAuditEvent(

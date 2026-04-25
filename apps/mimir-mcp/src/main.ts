@@ -30,6 +30,7 @@ import {
   ActorAuthorizationError,
   buildServiceContainer,
   dispatchRuntimeCommand,
+  type ServiceContainer,
   loadEnvironment,
   TransportValidationError,
   validateTransportRequest
@@ -101,9 +102,6 @@ class ContentLengthTransport {
   }
 }
 
-const container = buildServiceContainer(loadEnvironment());
-const transport = new ContentLengthTransport(process.stdin, process.stdout);
-const defaultSessionActor = loadDefaultSessionActor();
 let shuttingDown = false;
 
 process.once("SIGINT", () => {
@@ -118,6 +116,16 @@ process.stdin.once("end", () => {
 process.stdin.once("close", () => {
   shutdown(0);
 });
+process.stdin.resume();
+
+if (process.stdin.readableEnded || process.stdin.destroyed) {
+  shutdown(0);
+}
+
+const env = loadEnvironment();
+let container: ServiceContainer | undefined;
+const transport = new ContentLengthTransport(process.stdin, process.stdout);
+const defaultSessionActor = loadDefaultSessionActor();
 
 transport.onMessage(async (message) => {
   if (!isJsonRpcRequest(message)) {
@@ -164,7 +172,7 @@ async function handleRequest(request: JsonRpcRequest): Promise<unknown> {
           },
           serverInfo: {
             name: "mimir-mcp",
-            version: container.env.release.version
+            version: env.release.version
           }
         }
       };
@@ -283,7 +291,15 @@ async function runTool(name: string, request: JsonRecord): Promise<unknown> {
     };
   }
 
-  return dispatchRuntimeCommand(commandName, request, container);
+  return dispatchRuntimeCommand(commandName, request, getContainer());
+}
+
+function getContainer(): ServiceContainer {
+  if (!container) {
+    container = buildServiceContainer(env);
+  }
+
+  return container;
 }
 
 function buildActorContext(
@@ -410,6 +426,6 @@ function shutdown(exitCode: number): void {
   }
 
   shuttingDown = true;
-  container.dispose();
+  container?.dispose();
   process.exit(exitCode);
 }

@@ -1,5 +1,6 @@
 export * from "./ports/audit-log.js";
 export * from "./ports/canonical-note-repository.js";
+export * from "./ports/coding-advisory-provider.js";
 export * from "./ports/drafting-provider.js";
 export * from "./ports/embedding-provider.js";
 export * from "./ports/import-job-store.js";
@@ -16,6 +17,7 @@ export * from "./services/audit-history-service.js";
 export * from "./services/agent-context-assembly-service.js";
 export * from "./services/canonical-note-service.js";
 export * from "./services/chunking-service.js";
+export * from "./services/paid-execution-audit-helper.js";
 export * from "./services/context-namespace-service.js";
 export * from "./services/context-representation-service.js";
 export * from "./services/context-packet-service.js";

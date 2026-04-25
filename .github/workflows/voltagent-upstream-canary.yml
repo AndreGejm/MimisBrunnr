@@ -1,0 +1,24 @@
+name: voltagent-upstream-canary
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * 1"
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.7.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Upgrade VoltAgent canary dependencies
+        run: pnpm up @voltagent/core ai --latest
+      - run: pnpm test:voltagent-contracts
+      - run: pnpm test:voltagent-smoke

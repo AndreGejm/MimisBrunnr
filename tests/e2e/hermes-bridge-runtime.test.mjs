@@ -846,7 +846,8 @@ function modelRoleRegistry() {
     binding("mimisbrunnr_primary", "internal_heuristic", "heuristic"),
     binding("embedding_primary", "internal_hash", "hash"),
     binding("reranker_primary", "internal_heuristic", "heuristic"),
-    binding("paid_escalation", "disabled")
+    binding("paid_escalation", "disabled"),
+    binding("coding_advisory", "disabled")
   ]);
 }
 

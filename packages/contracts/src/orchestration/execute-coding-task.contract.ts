@@ -1,5 +1,6 @@
 import type { ActorContext } from "../common/actor-context.js";
 import type { ContextBudget } from "../common/context-budget.js";
+import type { PaidExecutionTelemetry } from "../common/paid-execution-telemetry.js";
 import type { CorpusId } from "@mimir/domain";
 
 export type CodingTaskType =
@@ -55,6 +56,22 @@ export interface ExecuteCodingTaskRequest {
   lintTarget?: string;
 }
 
+export type CodingAdvisoryRecommendedAction =
+  | "retry_local"
+  | "manual_followup"
+  | "external_escalation";
+
+export interface CodingAdvisoryResult {
+  invoked: boolean;
+  modelRole: "coding_advisory";
+  providerId: string;
+  modelId?: string;
+  recommendedAction: CodingAdvisoryRecommendedAction;
+  summary: string;
+  suggestedChecks: string[];
+  telemetry?: PaidExecutionTelemetry;
+}
+
 export interface ExecuteCodingTaskResponse {
   status: "success" | "fail" | "escalate";
   reason: string;
@@ -63,4 +80,5 @@ export interface ExecuteCodingTaskResponse {
   localResult?: Record<string, unknown>;
   validations?: CodingValidationResult[];
   escalationMetadata?: Record<string, unknown>;
+  codingAdvisory?: CodingAdvisoryResult;
 }

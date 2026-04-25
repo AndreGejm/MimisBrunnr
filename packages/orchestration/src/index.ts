@@ -2,6 +2,7 @@ export * from "./mimisbrunnr/mimisbrunnr-domain-controller.js";
 export * from "./mimisbrunnr/mimisbrunnr-memory-controller.js";
 export * from "./mimisbrunnr/mimisbrunnr-retrieval-controller.js";
 export * from "./coding/coding-controller-bridge.js";
+export * from "./coding/coding-advisory-service.js";
 export * from "./coding/coding-domain-controller.js";
 export * from "./model-roles/model-role-registry.js";
 export * from "./model-roles/provider-registry.js";

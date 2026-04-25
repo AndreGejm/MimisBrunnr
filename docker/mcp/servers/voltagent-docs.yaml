@@ -1,0 +1,22 @@
+server:
+  id: voltagent-docs
+  displayName: VoltAgent Docs
+  source: peer
+  kind: peer
+  usageClass: docs-only
+  trustClass: external-read
+  mutationLevel: read
+  runtimeBinding:
+    kind: local-stdio
+    command: npx
+    args:
+      - -y
+      - "@voltagent/docs-mcp"
+    configTarget: codex-mcp-json
+  tools:
+    - toolId: voltagent.docs.search
+      displayName: Search VoltAgent Docs
+      category: docs-search
+      trustClass: external-read
+      mutationLevel: read
+      semanticCapabilityId: docs.search.voltagent

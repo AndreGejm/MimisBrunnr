@@ -1,5 +1,6 @@
 export type ModelRole =
   | "coding_primary"
+  | "coding_advisory"
   | "mimisbrunnr_primary"
   | "embedding_primary"
   | "reranker_primary"
@@ -9,6 +10,7 @@ export interface ModelRoleBinding {
   role: ModelRole;
   providerId: string;
   modelId?: string;
+  fallbackModelIds?: string[];
   temperature: number;
   seed?: number;
   timeoutMs: number;
@@ -18,6 +20,7 @@ export interface ModelRoleBinding {
 
 export const REQUIRED_MODEL_ROLES: ReadonlyArray<ModelRole> = [
   "coding_primary",
+  "coding_advisory",
   "mimisbrunnr_primary",
   "embedding_primary",
   "reranker_primary",

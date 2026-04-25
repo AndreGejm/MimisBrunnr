@@ -26,6 +26,10 @@ function Get-InstallerRepoWorkspaceRequiredOutputs {
     [pscustomobject]@{
       relativePath = "apps/mimir-control-mcp/dist/main.js"
       path = Join-Path $RepoRoot "apps/mimir-control-mcp/dist/main.js"
+    },
+    [pscustomobject]@{
+      relativePath = "vendor/codex-claude-voltagent-client/dist/index.js"
+      path = Join-Path $RepoRoot "vendor/codex-claude-voltagent-client/dist/index.js"
     }
   )
 }
@@ -140,6 +144,11 @@ function Invoke-InstallerRepoWorkspacePrepare {
     -RepoRoot $RepoRoot `
     -PnpmArguments @("build")
   $commands += $buildResult.command
+
+  $vendoredBuildResult = Invoke-InstallerCorepackPnpmCommand `
+    -RepoRoot $RepoRoot `
+    -PnpmArguments @("vendor:codex-voltagent:build")
+  $commands += $vendoredBuildResult.command
 
   $verifiedOutputs = @(
     foreach ($output in Get-InstallerRepoWorkspaceRequiredOutputs -RepoRoot $RepoRoot) {

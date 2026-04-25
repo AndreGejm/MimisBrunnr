@@ -66,6 +66,7 @@ Allowed selector values are defined in `packages/infrastructure/src/config/env.t
 Supported role names:
 
 - `CODING_PRIMARY`
+- `CODING_ADVISORY`
 - `MIMISBRUNNR_PRIMARY`
 - `EMBEDDING_PRIMARY`
 - `RERANKER_PRIMARY`
@@ -75,6 +76,8 @@ Supported suffixes:
 
 - `_PROVIDER`
 - `_MODEL`
+- `_FALLBACK_MODEL`
+- `_FALLBACK_MODELS_JSON`
 - `_TEMPERATURE`
 - `_SEED`
 - `_TIMEOUT_MS`
@@ -84,8 +87,21 @@ Supported suffixes:
 Examples:
 
 - `MAB_ROLE_CODING_PRIMARY_MODEL`
+- `MAB_ROLE_CODING_ADVISORY_FALLBACK_MODEL`
 - `MAB_ROLE_MIMISBRUNNR_PRIMARY_PROVIDER`
 - `MAB_ROLE_PAID_ESCALATION_PROVIDER`
+
+`_FALLBACK_MODEL` accepts one provider-prefixed fallback model such as
+`anthropic/claude-sonnet-4`. `_FALLBACK_MODELS_JSON` accepts a JSON array of
+provider-prefixed model ids and is appended after `_FALLBACK_MODEL` when both
+are present.
+
+Provider-native credentials for the current VoltAgent paid path:
+
+| Variable | Purpose | Default / notes |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | primary OpenAI model credential for `voltagent_agent` | required when the configured primary or fallback model uses `openai/*` |
+| `ANTHROPIC_API_KEY` | Anthropic Claude credential for `voltagent_agent` | required when the configured primary or fallback model uses `anthropic/*` |
 
 Compatibility aliases:
 

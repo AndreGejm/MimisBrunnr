@@ -20,6 +20,12 @@ interface SqliteLocalAgentTraceRow {
   provider_error_kind: string | null;
   retry_count: number | null;
   seed_applied: number | null;
+  advisory_invoked: number | null;
+  advisory_provider_id: string | null;
+  advisory_model_id: string | null;
+  advisory_outcome_class: string | null;
+  advisory_error_code: string | null;
+  advisory_recommended_action: string | null;
   created_at: string;
 }
 
@@ -60,6 +66,12 @@ export class SqliteLocalAgentTraceStore implements LocalAgentTraceStore {
         provider_error_kind,
         retry_count,
         seed_applied,
+        advisory_invoked,
+        advisory_provider_id,
+        advisory_model_id,
+        advisory_outcome_class,
+        advisory_error_code,
+        advisory_recommended_action,
         created_at
       ) VALUES (
         :traceId,
@@ -76,6 +88,12 @@ export class SqliteLocalAgentTraceStore implements LocalAgentTraceStore {
         :providerErrorKind,
         :retryCount,
         :seedApplied,
+        :advisoryInvoked,
+        :advisoryProviderId,
+        :advisoryModelId,
+        :advisoryOutcomeClass,
+        :advisoryErrorCode,
+        :advisoryRecommendedAction,
         :createdAt
       )
     `).run({
@@ -94,6 +112,13 @@ export class SqliteLocalAgentTraceStore implements LocalAgentTraceStore {
       retryCount: record.retryCount ?? null,
       seedApplied:
         record.seedApplied === undefined ? null : record.seedApplied ? 1 : 0,
+      advisoryInvoked:
+        record.advisoryInvoked === undefined ? null : record.advisoryInvoked ? 1 : 0,
+      advisoryProviderId: record.advisoryProviderId ?? null,
+      advisoryModelId: record.advisoryModelId ?? null,
+      advisoryOutcomeClass: record.advisoryOutcomeClass ?? null,
+      advisoryErrorCode: record.advisoryErrorCode ?? null,
+      advisoryRecommendedAction: record.advisoryRecommendedAction ?? null,
       createdAt: record.createdAt
     });
   }
@@ -115,6 +140,12 @@ export class SqliteLocalAgentTraceStore implements LocalAgentTraceStore {
         provider_error_kind,
         retry_count,
         seed_applied,
+        advisory_invoked,
+        advisory_provider_id,
+        advisory_model_id,
+        advisory_outcome_class,
+        advisory_error_code,
+        advisory_recommended_action,
         created_at
       FROM local_agent_trace
       WHERE request_id = ?
@@ -136,6 +167,13 @@ export class SqliteLocalAgentTraceStore implements LocalAgentTraceStore {
       providerErrorKind: row.provider_error_kind ?? undefined,
       retryCount: row.retry_count ?? undefined,
       seedApplied: row.seed_applied === null ? undefined : Boolean(row.seed_applied),
+      advisoryInvoked:
+        row.advisory_invoked === null ? undefined : Boolean(row.advisory_invoked),
+      advisoryProviderId: row.advisory_provider_id ?? undefined,
+      advisoryModelId: row.advisory_model_id ?? undefined,
+      advisoryOutcomeClass: row.advisory_outcome_class ?? undefined,
+      advisoryErrorCode: row.advisory_error_code ?? undefined,
+      advisoryRecommendedAction: row.advisory_recommended_action ?? undefined,
       createdAt: row.created_at
     }));
   }
@@ -157,6 +195,12 @@ export class SqliteLocalAgentTraceStore implements LocalAgentTraceStore {
         provider_error_kind TEXT,
         retry_count INTEGER,
         seed_applied INTEGER,
+        advisory_invoked INTEGER,
+        advisory_provider_id TEXT,
+        advisory_model_id TEXT,
+        advisory_outcome_class TEXT,
+        advisory_error_code TEXT,
+        advisory_recommended_action TEXT,
         created_at TEXT NOT NULL
       );
 
@@ -169,5 +213,27 @@ export class SqliteLocalAgentTraceStore implements LocalAgentTraceStore {
       CREATE INDEX IF NOT EXISTS idx_local_agent_trace_created_at
       ON local_agent_trace (created_at);
     `);
+
+    ensureTraceColumn(this.database, "advisory_invoked", "INTEGER");
+    ensureTraceColumn(this.database, "advisory_provider_id", "TEXT");
+    ensureTraceColumn(this.database, "advisory_model_id", "TEXT");
+    ensureTraceColumn(this.database, "advisory_outcome_class", "TEXT");
+    ensureTraceColumn(this.database, "advisory_error_code", "TEXT");
+    ensureTraceColumn(this.database, "advisory_recommended_action", "TEXT");
   }
+}
+
+function ensureTraceColumn(
+  database: DatabaseSync,
+  columnName: string,
+  definition: string
+): void {
+  const columns = database.prepare("PRAGMA table_info(local_agent_trace)").all() as Array<{
+    name: string;
+  }>;
+  if (columns.some((column) => column.name === columnName)) {
+    return;
+  }
+
+  database.exec(`ALTER TABLE local_agent_trace ADD COLUMN ${columnName} ${definition}`);
 }

@@ -12,10 +12,12 @@ export interface DockerMcpRuntimeServerPlan {
   source: "owned" | "peer";
   kind: "control" | "semantic" | "peer";
   toolIds: string[];
+  runtimeBindingKind?: "docker-catalog" | "descriptor-only" | "local-stdio";
   dockerApplyMode?: "catalog" | "descriptor-only";
   catalogServerId?: string;
   blockedReason?: string;
   unsafeCatalogServerIds?: string[];
+  configTarget?: "codex-mcp-json";
 }
 
 export interface DockerMcpRuntimeProfilePlan {
@@ -52,6 +54,7 @@ export interface DockerMcpRuntimeGatewayRunCommandPlan {
 export interface DockerMcpRuntimeApplyPlan {
   commands: DockerMcpRuntimeApplyCommandPlan[];
   gatewayRunCommands: DockerMcpRuntimeGatewayRunCommandPlan[];
+  omittedServers?: DockerMcpBlockedServer[];
   blockedServers?: DockerMcpBlockedServer[];
 }
 
@@ -112,10 +115,29 @@ export function compileDockerMcpRuntimePlan(
     const dockerServerName = canonicalizeDockerIdentifier(server.id);
     assertCollision(serverNameCollisions, dockerServerName, server.id, "server");
 
-    const dockerApplyMode = server.dockerRuntime?.applyMode;
-    const catalogServerId = server.dockerRuntime?.catalogServerId;
-    const blockedReason = server.dockerRuntime?.blockedReason;
-    const unsafeCatalogServerIds = server.dockerRuntime?.unsafeCatalogServerIds;
+    const runtimeBinding = server.runtimeBinding;
+    const runtimeBindingKind = runtimeBinding?.kind;
+    let dockerApplyMode: "catalog" | "descriptor-only" | undefined;
+    let catalogServerId: string | undefined;
+    let blockedReason: string | undefined;
+    let unsafeCatalogServerIds: string[] | undefined;
+    let configTarget: "codex-mcp-json" | undefined;
+    if (runtimeBinding) {
+      switch (runtimeBinding.kind) {
+        case "docker-catalog":
+          dockerApplyMode = "catalog";
+          catalogServerId = runtimeBinding.catalogServerId;
+          break;
+        case "descriptor-only":
+          dockerApplyMode = "descriptor-only";
+          blockedReason = runtimeBinding.blockedReason;
+          unsafeCatalogServerIds = runtimeBinding.unsafeCatalogServerIds;
+          break;
+        case "local-stdio":
+          configTarget = runtimeBinding.configTarget;
+          break;
+      }
+    }
 
     return {
       id: server.id,
@@ -123,12 +145,14 @@ export function compileDockerMcpRuntimePlan(
       source: server.source,
       kind: server.kind,
       toolIds: server.tools.map((tool) => tool.toolId).sort(),
+      ...(runtimeBindingKind !== undefined ? { runtimeBindingKind } : {}),
       ...(dockerApplyMode !== undefined ? { dockerApplyMode } : {}),
       ...(catalogServerId !== undefined ? { catalogServerId } : {}),
       ...(blockedReason !== undefined ? { blockedReason } : {}),
       ...(unsafeCatalogServerIds !== undefined
         ? { unsafeCatalogServerIds: [...unsafeCatalogServerIds].sort() }
-        : {})
+        : {}),
+      ...(configTarget !== undefined ? { configTarget } : {})
     } satisfies DockerMcpRuntimeServerPlan;
   });
 
@@ -167,6 +191,7 @@ export function buildDockerMcpRuntimeApplyPlan(
 ): DockerMcpRuntimeApplyPlan {
   const serversById = new Map(plan.servers.map((server) => [server.id, server]));
   const planBlockedById = new Map<string, DockerMcpBlockedServer>();
+  const planOmittedById = new Map<string, DockerMcpBlockedServer>();
   const gatewayRunCommands: DockerMcpRuntimeGatewayRunCommandPlan[] = [];
 
   const commands: DockerMcpRuntimeApplyCommandPlan[] = plan.profiles.map((profile) => {
@@ -184,7 +209,25 @@ export function buildDockerMcpRuntimeApplyPlan(
       }
 
       if (server.source === "peer") {
-        if (server.dockerApplyMode === "descriptor-only") {
+        const isLocalStdio = server.runtimeBindingKind === "local-stdio";
+        const isDescriptorOnly =
+          server.runtimeBindingKind === "descriptor-only" ||
+          server.dockerApplyMode === "descriptor-only";
+        const isCatalogMode =
+          server.runtimeBindingKind === "docker-catalog" ||
+          server.dockerApplyMode === "catalog";
+
+        if (isLocalStdio) {
+          const omitted: DockerMcpBlockedServer = {
+            id: server.id,
+            blockedReason:
+              server.configTarget === "codex-mcp-json"
+                ? "client-materialized local-stdio peer: sync-toolbox-client writes this server into Codex MCP config"
+                : "client-materialized local-stdio peer"
+          };
+          gatewayOmittedServers.push(omitted);
+          planOmittedById.set(server.id, omitted);
+        } else if (isDescriptorOnly) {
           const descriptorOnlyReason = server.blockedReason ?? "no safe catalog target";
           const blocked: DockerMcpBlockedServer = {
             id: server.id,
@@ -195,10 +238,10 @@ export function buildDockerMcpRuntimeApplyPlan(
           commandBlockedServers.push(blocked);
           gatewayOmittedServers.push(blocked);
           planBlockedById.set(server.id, blocked);
-        } else if (server.dockerApplyMode === "catalog" && server.catalogServerId) {
+        } else if (isCatalogMode && server.catalogServerId) {
           serverRefs.push(`catalog://mcp/docker-mcp-catalog/${server.catalogServerId}`);
           gatewayServerNames.push(server.catalogServerId);
-        } else if (server.dockerApplyMode === "catalog") {
+        } else if (isCatalogMode) {
           const blocked: DockerMcpBlockedServer = {
             id: server.id,
             blockedReason: "missing catalogServerId: catalog-mode peer server has no catalog target"
@@ -265,10 +308,14 @@ export function buildDockerMcpRuntimeApplyPlan(
   const planBlockedServers = [...planBlockedById.values()].sort((a, b) =>
     a.id.localeCompare(b.id)
   );
+  const planOmittedServers = [...planOmittedById.values()].sort((a, b) =>
+    a.id.localeCompare(b.id)
+  );
 
   return {
     commands,
     gatewayRunCommands,
+    ...(planOmittedServers.length > 0 ? { omittedServers: planOmittedServers } : {}),
     ...(planBlockedServers.length > 0 ? { blockedServers: planBlockedServers } : {})
   };
 }

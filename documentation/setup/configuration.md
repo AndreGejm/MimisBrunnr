@@ -48,6 +48,7 @@ The compose profile overrides these generic defaults and forces a model-backed c
 The runtime resolves five named model roles:
 
 - `coding_primary`
+- `coding_advisory`
 - `mimisbrunnr_primary`
 - `embedding_primary`
 - `reranker_primary`
@@ -57,6 +58,8 @@ Legacy/default bindings are generated in `buildRoleBindingsFromLegacy()` and can
 
 - `MAB_ROLE_<ROLE>_PROVIDER`
 - `MAB_ROLE_<ROLE>_MODEL`
+- `MAB_ROLE_<ROLE>_FALLBACK_MODEL`
+- `MAB_ROLE_<ROLE>_FALLBACK_MODELS_JSON`
 - `MAB_ROLE_<ROLE>_TEMPERATURE`
 - `MAB_ROLE_<ROLE>_SEED`
 - `MAB_ROLE_<ROLE>_TIMEOUT_MS`
@@ -66,8 +69,28 @@ Legacy/default bindings are generated in `buildRoleBindingsFromLegacy()` and can
 Examples:
 
 - `MAB_ROLE_CODING_PRIMARY_MODEL=qwen3-coder`
+- `MAB_ROLE_CODING_ADVISORY_PROVIDER=voltagent_agent`
 - `MAB_ROLE_MIMISBRUNNR_PRIMARY_PROVIDER=docker_ollama`
 - `MAB_ROLE_PAID_ESCALATION_PROVIDER=paid_openai_compat`
+
+VoltAgent paid-path example with Claude fallback:
+
+- `MAB_ROLE_PAID_ESCALATION_PROVIDER=voltagent_agent`
+- `MAB_ROLE_PAID_ESCALATION_MODEL=openai/gpt-4.1-mini`
+- `MAB_ROLE_PAID_ESCALATION_FALLBACK_MODEL=anthropic/claude-sonnet-4`
+- `MAB_ROLE_CODING_ADVISORY_PROVIDER=voltagent_agent`
+- `MAB_ROLE_CODING_ADVISORY_MODEL=openai/gpt-4.1-mini`
+- `MAB_ROLE_CODING_ADVISORY_FALLBACK_MODEL=anthropic/claude-sonnet-4`
+
+When a role uses `voltagent_agent`, all configured primary and fallback model
+ids must be provider-prefixed, and the corresponding provider credentials must
+exist in the process environment. For the OpenAI-plus-Claude fallback path,
+that means both `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`.
+
+Architectural boundary: VoltAgent in this repository is only the paid-runtime
+harness for bounded Mimir roles. Codex and Claude keep their own skills and
+subagents outside Mimir. See
+[external-client-boundary.md](/F:/Dev/scripts/Mimir/mimir/documentation/reference/external-client-boundary.md).
 
 ## Auth configuration
 

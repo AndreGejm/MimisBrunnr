@@ -142,7 +142,9 @@ test("windows installer cli plan-client-access returns a dry-run write plan with
   const stateRoot = path.join(root, "state");
   const configPath = path.join(root, "config.toml");
   const manifestPath = path.join(root, "installation.json");
+  const workspacePath = path.join(root, "workspace");
   await mkdir(binDir, { recursive: true });
+  await mkdir(workspacePath, { recursive: true });
   await writeFile(configPath, "# existing config\n", "utf8");
   await writeFile(manifestPath, JSON.stringify({ schemaVersion: 1 }, null, 2), "utf8");
   await writeFile(path.join(binDir, "mimir.cmd"), "@echo off\r\n", "utf8");
@@ -164,6 +166,8 @@ test("windows installer cli plan-client-access returns a dry-run write plan with
     binDir,
     "-ManifestPath",
     manifestPath,
+    "-WorkspacePath",
+    workspacePath,
     "-StateRoot",
     stateRoot,
     "-Json"
@@ -181,6 +185,19 @@ test("windows installer cli plan-client-access returns a dry-run write plan with
   assert.equal(envelope.details.writePlan.applyCommand.serverName, "mimir");
   assert.equal(envelope.details.writePlan.applyCommand.repoRoot, process.cwd());
   assert.ok(Array.isArray(envelope.details.writePlan.writeTargets));
+  assert.equal(envelope.details.clientAccess.codexVoltAgentAccess.workspacePath, workspacePath);
+  assert.equal(
+    envelope.details.clientAccess.codexVoltAgentAccess.workspaceConfigPath,
+    path.join(workspacePath, "client-config.json")
+  );
+  assert.equal(
+    envelope.details.writePlan.codexVoltAgentAccess.workspaceConfigPath,
+    path.join(workspacePath, "client-config.json")
+  );
+  assert.equal(
+    envelope.details.writePlan.codexVoltAgentAccess.nativeSkillPath,
+    path.join(process.env.USERPROFILE ?? process.env.HOME ?? "", ".codex", "skills", "voltagent-default")
+  );
 
   const configTarget = envelope.details.writePlan.writeTargets.find((target) => target.id === "client-config");
   assert.ok(configTarget);
@@ -206,6 +223,24 @@ test("windows installer cli plan-client-access returns a dry-run write plan with
   assert.equal(launcherTarget.backupStrategy, "none");
   assert.equal(launcherTarget.backupPathPattern, null);
 
+  const vendoredConfigTarget = envelope.details.writePlan.writeTargets.find(
+    (target) => target.id === "codex-voltagent-config"
+  );
+  assert.ok(vendoredConfigTarget);
+  assert.equal(vendoredConfigTarget.path, path.join(workspacePath, "client-config.json"));
+  assert.equal(vendoredConfigTarget.exists, false);
+  assert.equal(vendoredConfigTarget.mutationKind, "write_file");
+
+  const nativeSkillTarget = envelope.details.writePlan.writeTargets.find(
+    (target) => target.id === "codex-voltagent-native-skills"
+  );
+  assert.ok(nativeSkillTarget);
+  assert.equal(
+    nativeSkillTarget.path,
+    path.join(process.env.USERPROFILE ?? process.env.HOME ?? "", ".codex", "skills", "voltagent-default")
+  );
+  assert.equal(nativeSkillTarget.mutationKind, "create_link");
+
   const persistedReport = JSON.parse(
     await readFile(path.join(stateRoot, "last-report.json"), "utf8")
   );
@@ -223,7 +258,10 @@ test("windows installer cli apply-client-access executes the tracked install hel
   const stateRoot = path.join(root, "state");
   const configPath = path.join(root, "config.toml");
   const manifestPath = path.join(root, "installation.json");
+  const workspacePath = path.join(root, "workspace");
+  const homeRoot = path.join(root, "home");
   await mkdir(binDir, { recursive: true });
+  await mkdir(workspacePath, { recursive: true });
   await writeFile(configPath, "# existing config\n", "utf8");
   await writeFile(
     manifestPath,
@@ -250,6 +288,10 @@ test("windows installer cli apply-client-access executes the tracked install hel
       binDir,
       "-ManifestPath",
       manifestPath,
+      "-WorkspacePath",
+      workspacePath,
+      "-HomeRoot",
+      homeRoot,
       "-StateRoot",
       stateRoot,
       "-Json"
@@ -271,10 +313,21 @@ test("windows installer cli apply-client-access executes the tracked install hel
   assert.equal(envelope.details.clientAccess.clientName, "codex");
   assert.equal(envelope.details.clientAccess.configured, true);
   assert.equal(envelope.details.defaultAccess.report.status, "healthy");
-  assert.equal(envelope.commandsRun.length, 2);
+  assert.equal(envelope.commandsRun.length, 4);
   assert.equal(envelope.backupsCreated.length, 2);
   assert.ok(envelope.backupsCreated.every((item) => item.endsWith(".bak")));
   assert.equal(envelope.details.applyResult.writeTargets.length > 0, true);
+  assert.equal(envelope.details.clientAccess.codexVoltAgentAccess.workspacePath, workspacePath);
+  assert.equal(
+    envelope.details.clientAccess.codexVoltAgentAccess.workspaceConfigPath,
+    path.join(workspacePath, "client-config.json")
+  );
+  assert.equal(
+    envelope.details.clientAccess.codexVoltAgentAccess.nativeSkillPath,
+    path.join(homeRoot, ".codex", "skills", "voltagent-default")
+  );
+  assert.equal(envelope.details.codexVoltAgentAccess.onboard.ok, true);
+  assert.equal(envelope.details.codexVoltAgentAccess.doctor.ok, true);
 
   const configContents = await readFile(configPath, "utf8");
   assert.match(configContents, /\[mcp_servers\.mimir\]/);
@@ -284,6 +337,23 @@ test("windows installer cli apply-client-access executes the tracked install hel
 
   const launcherContents = await readFile(path.join(binDir, "mab.cmd"), "utf8");
   assert.match(launcherContents, /launch-mimir-cli\.mjs/);
+
+  const vendoredConfig = JSON.parse(
+    await readFile(path.join(workspacePath, "client-config.json"), "utf8")
+  );
+  assert.equal(vendoredConfig.runtime.mode, "voltagent-default");
+  assert.deepEqual(vendoredConfig.runtime.trustedWorkspaceRoots, [workspacePath]);
+  assert.ok(vendoredConfig.skills.rootPaths.includes(path.join(homeRoot, ".codex", "skills")));
+  assert.equal(
+    vendoredConfig.mimir.serverCommand[0],
+    process.execPath
+  );
+  assert.deepEqual(vendoredConfig.mimir.serverArgs, [
+    path.join(process.cwd(), "scripts", "launch-mimir-mcp.mjs")
+  ]);
+
+  const nativeSkillPath = path.join(homeRoot, ".codex", "skills", "voltagent-default");
+  assert.equal(await pathExists(nativeSkillPath), true);
 
   const persistedReport = JSON.parse(
     await readFile(path.join(stateRoot, "last-report.json"), "utf8")
@@ -444,6 +514,9 @@ test("windows installer cli prepare-repo-workspace validates a clean repo, runs 
   await mkdir(path.join(repoRoot, "apps", "mimir-cli"), { recursive: true });
   await mkdir(path.join(repoRoot, "apps", "mimir-mcp"), { recursive: true });
   await mkdir(path.join(repoRoot, "apps", "mimir-control-mcp"), { recursive: true });
+  await mkdir(path.join(repoRoot, "vendor", "codex-claude-voltagent-client"), {
+    recursive: true
+  });
   await writeFile(
     path.join(repoRoot, "package.json"),
     JSON.stringify(
@@ -459,7 +532,11 @@ test("windows installer cli prepare-repo-workspace validates a clean repo, runs 
     ),
     "utf8"
   );
-  await writeFile(path.join(repoRoot, "pnpm-workspace.yaml"), "packages:\n  - apps/*\n", "utf8");
+  await writeFile(
+    path.join(repoRoot, "pnpm-workspace.yaml"),
+    "packages:\n  - apps/*\n  - vendor/codex-claude-voltagent-client\n",
+    "utf8"
+  );
   await writeFile(path.join(repoRoot, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n", "utf8");
   await writeFile(
     path.join(binDir, "git.cmd"),
@@ -497,6 +574,11 @@ test("windows installer cli prepare-repo-workspace validates a clean repo, runs 
       `  echo export default {}>\"${path.join(repoRoot, "apps", "mimir-control-mcp", "dist", "main.js")}\"`,
       "  exit /b 0",
       ")",
+      "if \"%~1 %~2\"==\"pnpm vendor:codex-voltagent:build\" (",
+      `  if not exist \"${path.join(repoRoot, "vendor", "codex-claude-voltagent-client", "dist")}\" mkdir \"${path.join(repoRoot, "vendor", "codex-claude-voltagent-client", "dist")}\"`,
+      `  echo export {}>\"${path.join(repoRoot, "vendor", "codex-claude-voltagent-client", "dist", "index.js")}\"`,
+      "  exit /b 0",
+      ")",
       "echo unexpected corepack args: %* 1>&2",
       "exit /b 1"
     ].join("\r\n"),
@@ -531,7 +613,7 @@ test("windows installer cli prepare-repo-workspace validates a clean repo, runs 
   assert.equal(envelope.mode, "apply");
   assert.equal(envelope.status, "success");
   assert.equal(envelope.reasonCode, "repo_workspace_prepared");
-  assert.equal(envelope.commandsRun.length, 4);
+  assert.equal(envelope.commandsRun.length, 5);
   assert.equal(envelope.details.repoWorkspace.repoRoot, repoRoot);
   assert.equal(envelope.details.repoWorkspace.isDirty, false);
   assert.equal(envelope.details.repoWorkspace.installAttempted, true);
@@ -543,7 +625,8 @@ test("windows installer cli prepare-repo-workspace validates a clean repo, runs 
       "apps/mimir-api/dist/main.js",
       "apps/mimir-cli/dist/main.js",
       "apps/mimir-mcp/dist/main.js",
-      "apps/mimir-control-mcp/dist/main.js"
+      "apps/mimir-control-mcp/dist/main.js",
+      "vendor/codex-claude-voltagent-client/dist/index.js"
     ]
   );
 
@@ -1038,7 +1121,10 @@ test("windows installer cli audit-toolbox-client-handoff reports reconnect contr
   const stateRoot = path.join(root, "state");
   const configPath = path.join(root, "config.toml");
   const manifestPath = path.join(root, "installation.json");
+  const workspacePath = path.join(root, "workspace");
+  const homeRoot = path.join(root, "home");
   await mkdir(binDir, { recursive: true });
+  await mkdir(workspacePath, { recursive: true });
   await writeFile(path.join(binDir, "mimir.cmd"), "@echo off\r\nREM placeholder\r\n", "utf8");
   await writeFile(
     path.join(binDir, "corepack.cmd"),
@@ -1072,6 +1158,10 @@ test("windows installer cli audit-toolbox-client-handoff reports reconnect contr
       binDir,
       "-ManifestPath",
       manifestPath,
+      "-WorkspacePath",
+      workspacePath,
+      "-HomeRoot",
+      homeRoot,
       "-StateRoot",
       stateRoot,
       "-Json"
@@ -1144,6 +1234,14 @@ test("windows installer cli audit-toolbox-client-handoff reports reconnect contr
   assert.equal(
     envelope.details.toolboxClientHandoff.handoffContract.sessionPolicyTokenEnvVar,
     "MAB_TOOLBOX_SESSION_POLICY_TOKEN"
+  );
+  assert.equal(
+    await pathExists(path.join(workspacePath, "client-config.json")),
+    true
+  );
+  assert.equal(
+    await pathExists(path.join(homeRoot, ".codex", "skills", "voltagent-default")),
+    true
   );
 
   const persistedReport = JSON.parse(
@@ -1397,4 +1495,16 @@ async function writeLegacyState(targetPath) {
     operations: []
   };
   await writeFile(targetPath, JSON.stringify(payload, null, 2), "utf8");
+}
+
+async function pathExists(targetPath) {
+  try {
+    await readFile(targetPath);
+    return true;
+  } catch (error) {
+    if (error && typeof error === "object" && error.code === "EISDIR") {
+      return true;
+    }
+    return false;
+  }
 }

@@ -3,9 +3,12 @@ import type {
   ToolboxAuditEvent
 } from "./audit.contract.js";
 import type {
+  ToolboxMutationLevel,
+  ToolboxRuntimeBindingManifest,
   ToolboxSessionEntryMode,
   ToolboxSessionMode,
-  CompiledToolboxToolDescriptor
+  CompiledToolboxToolDescriptor,
+  ToolboxServerUsageClass
 } from "./policy.contract.js";
 
 export interface ToolboxApprovalGrant {
@@ -25,22 +28,31 @@ export interface ToolboxHandoffLeaseDescriptor {
   sessionPolicyTokenEnvVar?: "MAB_TOOLBOX_SESSION_POLICY_TOKEN";
 }
 
+export interface ToolboxClientMaterializationDescriptor {
+  format: "codex-mcp-json";
+  path: string;
+  serverUsageClasses?: Record<string, ToolboxServerUsageClass>;
+}
+
 export interface ToolboxSessionHandoff {
   mode: "reconnect";
   targetProfileId: string;
   targetSessionMode: ToolboxSessionMode;
   fallbackProfileId: string;
   downgradeTarget: string;
+  servers: ToolboxServerSummary[];
   clientId: string;
   handoffStrategy: "env-reconnect" | "manual-env-reconnect";
   handoffPresetRef?: string;
   clientPresetRef?: string;
+  clientMaterialization?: ToolboxClientMaterializationDescriptor;
   client: {
     id: string;
     displayName: string;
     handoffStrategy: "env-reconnect" | "manual-env-reconnect";
     handoffPresetRef?: string;
     clientPresetRef?: string;
+    clientMaterialization?: ToolboxClientMaterializationDescriptor;
   };
   manifestRevision: string;
   profileRevision?: string;
@@ -137,6 +149,18 @@ export interface ToolboxAntiUseCaseSummary {
   category: string;
 }
 
+export interface ToolboxServerSummary {
+  id: string;
+  displayName: string;
+  source: "owned" | "peer";
+  kind: "control" | "semantic" | "peer";
+  usageClass: ToolboxServerUsageClass;
+  trustClass: string;
+  mutationLevel: ToolboxMutationLevel;
+  runtimeBindingKind: ToolboxRuntimeBindingManifest["kind"] | null;
+  clientMaterializationTarget: "codex-mcp-json" | null;
+}
+
 export interface ToolboxDiscoveryProfileSummary {
   id: string;
   displayName: string;
@@ -168,6 +192,7 @@ export interface ToolboxDescribeEntry {
   fallbackProfile: string | null;
   workflow: ToolboxDiscoveryWorkflowSummary;
   profile: ToolboxDiscoveryProfileSummary;
+  servers: ToolboxServerSummary[];
   tools: CompiledToolboxToolDescriptor[];
   suppressedTools: ToolboxSuppressedToolSummary[];
   antiUseCases: ToolboxAntiUseCaseSummary[];
@@ -200,6 +225,7 @@ export interface ToolboxActiveProfileSummary {
   deniedCategories: string[];
   semanticCapabilities: string[];
   profileRevision: string;
+  servers: ToolboxServerSummary[];
 }
 
 export interface ToolboxActiveClientSummary {
@@ -208,6 +234,7 @@ export interface ToolboxActiveClientSummary {
   handoffStrategy: "env-reconnect" | "manual-env-reconnect";
   handoffPresetRef?: string;
   clientPresetRef?: string;
+  clientMaterialization?: ToolboxClientMaterializationDescriptor;
   suppressServerIds: string[];
   suppressToolIds: string[];
   suppressCategories: string[];

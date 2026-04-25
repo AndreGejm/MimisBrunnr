@@ -1,0 +1,36 @@
+{
+  "name": "codex-voltagent-default",
+  "version": "0.1.0",
+  "description": "Codex plugin shell for VoltAgent default-runtime diagnostics, review, and explicit home-local installation.",
+  "author": {
+    "name": "Local Workspace",
+    "email": "noreply@example.invalid",
+    "url": "https://example.invalid/codex-voltagent-default"
+  },
+  "repository": "https://example.invalid/codex-voltagent-default",
+  "license": "UNLICENSED",
+  "keywords": [
+    "codex",
+    "voltagent",
+    "mimir",
+    "diagnostics"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Codex VoltAgent Default",
+    "shortDescription": "VoltAgent default-runtime diagnostics and install shell",
+    "longDescription": "Provides one-step bootstrap, config bootstrap, status, doctor, route-preview, and Claude handoff skills for reviewing the Codex-side VoltAgent default-runtime integration and explicitly syncing the shell into a home-local plugin before any automatic startup wiring.",
+    "developerName": "Local Workspace",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read"
+    ],
+    "defaultPrompt": [
+      "Bootstrap the VoltAgent default runtime for this workspace.",
+      "Show the VoltAgent default-runtime status for this workspace.",
+      "Run the VoltAgent default-runtime doctor checks."
+    ],
+    "brandColor": "#2563EB"
+  }
+}

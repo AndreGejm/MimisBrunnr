@@ -7,6 +7,8 @@ param(
   [string]$StateRoot = "",
   [string]$ClientName = "codex",
   [string]$ConfigPath = "",
+  [string]$WorkspacePath = "",
+  [string]$HomeRoot = "",
   [string]$BinDir = "",
   [string]$ManifestPath = "",
   [string]$ToolboxManifestDir = "",
@@ -62,6 +64,16 @@ if (-not $ServerName) {
 $RepoRoot = [System.IO.Path]::GetFullPath($RepoRoot)
 $StateRoot = [System.IO.Path]::GetFullPath($StateRoot)
 $ConfigPath = [System.IO.Path]::GetFullPath($ConfigPath)
+$WorkspacePath = if ($WorkspacePath) {
+  [System.IO.Path]::GetFullPath($WorkspacePath)
+} else {
+  $RepoRoot
+}
+$HomeRoot = if ($HomeRoot) {
+  [System.IO.Path]::GetFullPath($HomeRoot)
+} else {
+  [System.IO.Path]::GetFullPath($HOME)
+}
 $BinDir = [System.IO.Path]::GetFullPath($BinDir)
 $ManifestPath = [System.IO.Path]::GetFullPath($ManifestPath)
 $ToolboxManifestDir = [System.IO.Path]::GetFullPath($ToolboxManifestDir)
@@ -134,6 +146,8 @@ switch ($Operation) {
       -ConfigPath $ConfigPath `
       -BinDir $BinDir `
       -ManifestPath $ManifestPath `
+      -WorkspacePath $WorkspacePath `
+      -HomeRoot $HomeRoot `
       -ServerName $ServerName
 
     $envelope = New-InstallerResultEnvelope `
@@ -163,6 +177,8 @@ switch ($Operation) {
       -ConfigPath $ConfigPath `
       -BinDir $BinDir `
       -ManifestPath $ManifestPath `
+      -WorkspacePath $WorkspacePath `
+      -HomeRoot $HomeRoot `
       -ServerName $ServerName
 
     $report = $adapter.report
@@ -185,8 +201,9 @@ switch ($Operation) {
       -Details ([pscustomobject]@{
           clientAccess = $adapter.clientAccess
           defaultAccess = [pscustomobject]@{
-            report = $report
+            report = $adapter.defaultAccessReport
           }
+          codexVoltAgentAccess = $adapter.codexVoltAgentAccess
           applyResult = $adapter.applyResult
         }) `
       -BackupsCreated @($adapter.backupsCreated) `
