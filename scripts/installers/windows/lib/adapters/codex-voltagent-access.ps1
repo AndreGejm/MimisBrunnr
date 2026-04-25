@@ -28,14 +28,13 @@ function Get-CodexVoltAgentWorkspacePath {
   return [System.IO.Path]::GetFullPath($RepoRoot)
 }
 
-function Get-CodexVoltAgentWorkspaceConfigPath {
+function Get-CodexVoltAgentHomeConfigPath {
   [CmdletBinding()]
   param(
-    [Parameter(Mandatory = $true)]
-    [string]$WorkspacePath
+    [string]$HomeRoot = $HOME
   )
 
-  return Join-Path $WorkspacePath "client-config.json"
+  return Join-Path $HomeRoot ".codex\voltagent\client-config.json"
 }
 
 function Get-CodexVoltAgentNativeSkillPath {
@@ -65,7 +64,8 @@ function Get-CodexVoltAgentPlanMetadata {
   return [pscustomobject]@{
     vendoredClientRoot = Get-CodexVoltAgentClientRoot -RepoRoot $RepoRoot
     workspacePath = $resolvedWorkspacePath
-    workspaceConfigPath = Get-CodexVoltAgentWorkspaceConfigPath -WorkspacePath $resolvedWorkspacePath
+    configPath = Get-CodexVoltAgentHomeConfigPath -HomeRoot $HomeRoot
+    workspaceConfigPath = Get-CodexVoltAgentHomeConfigPath -HomeRoot $HomeRoot
     nativeSkillPath = Get-CodexVoltAgentNativeSkillPath -HomeRoot $HomeRoot
   }
 }
@@ -83,8 +83,8 @@ function Invoke-CodexVoltAgentOnboardAdapter {
     [string]$HomeRoot
   )
 
-  $workspaceConfigPath = Get-CodexVoltAgentWorkspaceConfigPath -WorkspacePath $WorkspacePath
   $mcpWrapperPath = Join-Path $RepoRoot "scripts\launch-mimir-mcp.mjs"
+  $configPath = Get-CodexVoltAgentHomeConfigPath -HomeRoot $HomeRoot
   $nodeCommand = Get-Command node -ErrorAction SilentlyContinue
   if (-not $nodeCommand) {
     throw "Node executable 'node' was not found on PATH."
@@ -95,7 +95,7 @@ function Invoke-CodexVoltAgentOnboardAdapter {
     "--workspace",
     $WorkspacePath,
     "--config",
-    $workspaceConfigPath,
+    $configPath,
     "--mimir-command",
     $nodeCommand.Source,
     "--mimir-arg",
@@ -127,14 +127,14 @@ function Invoke-CodexVoltAgentDoctorAdapter {
     [string]$HomeRoot
   )
 
-  $workspaceConfigPath = Get-CodexVoltAgentWorkspaceConfigPath -WorkspacePath $WorkspacePath
+  $configPath = Get-CodexVoltAgentHomeConfigPath -HomeRoot $HomeRoot
   $arguments = @(
     "--home-root",
     $HomeRoot,
     "--workspace",
     $WorkspacePath,
     "--config",
-    $workspaceConfigPath
+    $configPath
   )
 
   $adapter = Invoke-NodeJsonScriptAdapter `

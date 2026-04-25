@@ -132,7 +132,7 @@ function Invoke-InstallerClientAccessPlan {
         -RepoRoot $RepoRoot `
         -WorkspacePath $WorkspacePath `
         -HomeRoot $HomeRoot
-      $workspaceConfigExists = Test-Path $codexVoltAgentPlan.workspaceConfigPath
+      $globalConfigExists = Test-Path $codexVoltAgentPlan.configPath
       $nativeSkillExists = Test-Path $codexVoltAgentPlan.nativeSkillPath
       $writeTargets = @(
         (New-InstallerWriteTarget `
@@ -150,12 +150,12 @@ function Invoke-InstallerClientAccessPlan {
           -BackupStrategy $(if ($manifestExists) { "timestamped_copy" } else { "none" }) `
           -BackupPathPattern $(if ($manifestExists) { Get-InstallerTimestampedBackupPathPattern -Path $ManifestPath } else { $null })),
         (New-InstallerWriteTarget `
-          -Id "codex-voltagent-config" `
-          -Path $codexVoltAgentPlan.workspaceConfigPath `
-          -Exists $workspaceConfigExists `
+          -Id "codex-voltagent-global-config" `
+          -Path $codexVoltAgentPlan.configPath `
+          -Exists $globalConfigExists `
           -MutationKind "write_file" `
-          -BackupStrategy $(if ($workspaceConfigExists) { "timestamped_copy" } else { "none" }) `
-          -BackupPathPattern $(if ($workspaceConfigExists) { Get-InstallerTimestampedBackupPathPattern -Path $codexVoltAgentPlan.workspaceConfigPath } else { $null })),
+          -BackupStrategy $(if ($globalConfigExists) { "timestamped_copy" } else { "none" }) `
+          -BackupPathPattern $(if ($globalConfigExists) { Get-InstallerTimestampedBackupPathPattern -Path $codexVoltAgentPlan.configPath } else { $null })),
         (New-InstallerWriteTarget `
           -Id "codex-voltagent-native-skills" `
           -Path $codexVoltAgentPlan.nativeSkillPath `
@@ -184,6 +184,7 @@ function Invoke-InstallerClientAccessPlan {
           codexVoltAgentAccess = [pscustomobject]@{
             vendoredClientRoot = $codexVoltAgentPlan.vendoredClientRoot
             workspacePath = $codexVoltAgentPlan.workspacePath
+            configPath = $codexVoltAgentPlan.configPath
             workspaceConfigPath = $codexVoltAgentPlan.workspaceConfigPath
             nativeSkillPath = $codexVoltAgentPlan.nativeSkillPath
           }
@@ -205,6 +206,7 @@ function Invoke-InstallerClientAccessPlan {
           codexVoltAgentAccess = [pscustomobject]@{
             vendoredClientRoot = $codexVoltAgentPlan.vendoredClientRoot
             workspacePath = $codexVoltAgentPlan.workspacePath
+            configPath = $codexVoltAgentPlan.configPath
             workspaceConfigPath = $codexVoltAgentPlan.workspaceConfigPath
             nativeSkillPath = $codexVoltAgentPlan.nativeSkillPath
           }
@@ -269,8 +271,8 @@ function Invoke-InstallerClientAccessApply {
     -ServerName $ServerName
 
   $codexVoltAgentPlan = $plan.writePlan.codexVoltAgentAccess
-  if (Test-Path $codexVoltAgentPlan.workspaceConfigPath) {
-    $null = New-InstallerTimestampedBackup -Path $codexVoltAgentPlan.workspaceConfigPath
+  if (Test-Path $codexVoltAgentPlan.configPath) {
+    $null = New-InstallerTimestampedBackup -Path $codexVoltAgentPlan.configPath
   }
 
   $codexVoltAgentOnboard = Invoke-CodexVoltAgentOnboardAdapter `
@@ -300,7 +302,7 @@ function Invoke-InstallerClientAccessApply {
   $codexVoltAgentConfigured = `
     $codexVoltAgentOnboard.report.ok -and `
     $codexVoltAgentDoctor.report.ok -and `
-    (Test-Path $codexVoltAgentPlan.workspaceConfigPath) -and `
+    (Test-Path $codexVoltAgentPlan.configPath) -and `
     (Test-Path $codexVoltAgentPlan.nativeSkillPath)
 
   $recommendations = @($apply.report.recommendations)
@@ -357,6 +359,7 @@ function Invoke-InstallerClientAccessApply {
       codexVoltAgentAccess = [pscustomobject]@{
         vendoredClientRoot = $codexVoltAgentPlan.vendoredClientRoot
         workspacePath = $codexVoltAgentPlan.workspacePath
+        configPath = $codexVoltAgentPlan.configPath
         workspaceConfigPath = $codexVoltAgentPlan.workspaceConfigPath
         nativeSkillPath = $codexVoltAgentPlan.nativeSkillPath
         configured = $codexVoltAgentConfigured
@@ -374,6 +377,7 @@ function Invoke-InstallerClientAccessApply {
       launcherFiles = @($plan.writePlan.launcherFiles)
       codexVoltAgentAccess = [pscustomobject]@{
         workspacePath = $codexVoltAgentPlan.workspacePath
+        configPath = $codexVoltAgentPlan.configPath
         workspaceConfigPath = $codexVoltAgentPlan.workspaceConfigPath
         nativeSkillPath = $codexVoltAgentPlan.nativeSkillPath
       }

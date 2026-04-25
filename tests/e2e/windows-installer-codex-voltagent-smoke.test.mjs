@@ -27,6 +27,12 @@ test(
     const stateRoot = path.join(root, "state");
     const configPath = path.join(homeRoot, ".codex", "config.toml");
     const manifestPath = path.join(homeRoot, ".mimir", "installation.json");
+    const globalVoltAgentConfigPath = path.join(
+      homeRoot,
+      ".codex",
+      "voltagent",
+      "client-config.json"
+    );
 
     await mkdir(workspacePath, { recursive: true });
     await mkdir(binDir, { recursive: true });
@@ -69,6 +75,14 @@ test(
     const applyEnvelope = JSON.parse(applyResult.stdout);
     assert.equal(applyEnvelope.status, "success");
     assert.equal(applyEnvelope.details.codexVoltAgentAccess.doctor.ok, true);
+    assert.equal(
+      applyEnvelope.details.clientAccess.codexVoltAgentAccess.configPath,
+      globalVoltAgentConfigPath
+    );
+    assert.equal(
+      applyEnvelope.details.clientAccess.codexVoltAgentAccess.workspacePath,
+      workspacePath
+    );
 
     const doctorResult = await runNodeJsonCommand(
       vendoredDoctorPath,
@@ -77,8 +91,6 @@ test(
         homeRoot,
         "--workspace",
         workspacePath,
-        "--config",
-        path.join(workspacePath, "client-config.json"),
         "--probe-runtime",
         "--state-root",
         stateRoot
@@ -91,6 +103,8 @@ test(
     assert.equal(doctorResult.exitCode, 0, doctorResult.stderr);
     const doctorReport = JSON.parse(doctorResult.stdout);
     assert.equal(doctorReport.ok, true);
+    assert.equal(doctorReport.status.configPath, globalVoltAgentConfigPath);
+    assert.equal(doctorReport.status.configSource, "home-global-default");
     assert.deepEqual(doctorReport.status.activation, {
       nativeCodexSkillsConfigured: true,
       nativeCodexInstallPresent: true,
@@ -106,10 +120,11 @@ test(
     );
 
     const vendoredConfig = JSON.parse(
-      await readFile(path.join(workspacePath, "client-config.json"), "utf8")
+      await readFile(globalVoltAgentConfigPath, "utf8")
     );
     assert.equal(vendoredConfig.runtime.mode, "voltagent-default");
-    assert.deepEqual(vendoredConfig.runtime.trustedWorkspaceRoots, [workspacePath]);
+    assert.equal(vendoredConfig.runtime.workspaceTrustMode, "all-workspaces");
+    assert.deepEqual(vendoredConfig.runtime.trustedWorkspaceRoots, []);
   },
   90000
 );
