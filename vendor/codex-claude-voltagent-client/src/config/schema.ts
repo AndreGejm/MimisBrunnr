@@ -11,6 +11,11 @@ export const clientRuntimeModeSchema = z.enum([
   "voltagent+claude-auto"
 ]);
 
+export const workspaceTrustModeSchema = z.enum([
+  "all-workspaces",
+  "explicit-roots"
+]);
+
 export const claudeSkillPackSchema = z.strictObject({
   skillPackId: nonBlankString,
   skills: z.array(nonBlankString).min(1)
@@ -48,10 +53,12 @@ export const clientConfigSchema = z.strictObject({
   runtime: z
     .strictObject({
       mode: clientRuntimeModeSchema.default("local-only"),
+      workspaceTrustMode: workspaceTrustModeSchema.default("explicit-roots"),
       trustedWorkspaceRoots: z.array(nonBlankString).default([])
     })
     .default({
       mode: "local-only",
+      workspaceTrustMode: "explicit-roots",
       trustedWorkspaceRoots: []
     }),
   claude: z
@@ -68,13 +75,14 @@ export const clientConfigSchema = z.strictObject({
 }).superRefine((config, ctx) => {
   if (
     config.runtime.mode !== "local-only" &&
+    config.runtime.workspaceTrustMode === "explicit-roots" &&
     config.runtime.trustedWorkspaceRoots.length === 0
   ) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["runtime", "trustedWorkspaceRoots"],
       message:
-        "trustedWorkspaceRoots must contain at least one workspace root when runtime mode is not local-only"
+        "trustedWorkspaceRoots must contain at least one workspace root when workspaceTrustMode is explicit-roots"
     });
   }
 
@@ -155,6 +163,7 @@ export const clientConfigSchema = z.strictObject({
 
 export type ClientConfig = z.infer<typeof clientConfigSchema>;
 export type ClientRuntimeMode = z.infer<typeof clientRuntimeModeSchema>;
+export type WorkspaceTrustMode = z.infer<typeof workspaceTrustModeSchema>;
 export type ClaudeSkillPack = z.infer<typeof claudeSkillPackSchema>;
 export type ClaudeEscalationProfile = z.infer<
   typeof claudeEscalationProfileSchema

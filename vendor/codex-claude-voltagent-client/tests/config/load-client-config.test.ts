@@ -51,10 +51,33 @@ describe("loadClientConfig", () => {
     expect(config.models.fallback).toEqual([]);
     expect(config.configVersion).toBe(1);
     expect(config.runtime.mode).toBe("local-only");
+    expect(config.runtime.workspaceTrustMode).toBe("explicit-roots");
     expect(config.runtime.trustedWorkspaceRoots).toEqual([]);
     expect(config.claude.enabled).toBe(false);
     expect(config.claude.skillPacks).toEqual([]);
     expect(config.claude.profiles).toEqual([]);
+  });
+
+  it("accepts global default mode with workspaceTrustMode all-workspaces", () => {
+    const config = loadClientConfig({
+      mimir: {
+        serverCommand: ["mimir"]
+      },
+      skills: {
+        rootPaths: ["C:/Users/vikel/.codex/skills"]
+      },
+      models: {
+        primary: "openai/gpt-4.1-mini"
+      },
+      runtime: {
+        mode: "voltagent-default",
+        workspaceTrustMode: "all-workspaces"
+      }
+    });
+
+    expect(config.runtime.mode).toBe("voltagent-default");
+    expect(config.runtime.workspaceTrustMode).toBe("all-workspaces");
+    expect(config.runtime.trustedWorkspaceRoots).toEqual([]);
   });
 
   it("rejects automatic default runtime modes without trusted workspace roots", () => {
@@ -74,6 +97,31 @@ describe("loadClientConfig", () => {
         }
       })
     ).toThrow(/trustedWorkspaceRoots/i);
+  });
+
+  it("accepts explicit-roots mode for legacy workspace configs", () => {
+    const config = loadClientConfig({
+      mimir: {
+        serverCommand: ["mimir"]
+      },
+      skills: {
+        rootPaths: ["C:/Users/vikel/.codex/skills"]
+      },
+      models: {
+        primary: "openai/gpt-4.1-mini"
+      },
+      runtime: {
+        mode: "voltagent-default",
+        workspaceTrustMode: "explicit-roots",
+        trustedWorkspaceRoots: ["F:/Dev/scripts/Mimir/mimir"]
+      }
+    });
+
+    expect(config.runtime.mode).toBe("voltagent-default");
+    expect(config.runtime.workspaceTrustMode).toBe("explicit-roots");
+    expect(config.runtime.trustedWorkspaceRoots).toEqual([
+      "F:/Dev/scripts/Mimir/mimir"
+    ]);
   });
 
   it("rejects Claude runtime modes when Claude escalation is disabled", () => {
