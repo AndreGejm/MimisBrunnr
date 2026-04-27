@@ -252,3 +252,14 @@ Current reasons:
 
 `sync-mcp-profiles` already reports these blockers. The docs now match that
 behavior.
+
+Current rollout diagnostics also emit a structured remediation plan:
+
+- keep: live servers already aligned with repo policy
+- disable: live servers that are unmanaged or too broad for the governed
+  toolbox surface
+- replace: policy server ids that still need safe catalog entries or wrappers
+
+The repo-level doctor surfaces these as `toolboxKeep`, `toolboxDisable`, and
+`toolboxReplace` so rollout work can be taken from one report instead of
+reconstructing it manually from drift details.

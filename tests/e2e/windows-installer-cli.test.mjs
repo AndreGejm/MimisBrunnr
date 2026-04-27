@@ -1495,6 +1495,51 @@ test("windows installer cli audit-toolbox-rollout-readiness combines handoff, se
     envelope.details.toolboxRolloutReadiness.dockerMcpToolkitApplyPlan.reasonCode,
     "docker_mcp_toolkit_apply_plan_blocked"
   );
+  assert.deepEqual(
+    envelope.details.toolboxRolloutReadiness.remediationPlan.keepLiveServers.map((entry) => entry.name),
+    ["brave", "mimir-control"]
+  );
+  assert.deepEqual(
+    envelope.details.toolboxRolloutReadiness.remediationPlan.disableLiveServers.map((entry) => ({
+      name: entry.name,
+      disposition: entry.disposition
+    })),
+    [
+      {
+        name: "filesystem",
+        disposition: "unmanaged"
+      },
+      {
+        name: "github",
+        disposition: "unsafe"
+      },
+      {
+        name: "grafana",
+        disposition: "unsafe"
+      },
+      {
+        name: "rtk-codex",
+        disposition: "unmanaged"
+      }
+    ]
+  );
+  assert.ok(
+    envelope.details.toolboxRolloutReadiness.remediationPlan.blockedPolicyServers.some((entry) =>
+      entry.id === "github-read"
+    )
+  );
+  assert.equal(
+    envelope.details.toolboxRolloutReadiness.remediationPlan.blockedPolicyServers.find(
+      (entry) => entry.id === "github-read"
+    )?.remediationType,
+    "catalog_entry_required"
+  );
+  assert.equal(
+    envelope.details.toolboxRolloutReadiness.remediationPlan.blockedPolicyServers.find(
+      (entry) => entry.id === "grafana-observe"
+    )?.remediationType,
+    "catalog_entry_required"
+  );
   assert.ok(
     envelope.nextActions.some((item) => /align enabled docker mcp servers/i.test(item))
   );

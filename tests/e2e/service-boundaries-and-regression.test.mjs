@@ -272,6 +272,43 @@ test("default access doctor surfaces toolbox rollout readiness blockers without 
   assert.equal(report.toolboxRolloutReadiness.governanceSummaryCounts.governedEnabledServerCount, 1);
   assert.equal(report.toolboxRolloutReadiness.governanceSummaryCounts.unsafeEnabledServerCount, 1);
   assert.equal(report.toolboxRolloutReadiness.governanceSummaryCounts.unmanagedEnabledServerCount, 0);
+  assert.deepEqual(
+    report.toolboxRolloutReadiness.remediationPlan.keepLiveServers.map((server) => server.name),
+    ["brave"]
+  );
+  assert.deepEqual(
+    report.toolboxRolloutReadiness.remediationPlan.disableLiveServers.map((server) => ({
+      name: server.name,
+      disposition: server.disposition
+    })),
+    [
+      {
+        name: "github",
+        disposition: "unsafe"
+      }
+    ]
+  );
+  assert.deepEqual(
+    report.toolboxRolloutReadiness.remediationPlan.disableLiveServers[0].replacementPolicyServerIds,
+    ["github-read", "github-write"]
+  );
+  assert.ok(
+    report.toolboxRolloutReadiness.remediationPlan.blockedPolicyServers.some((server) =>
+      server.id === "github-read"
+    )
+  );
+  assert.equal(
+    report.toolboxRolloutReadiness.remediationPlan.blockedPolicyServers.find(
+      (server) => server.id === "github-read"
+    )?.remediationType,
+    "catalog_entry_required"
+  );
+  assert.equal(
+    report.toolboxRolloutReadiness.remediationPlan.blockedPolicyServers.find(
+      (server) => server.id === "docker-read"
+    )?.remediationType,
+    "wrapper_required"
+  );
   assert.ok(
     report.toolboxRolloutReadiness.nextActions.some((action) =>
       /bootstrap mode/i.test(action)
@@ -391,6 +428,31 @@ test("default access reports additive toolbox rollout readiness summary and doct
       /descriptor-only/i.test(action)
     )
   );
+  assert.deepEqual(
+    report.toolboxRolloutReadiness.remediationPlan.keepLiveServers,
+    []
+  );
+  assert.deepEqual(
+    report.toolboxRolloutReadiness.remediationPlan.disableLiveServers,
+    []
+  );
+  assert.ok(
+    report.toolboxRolloutReadiness.remediationPlan.blockedPolicyServers.some((server) =>
+      server.id === "docker-read"
+    )
+  );
+  assert.equal(
+    report.toolboxRolloutReadiness.remediationPlan.blockedPolicyServers.find(
+      (server) => server.id === "docker-admin"
+    )?.remediationType,
+    "vetting_required"
+  );
+  assert.equal(
+    report.toolboxRolloutReadiness.remediationPlan.blockedPolicyServers.find(
+      (server) => server.id === "kubernetes-read"
+    )?.remediationType,
+    "wrapper_required"
+  );
   assert.equal(report.status, "healthy");
 
   const doctor = spawnSync(
@@ -420,6 +482,9 @@ test("default access reports additive toolbox rollout readiness summary and doct
   assert.equal(doctor.status, 0);
   assert.match(doctor.stdout, /toolboxRolloutReadiness: user_action_required/);
   assert.match(doctor.stdout, /toolboxSessionMode: toolbox-bootstrap/);
+  assert.match(doctor.stdout, /toolboxKeep: none/);
+  assert.match(doctor.stdout, /toolboxDisable: none/);
+  assert.match(doctor.stdout, /toolboxReplace: docker-admin, docker-read/);
   assert.match(doctor.stdout, /toolboxNext: This client is still in bootstrap mode/);
 });
 

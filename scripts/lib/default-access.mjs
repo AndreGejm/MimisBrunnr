@@ -848,11 +848,16 @@ function evaluateToolboxRolloutReadiness({
         "Upgrade or adapt the Docker MCP Toolkit contract before attempting toolbox runtime apply."
       );
     }
-    for (const blockedServer of applyPlan.blockedServers ?? []) {
+    const blockedServers = applyPlan.blockedServers ?? [];
+    for (const blockedServer of blockedServers) {
       if (blockedServer?.blockedReason) {
         nextActions.add(blockedServer.blockedReason);
       }
     }
+    const remediationPlan = buildToolboxRolloutRemediationPlan({
+      governance,
+      blockedServers
+    });
 
     return {
       status: blockedAreas.length === 0 ? "success" : "user_action_required",
@@ -878,7 +883,8 @@ function evaluateToolboxRolloutReadiness({
       unsafeEnabledServers: governance.unsafeEnabledServers,
       unmanagedEnabledServers: governance.unmanagedEnabledServers,
       governanceUnavailableReason: governance.governanceUnavailableReason,
-      blockedServers: applyPlan.blockedServers ?? [],
+      blockedServers,
+      remediationPlan,
       nextActions: [...nextActions]
     };
   } catch (error) {
@@ -914,6 +920,11 @@ function evaluateToolboxRolloutReadiness({
       unmanagedEnabledServers: [],
       governanceUnavailableReason: message,
       blockedServers: [],
+      remediationPlan: {
+        keepLiveServers: [],
+        disableLiveServers: [],
+        blockedPolicyServers: []
+      },
       nextActions: [
         "Repair the checked-in toolbox policy manifests before relying on rollout readiness.",
         "Fix Docker MCP governance drift evaluation before relying on rollout readiness.",
@@ -1086,6 +1097,63 @@ function evaluateDockerMcpGovernanceDrift({
     unmanagedEnabledServers,
     governanceUnavailableReason: null
   };
+}
+
+function buildToolboxRolloutRemediationPlan({
+  governance,
+  blockedServers
+}) {
+  const keepLiveServers = [...(governance.governedEnabledServers ?? [])].map((server) => ({
+    name: server.name,
+    policyServerId: server.policyServerId,
+    matchType: server.matchType
+  }));
+  const disableLiveServers = [
+    ...(governance.unsafeEnabledServers ?? []).map((server) => ({
+      name: server.name,
+      disposition: "unsafe",
+      reason:
+        server.policyMatches?.[0]?.blockedReason ??
+        "The live Docker MCP server is broader than the repo-governed toolbox policy allows.",
+      replacementPolicyServerIds: [...(server.policyServerIds ?? [])]
+    })),
+    ...(governance.unmanagedEnabledServers ?? []).map((server) => ({
+      name: server.name,
+      disposition: "unmanaged",
+      reason: "This live Docker MCP server is enabled outside the repo-governed toolbox policy.",
+      replacementPolicyServerIds: []
+    }))
+  ].sort((left, right) => left.name.localeCompare(right.name));
+  const blockedPolicyServers = [...(blockedServers ?? [])]
+    .map((server) => ({
+      id: server.id,
+      blockedReason: server.blockedReason,
+      remediationType: classifyBlockedPolicyServerRemediation(server.blockedReason)
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+
+  return {
+    keepLiveServers,
+    disableLiveServers,
+    blockedPolicyServers
+  };
+}
+
+function classifyBlockedPolicyServerRemediation(blockedReason) {
+  const reason = typeof blockedReason === "string" ? blockedReason.toLowerCase() : "";
+  if (reason.includes("vetted")) {
+    return "vetting_required";
+  }
+  if (reason.includes("read-filtered wrapper")) {
+    return "wrapper_required";
+  }
+  if (reason.includes("catalog entry")) {
+    return "catalog_entry_required";
+  }
+  if (reason.includes("descriptor-only")) {
+    return "descriptor_only";
+  }
+  return "follow_up_required";
 }
 
 function parseJsonStringArrayEnv(value, envName) {

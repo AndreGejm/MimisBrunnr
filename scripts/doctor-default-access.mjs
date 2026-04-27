@@ -68,6 +68,19 @@ function parseArgs(argv) {
 }
 
 function renderHumanReport(report) {
+  const keepLiveServers = report.toolboxRolloutReadiness.remediationPlan?.keepLiveServers ?? [];
+  const disableLiveServers = report.toolboxRolloutReadiness.remediationPlan?.disableLiveServers ?? [];
+  const blockedPolicyServers =
+    report.toolboxRolloutReadiness.remediationPlan?.blockedPolicyServers ?? [];
+  const replacementIds = [
+    ...new Set(
+      [
+        ...disableLiveServers.flatMap((server) => server.replacementPolicyServerIds ?? []),
+        ...blockedPolicyServers.map((server) => server.id)
+      ].filter((value) => typeof value === "string" && value.trim() !== "")
+    )
+  ].sort((left, right) => left.localeCompare(right));
+
   return [
     `status: ${report.status}`,
     `repoRoot: ${report.repoRoot}`,
@@ -85,6 +98,15 @@ function renderHumanReport(report) {
     report.toolboxRolloutReadiness.summary.blockedAreas.length > 0
       ? `toolboxBlockedAreas: ${report.toolboxRolloutReadiness.summary.blockedAreas.join(", ")}`
       : "toolboxBlockedAreas: none",
+    keepLiveServers.length > 0
+      ? `toolboxKeep: ${keepLiveServers.map((server) => server.name).join(", ")}`
+      : "toolboxKeep: none",
+    disableLiveServers.length > 0
+      ? `toolboxDisable: ${disableLiveServers.map((server) => `${server.name} (${server.disposition})`).join(", ")}`
+      : "toolboxDisable: none",
+    replacementIds.length > 0
+      ? `toolboxReplace: ${replacementIds.join(", ")}`
+      : "toolboxReplace: none",
     report.toolboxRolloutReadiness.nextActions.length > 0
       ? `toolboxNext: ${report.toolboxRolloutReadiness.nextActions.join(" ")}`
       : "toolboxNext: no action needed",

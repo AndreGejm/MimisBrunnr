@@ -12,6 +12,99 @@ $InstallerToolboxOptionalEnvironmentFields = @(
   "MAB_TOOLBOX_SESSION_POLICY_TOKEN"
 )
 
+function Get-InstallerToolboxRolloutRemediationType {
+  [CmdletBinding()]
+  param(
+    [AllowNull()]
+    [string]$BlockedReason
+  )
+
+  $reason = if ([string]::IsNullOrWhiteSpace($BlockedReason)) {
+    ""
+  } else {
+    $BlockedReason.ToLowerInvariant()
+  }
+
+  if ($reason.Contains("vetted")) {
+    return "vetting_required"
+  }
+  if ($reason.Contains("read-filtered wrapper")) {
+    return "wrapper_required"
+  }
+  if ($reason.Contains("catalog entry")) {
+    return "catalog_entry_required"
+  }
+  if ($reason.Contains("descriptor-only")) {
+    return "descriptor_only"
+  }
+
+  return "follow_up_required"
+}
+
+function Get-InstallerToolboxRolloutRemediationPlan {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [object]$Toolkit,
+
+    [Parameter(Mandatory = $true)]
+    [object]$ApplyPlan
+  )
+
+  $keepLiveServers = @(
+    @($Toolkit.governedEnabledServers) |
+      Sort-Object name, policyServerId |
+      ForEach-Object {
+        [pscustomobject]@{
+          name = $_.name
+          policyServerId = $_.policyServerId
+          matchType = $_.matchType
+        }
+      }
+  )
+
+  $disableLiveServers = @()
+  foreach ($entry in @($Toolkit.unsafeEnabledServers)) {
+    $disableLiveServers += [pscustomobject]@{
+      name = $entry.name
+      disposition = "unsafe"
+      reason = if (@($entry.policyMatches).Count -gt 0) {
+        @($entry.policyMatches)[0].blockedReason
+      } else {
+        "The live Docker MCP server is broader than the repo-governed toolbox policy allows."
+      }
+      replacementPolicyServerIds = @($entry.policyServerIds)
+    }
+  }
+  foreach ($entry in @($Toolkit.unmanagedEnabledServers)) {
+    $disableLiveServers += [pscustomobject]@{
+      name = $entry.name
+      disposition = "unmanaged"
+      reason = "This live Docker MCP server is enabled outside the repo-governed toolbox policy."
+      replacementPolicyServerIds = @()
+    }
+  }
+  $disableLiveServers = @($disableLiveServers | Sort-Object name)
+
+  $blockedPolicyServers = @(
+    @($ApplyPlan.blockedServers) |
+      Sort-Object id |
+      ForEach-Object {
+        [pscustomobject]@{
+          id = $_.id
+          blockedReason = $_.blockedReason
+          remediationType = Get-InstallerToolboxRolloutRemediationType -BlockedReason $_.blockedReason
+        }
+      }
+  )
+
+  return [pscustomobject]@{
+    keepLiveServers = @($keepLiveServers)
+    disableLiveServers = @($disableLiveServers)
+    blockedPolicyServers = @($blockedPolicyServers)
+  }
+}
+
 function Resolve-InstallerToolboxJsonPayloadText {
   [CmdletBinding()]
   param(
@@ -364,6 +457,9 @@ function Invoke-InstallerToolboxRolloutReadinessAudit {
   }
 
   $ready = $blockedAreas.Count -eq 0
+  $remediationPlan = Get-InstallerToolboxRolloutRemediationPlan `
+    -Toolkit $toolkit `
+    -ApplyPlan $applyPlan.report
 
   return [pscustomobject]@{
     commands = @($controlSurface.commands) + @($activeSession.commands) + @($clientHandoff.commands) + @($applyPlan.commands)
@@ -388,6 +484,7 @@ function Invoke-InstallerToolboxRolloutReadinessAudit {
       toolboxClientHandoff = $clientHandoff.report
       dockerMcpToolkit = $toolkit
       dockerMcpToolkitApplyPlan = $applyPlan.report
+      remediationPlan = $remediationPlan
       nextActions = @($nextActions)
     }
   }

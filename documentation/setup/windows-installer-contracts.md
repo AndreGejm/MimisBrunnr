@@ -290,6 +290,10 @@ Current behavior:
   - Docker governance drift audit
   - Docker apply-plan compatibility audit
 - reports blocked rollout areas without activating toolboxes or mutating Docker
+- returns a structured remediation summary with:
+  - `remediationPlan.keepLiveServers`
+  - `remediationPlan.disableLiveServers`
+  - `remediationPlan.blockedPolicyServers`
 
 Current reason codes:
 

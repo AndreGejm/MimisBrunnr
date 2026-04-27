@@ -151,6 +151,24 @@ Current important command behavior:
 - `sync-toolbox-client --apply` writes the client artifact only
 - `scaffold-toolbox --wizard` is supported only for `scaffold-toolbox`
 
+### Rollout doctor surface
+
+Source of truth:
+
+- `scripts/lib/default-access.mjs`
+- `scripts/doctor-default-access.mjs`
+
+Current `toolboxRolloutReadiness` output includes:
+
+- summary state
+- governed, unsafe, and unmanaged live Docker MCP server lists
+- blocked policy servers from the compiled Docker apply plan
+- `remediationPlan.keepLiveServers`
+- `remediationPlan.disableLiveServers`
+- `remediationPlan.blockedPolicyServers`
+- human-facing doctor lines for `toolboxKeep`, `toolboxDisable`, and
+  `toolboxReplace`
+
 ## MCP
 
 ### Direct Mimir MCP adapter
