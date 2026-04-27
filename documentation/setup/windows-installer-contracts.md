@@ -313,6 +313,27 @@ Current reason codes:
 - `toolbox_client_handoff_ready`
 - `toolbox_client_handoff_follow_up`
 
+### `audit-toolbox-rollout-readiness`
+
+Purpose:
+
+- combine the existing read-only installer audits for toolbox discovery,
+  active-session shape, client handoff readiness, Docker governance drift, and
+  Docker apply-plan compatibility
+- report blocked rollout areas without mutating toolbox sessions or Docker
+  Toolkit state
+- persist the result into installer state files
+
+Expected result envelope:
+
+- `mode`: `audit_only`
+- `status`:
+  - `success`
+  - `user_action_required`
+- `reasonCode`:
+  - `toolbox_rollout_ready`
+  - `toolbox_rollout_follow_up`
+
 ### `audit-docker-mcp-toolkit`
 
 Purpose:
@@ -569,13 +590,14 @@ Current session state shape:
 
 - the `node` invocation used to run `scripts/docker/sync-mcp-profiles.mjs --json`
 
-`audit-docker-mcp-toolkit` records five commands today:
+`audit-docker-mcp-toolkit` records six commands on the normal governance-audit path today:
 
 - `docker mcp version`
 - `docker mcp server ls --json`
 - `docker mcp client ls --json`
 - `docker mcp config read`
 - `docker mcp feature ls`
+- the `node` invocation used to run `scripts/docker/sync-mcp-profiles.mjs --json` for governance drift evaluation
 
 `plan-docker-mcp-toolkit-apply` records seven commands today:
 
@@ -610,6 +632,13 @@ Current session state shape:
 
 - the `node` invocation used to run `scripts/doctor-default-access.mjs`
 - `corepack pnpm cli -- list-active-toolbox --json {}`
+
+`audit-toolbox-rollout-readiness` records the combined subprocesses from:
+
+- `audit-toolbox-control-surface`
+- `audit-active-toolbox-session`
+- `audit-toolbox-client-handoff`
+- `plan-docker-mcp-toolkit-apply`
 
 `show-state` records no subprocesses.
 

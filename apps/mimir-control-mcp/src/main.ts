@@ -224,6 +224,7 @@ async function callTool(name: string, args: JsonRecord): Promise<unknown> {
         result = await control.requestToolboxActivation({
           requestedToolbox: optionalString(args.requestedToolbox),
           requiredCategories: optionalStringArray(args.requiredCategories),
+          actorRole: optionalActorRole(args.actorRole),
           taskSummary: optionalString(args.taskSummary),
           clientId: optionalString(args.clientId),
           approval: optionalToolboxApproval(args.approval)
@@ -288,6 +289,22 @@ function optionalStringArray(value: unknown): string[] | undefined {
   return value
     .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
     .map((entry) => entry.trim());
+}
+
+function optionalActorRole(value: unknown) {
+  const normalized = optionalString(value);
+  if (!normalized) {
+    return undefined;
+  }
+  if (["retrieval", "writer", "orchestrator", "system", "operator"].includes(normalized)) {
+    return normalized as
+      | "retrieval"
+      | "writer"
+      | "orchestrator"
+      | "system"
+      | "operator";
+  }
+  throw new Error("actorRole must be one of retrieval, writer, orchestrator, system, operator.");
 }
 
 function optionalToolboxApproval(value: unknown) {

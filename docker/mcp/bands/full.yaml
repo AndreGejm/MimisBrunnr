@@ -1,0 +1,50 @@
+band:
+  id: full
+  displayName: Full Access
+  trustClass: operator-only
+  mutationLevel: admin
+  autoExpand: false
+  requiresApproval: true
+  includeServers:
+    - mimir-control
+    - mimir-core
+    - github-read
+    - github-write
+    - brave-search
+    - docker-docs
+    - microsoft-learn
+    - grafana-observe
+    - docker-read
+    - kubernetes-read
+    - docker-admin
+    - dockerhub-read
+    - semgrep-audit
+    - deepwiki-read
+  allowedCategories:
+    - repo-read
+    - repo-write
+    - local-docs
+    - internal-memory
+    - internal-memory-write
+    - docs-search
+    - web-search
+    - github-read
+    - github-write
+    - logs-read
+    - metrics-read
+    - traces-read
+    - docker-read
+    - k8s-read
+    - k8s-logs-read
+    - k8s-events-read
+    - docker-write
+    - model-inference
+    - deployment
+    - container-registry-read
+    - repo-knowledge-read
+    - security-scan-read
+  deniedCategories: []
+  contraction:
+    taskAware: true
+    idleTimeoutSeconds: 300
+    onLeaseExpiry: true

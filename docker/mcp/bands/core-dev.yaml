@@ -1,0 +1,24 @@
+band:
+  id: core-dev
+  displayName: Core Dev
+  trustClass: local-readwrite
+  mutationLevel: write
+  autoExpand: true
+  requiresApproval: false
+  includeServers:
+    - mimir-control
+    - mimir-core
+  allowedCategories:
+    - repo-read
+    - repo-write
+    - local-docs
+    - internal-memory
+    - internal-memory-write
+  deniedCategories:
+    - github-write
+    - docker-write
+    - deployment
+  contraction:
+    taskAware: true
+    idleTimeoutSeconds: 1800
+    onLeaseExpiry: true

@@ -1,0 +1,8 @@
+workflow:
+  id: core-dev+docs-research
+  displayName: Core Dev Plus Docs Research
+  includeBands:
+    - core-dev
+    - docs-research
+  compositeReason: repeated_workflow
+  fallbackProfile: core-dev

@@ -2,17 +2,6 @@ profile:
   id: core-dev
   displayName: Core Dev
   sessionMode: toolbox-activated
-  includeServers:
-    - mimir-control
-    - mimir-core
-  allowedCategories:
-    - repo-read
-    - repo-write
-    - local-docs
-    - internal-memory
-    - internal-memory-write
-  deniedCategories:
-    - github-write
-    - docker-write
-    - deployment
+  includeBands:
+    - core-dev
   fallbackProfile: bootstrap

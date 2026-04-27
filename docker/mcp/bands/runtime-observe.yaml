@@ -1,11 +1,10 @@
-profile:
-  id: core-dev+runtime-observe
-  displayName: Core Dev Plus Runtime Observe
-  sessionMode: toolbox-activated
-  baseProfiles:
-    - core-dev
-    - runtime-observe
-  compositeReason: repeated_workflow
+band:
+  id: runtime-observe
+  displayName: Runtime Observe
+  trustClass: ops-read
+  mutationLevel: read
+  autoExpand: true
+  requiresApproval: false
   includeServers:
     - mimir-control
     - mimir-core
@@ -14,10 +13,7 @@ profile:
     - kubernetes-read
   allowedCategories:
     - repo-read
-    - repo-write
-    - local-docs
     - internal-memory
-    - internal-memory-write
     - logs-read
     - metrics-read
     - traces-read
@@ -29,4 +25,7 @@ profile:
     - github-write
     - docker-write
     - deployment
-  fallbackProfile: runtime-observe
+  contraction:
+    taskAware: true
+    idleTimeoutSeconds: 900
+    onLeaseExpiry: true

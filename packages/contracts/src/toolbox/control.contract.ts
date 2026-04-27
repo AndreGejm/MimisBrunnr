@@ -167,6 +167,7 @@ export interface ToolboxDiscoveryProfileSummary {
   sessionMode: ToolboxSessionMode;
   composite: boolean;
   baseProfiles: string[];
+  includeBands: string[];
   compositeReason?: string;
   fallbackProfile: string | null;
   profileRevision: string;
@@ -219,6 +220,7 @@ export interface ToolboxActiveProfileSummary {
   sessionMode: ToolboxSessionMode;
   composite: boolean;
   baseProfiles: string[];
+  includeBands: string[];
   compositeReason?: string;
   fallbackProfile: string | null;
   allowedCategories: string[];

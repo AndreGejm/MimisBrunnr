@@ -1,0 +1,8 @@
+workflow:
+  id: core-dev+runtime-observe
+  displayName: Core Dev Plus Runtime Observe
+  includeBands:
+    - core-dev
+    - runtime-observe
+  compositeReason: repeated_workflow
+  fallbackProfile: runtime-observe

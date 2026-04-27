@@ -325,7 +325,8 @@ export function buildServiceContainer(
     issuer: env.toolboxLeaseIssuer,
     audience: env.toolboxLeaseAudience,
     issuerSecret: env.toolboxLeaseIssuerSecret,
-    leaseStore: toolboxSessionLeaseStore
+    leaseStore: toolboxSessionLeaseStore,
+    clockSkewToleranceMs: resolveToolboxLeaseClockSkewToleranceMs()
   });
 
   const mimisbrunnrController = new MimisbrunnrDomainController(
@@ -435,6 +436,20 @@ export function buildServiceContainer(
       closeIfSupported(revocationStore);
     }
   };
+}
+
+function resolveToolboxLeaseClockSkewToleranceMs(): number {
+  const configuredMs = Number.parseInt(
+    process.env.MAB_TOOLBOX_LEASE_CLOCK_SKEW_MS?.trim() ?? "",
+    10
+  );
+  if (Number.isFinite(configuredMs) && configuredMs >= 0) {
+    return configuredMs;
+  }
+  if (process.env.MAB_TOOLBOX_LEASE_TTL_SECONDS?.trim()) {
+    return 0;
+  }
+  return 30_000;
 }
 
 function closeIfSupported(resource: unknown): void {

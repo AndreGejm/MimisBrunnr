@@ -21,6 +21,7 @@ Current supported operations:
 - `audit-toolbox-control-surface`
 - `audit-active-toolbox-session`
 - `audit-toolbox-client-handoff`
+- `audit-toolbox-rollout-readiness`
 - `audit-docker-mcp-toolkit`
 - `plan-docker-mcp-toolkit-apply`
 - `plan-client-access`
@@ -48,6 +49,8 @@ model-backed mode, or provide a full GUI bootstrap yet. They currently:
   `list-active-tools`
 - audit reconnect handoff readiness for the selected installer client without
   issuing activation or approval requests
+- aggregate toolbox rollout-readiness blockers across control-surface,
+  active-session, handoff, governance-drift, and Docker apply-plan audits
 - audit the installed Docker MCP Toolkit state through the live `docker mcp`
   surface
 - compare the prepared toolbox runtime commands against the live Docker MCP
@@ -229,6 +232,36 @@ What this does not do:
 - it does not issue `request-toolbox-activation`
 - it does not grant approval for `requiresApproval` toolboxes
 - it does not mutate the active toolbox session
+
+### Audit toolbox rollout readiness
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
+  -Operation audit-toolbox-rollout-readiness `
+  -RepoRoot <REPO_ROOT> `
+  -ClientName codex `
+  -Json
+```
+
+What this does:
+
+- combines the existing read-only installer audits for:
+  - toolbox discovery readiness
+  - active toolbox session shape
+  - client reconnect handoff readiness
+  - Docker MCP governance drift
+  - Docker MCP apply-plan compatibility
+- reports whether the selected client is still in bootstrap mode or already
+  auditing an activated toolbox session
+- surfaces blocked rollout areas such as governance drift, missing reconnect
+  metadata, or missing Docker profile support
+- writes installer state files
+
+What this does not do:
+
+- it does not activate a toolbox
+- it does not approve an admin toolbox
+- it does not mutate Docker Toolkit state
 
 ### Audit Docker toolbox assets without mutating Docker Desktop
 
@@ -426,6 +459,7 @@ Shared arguments accepted by `cli.ps1`:
 - `audit-toolbox-control-surface`
 - `audit-active-toolbox-session`
 - `audit-toolbox-client-handoff`
+- `audit-toolbox-rollout-readiness`
 - `-RepoRoot`
   - defaults to the tracked repository root resolved from the script location
 - `-StateRoot`
@@ -507,9 +541,10 @@ The exact contract and status semantics are documented in
   it does not apply Docker Desktop profile changes yet
 - `prepare-toolbox-runtime` persists the compiled runtime plan, but the apply
   step still needs a separate deterministic Docker mutation contract
-- `audit-toolbox-control-surface`, `audit-active-toolbox-session`, and
-  `audit-toolbox-client-handoff` are read-only checks over the real toolbox CLI
-  surfaces; they do not activate toolboxes or issue approvals
+- `audit-toolbox-control-surface`, `audit-active-toolbox-session`,
+  `audit-toolbox-client-handoff`, and `audit-toolbox-rollout-readiness` are
+  read-only checks over the real toolbox CLI and Docker planning surfaces; they
+  do not activate toolboxes or issue approvals
 - `audit-docker-mcp-toolkit` reads the current Docker Toolkit state, but it does
   not mutate enabled servers, client connections, or config
 - `plan-docker-mcp-toolkit-apply` is intentionally plan-only and is currently

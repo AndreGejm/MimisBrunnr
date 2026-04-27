@@ -2,15 +2,6 @@ profile:
   id: delivery-admin
   displayName: Delivery Admin
   sessionMode: toolbox-activated
-  includeServers:
-    - mimir-control
-    - mimir-core
-    - github-write
-    - docker-admin
-  allowedCategories:
-    - repo-read
-    - github-write
-    - docker-write
-    - deployment
-  deniedCategories: []
+  includeBands:
+    - delivery-admin
   fallbackProfile: runtime-admin

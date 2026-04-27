@@ -42,6 +42,10 @@ export const MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
           type: "array",
           items: { type: "string" }
         },
+        actorRole: {
+          type: "string",
+          enum: ["retrieval", "writer", "orchestrator", "system", "operator"]
+        },
         taskSummary: { type: "string" },
         clientId: { type: "string" },
         approval: {

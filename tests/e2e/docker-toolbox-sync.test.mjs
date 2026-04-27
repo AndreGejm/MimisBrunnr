@@ -740,8 +740,58 @@ test("compileDockerMcpRuntimePlan includes deepwiki-read server with catalog app
   );
 });
 
+test("audit-toolbox-assets reports curated awesome-mcp-servers candidates without affecting runtime plan shape", async () => {
+  const result = await runAuditCommand(["--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.status, "valid");
+  assert.ok(output.counts.candidateRegistries > 0);
+  assert.ok(output.counts.candidates > 0);
+  assert.equal(output.runtimePlan.profileCount > 0, true);
+  assert.equal(output.runtimePlan.serverCount > 0, true);
+  assert.equal(typeof output.candidateCatalog.registryRevision, "string");
+  assert.ok(output.candidateCatalog.registryIds.includes("awesome-mcp-servers"));
+
+  const registry = output.candidateCatalog.registries.find(
+    (entry) => entry.id === "awesome-mcp-servers"
+  );
+  assert.ok(registry, "awesome-mcp-servers candidate registry summary must exist");
+  assert.ok(registry.candidateCount >= 5);
+  assert.ok(registry.decisionCounts.deferred > 0);
+  assert.ok(registry.decisionCounts.rejected > 0);
+});
+
 function runSyncCommand(args, extraEnv = {}) {
   const scriptPath = path.join(process.cwd(), "scripts", "docker", "sync-mcp-profiles.mjs");
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [scriptPath, ...args], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        ...extraEnv
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    child.once("error", reject);
+    child.once("close", (exitCode) => {
+      resolve({ exitCode, stdout, stderr });
+    });
+  });
+}
+
+function runAuditCommand(args, extraEnv = {}) {
+  const scriptPath = path.join(process.cwd(), "scripts", "docker", "audit-toolbox-assets.mjs");
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [scriptPath, ...args], {
       cwd: process.cwd(),

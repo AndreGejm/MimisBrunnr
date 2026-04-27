@@ -2,26 +2,6 @@ profile:
   id: docs-research
   displayName: Docs Research
   sessionMode: toolbox-activated
-  includeServers:
-    - mimir-control
-    - mimir-core
-    - github-read
-    - brave-search
-    - docker-docs
-    - microsoft-learn
-    - dockerhub-read
-    - deepwiki-read
-  allowedCategories:
-    - repo-read
-    - local-docs
-    - internal-memory
-    - docs-search
-    - web-search
-    - github-read
-    - container-registry-read
-    - repo-knowledge-read
-  deniedCategories:
-    - github-write
-    - docker-write
-    - deployment
+  includeBands:
+    - docs-research
   fallbackProfile: core-dev

@@ -1,11 +1,10 @@
-profile:
-  id: core-dev+docs-research
-  displayName: Core Dev Plus Docs Research
-  sessionMode: toolbox-activated
-  baseProfiles:
-    - core-dev
-    - docs-research
-  compositeReason: repeated_workflow
+band:
+  id: docs-research
+  displayName: Docs Research
+  trustClass: external-read
+  mutationLevel: read
+  autoExpand: true
+  requiresApproval: false
   includeServers:
     - mimir-control
     - mimir-core
@@ -13,17 +12,22 @@ profile:
     - brave-search
     - docker-docs
     - microsoft-learn
+    - dockerhub-read
+    - deepwiki-read
   allowedCategories:
     - repo-read
-    - repo-write
     - local-docs
     - internal-memory
-    - internal-memory-write
     - docs-search
     - web-search
     - github-read
+    - container-registry-read
+    - repo-knowledge-read
   deniedCategories:
     - github-write
     - docker-write
     - deployment
-  fallbackProfile: core-dev
+  contraction:
+    taskAware: true
+    idleTimeoutSeconds: 1200
+    onLeaseExpiry: true

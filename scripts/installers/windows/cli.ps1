@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [ValidateSet("audit-install-surface", "show-state", "detect-environment", "plan-client-access", "apply-client-access", "audit-toolbox-assets", "prepare-toolbox-runtime", "audit-docker-mcp-toolkit", "plan-docker-mcp-toolkit-apply", "prepare-repo-workspace", "audit-toolbox-control-surface", "audit-active-toolbox-session", "audit-toolbox-client-handoff")]
+  [ValidateSet("audit-install-surface", "show-state", "detect-environment", "plan-client-access", "apply-client-access", "audit-toolbox-assets", "prepare-toolbox-runtime", "audit-docker-mcp-toolkit", "plan-docker-mcp-toolkit-apply", "prepare-repo-workspace", "audit-toolbox-control-surface", "audit-active-toolbox-session", "audit-toolbox-client-handoff", "audit-toolbox-rollout-readiness")]
   [string]$Operation = "audit-install-surface",
 
   [string]$RepoRoot = "",
@@ -417,6 +417,39 @@ switch ($Operation) {
       -Message $message `
       -Details ([pscustomobject]@{
           toolboxClientHandoff = $report
+        }) `
+      -CommandsRun @($adapter.commands) `
+      -NextActions @($report.nextActions)
+
+    $envelope = Write-InstallerOperationState -StateRoot $StateRoot -Envelope $envelope
+  }
+
+  "audit-toolbox-rollout-readiness" {
+    $adapter = Invoke-InstallerToolboxRolloutReadinessAudit `
+      -ClientName $ClientName `
+      -RepoRoot $RepoRoot `
+      -ConfigPath $ConfigPath `
+      -BinDir $BinDir `
+      -ManifestPath $ManifestPath `
+      -ServerName $ServerName `
+      -ToolboxManifestDir $ToolboxManifestDir
+    $report = $adapter.report
+    $message = if ($report.status -eq "success") {
+      "Toolbox rollout readiness is aligned for the selected installer client."
+    } else {
+      "Toolbox rollout readiness still needs follow-up before relying on governed profile handoff."
+    }
+
+    $envelope = New-InstallerResultEnvelope `
+      -OperationId $Operation `
+      -Mode "audit_only" `
+      -RepoRoot $RepoRoot `
+      -StateRoot $StateRoot `
+      -Status $report.status `
+      -ReasonCode $report.reasonCode `
+      -Message $message `
+      -Details ([pscustomobject]@{
+          toolboxRolloutReadiness = $report
         }) `
       -CommandsRun @($adapter.commands) `
       -NextActions @($report.nextActions)

@@ -115,6 +115,8 @@ function Get-InstallerDockerMcpGovernanceDriftReport {
     $ToolboxManifestDir = Join-Path $RepoRoot "docker\mcp"
   }
 
+  $runtimePrepare = $null
+
   try {
     $runtimePrepare = Invoke-InstallerToolboxRuntimePrepare `
       -RepoRoot $RepoRoot `
@@ -126,8 +128,13 @@ function Get-InstallerDockerMcpGovernanceDriftReport {
     $unsafeByLiveName = @{}
 
     foreach ($server in $policyServers) {
+      $serverPropertyNames = @($server.PSObject.Properties.Name)
+      $hasDockerServerName = $serverPropertyNames -contains "dockerServerName"
+      $hasDockerApplyMode = $serverPropertyNames -contains "dockerApplyMode"
+      $hasCatalogServerId = $serverPropertyNames -contains "catalogServerId"
+
       if ($server.source -eq "owned") {
-        $name = [string]$server.dockerServerName
+        $name = if ($hasDockerServerName) { [string]$server.dockerServerName } else { "" }
         if ($name) {
           $governedByLiveName[$name] = [pscustomobject]@{
             name = $name
@@ -135,7 +142,7 @@ function Get-InstallerDockerMcpGovernanceDriftReport {
             matchType = "owned-dockerServerName"
           }
         }
-      } elseif ($server.dockerApplyMode -eq "catalog" -and $server.PSObject.Properties.Name -contains "catalogServerId") {
+      } elseif ($hasDockerApplyMode -and $server.dockerApplyMode -eq "catalog" -and $hasCatalogServerId) {
         $name = [string]$server.catalogServerId
         if ($name) {
           $governedByLiveName[$name] = [pscustomobject]@{
@@ -216,8 +223,14 @@ function Get-InstallerDockerMcpGovernanceDriftReport {
       }
     }
   } catch {
+    $commands = if ($null -ne $runtimePrepare -and $null -ne $runtimePrepare.command) {
+      @($runtimePrepare.command)
+    } else {
+      @()
+    }
+
     return [pscustomobject]@{
-      commands = @()
+      commands = $commands
       report = [pscustomobject]@{
         governanceStatus = "unavailable"
         governanceSummaryCounts = [pscustomobject]@{

@@ -2,16 +2,5 @@ profile:
   id: bootstrap
   displayName: Bootstrap
   sessionMode: toolbox-bootstrap
-  includeServers:
-    - mimir-control
-    - mimir-core
-  allowedCategories:
-    - repo-read
-    - local-docs
-    - internal-memory
-  deniedCategories:
-    - repo-write
-    - internal-memory-write
-    - github-write
-    - docker-write
-    - deployment
+  includeBands:
+    - bootstrap

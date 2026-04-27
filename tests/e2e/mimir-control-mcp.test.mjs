@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -78,7 +78,8 @@ function createMessageCollector(stream) {
 function spawnControlServer({
   activeProfile = "bootstrap",
   clientId = "codex",
-  sqlitePath
+  sqlitePath,
+  manifestDirectory = path.join(process.cwd(), "docker", "mcp")
 } = {}) {
   const child = spawn(
     process.execPath,
@@ -88,7 +89,7 @@ function spawnControlServer({
       env: {
         ...process.env,
         MAB_NODE_ENV: "test",
-        MAB_TOOLBOX_MANIFEST_DIR: path.join(process.cwd(), "docker", "mcp"),
+        MAB_TOOLBOX_MANIFEST_DIR: manifestDirectory,
         MAB_TOOLBOX_ACTIVE_PROFILE: activeProfile,
         MAB_TOOLBOX_CLIENT_ID: clientId,
         MAB_TOOLBOX_LEASE_ISSUER_SECRET: "toolbox-secret",
@@ -243,7 +244,7 @@ test("mimir-control MCP exposes toolbox discovery tools and bootstrap-safe activ
       true
     );
     assert.deepEqual(
-      describeToolbox.result.structuredContent.toolbox.profile.baseProfiles,
+      describeToolbox.result.structuredContent.toolbox.profile.includeBands,
       ["core-dev", "docs-research"]
     );
     assert.equal(
@@ -458,6 +459,40 @@ test("mimir-control MCP exposes toolbox discovery tools and bootstrap-safe activ
     assert.ok(actionTypes.includes("toolbox_reconnect_generated"));
     assert.ok(actionTypes.includes("toolbox_lease_issued"));
     assert.ok(actionTypes.includes("toolbox_deactivated"));
+  } finally {
+    await stopChild(child);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("mimir-control MCP prefers the canonical toolbox id when multiple intents target the same profile", async () => {
+  const { root, sqlitePath } = await createTempSqlitePath();
+  const child = spawnControlServer({
+    activeProfile: "core-dev+voltagent-docs",
+    clientId: "codex",
+    sqlitePath
+  });
+
+  try {
+    const transport = createMessageCollector(child.stdout);
+    await initializeMcp(transport, child.stdin);
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
+      id: 34,
+      method: "tools/call",
+      params: {
+        name: "list_active_toolbox",
+        arguments: {}
+      }
+    });
+
+    const activeToolbox = await transport.next();
+    assert.equal(activeToolbox.result.structuredContent.profile.id, "core-dev+voltagent-docs");
+    assert.equal(
+      activeToolbox.result.structuredContent.workflow.toolboxId,
+      "core-dev+voltagent-docs"
+    );
   } finally {
     await stopChild(child);
     await rm(root, { recursive: true, force: true });
@@ -1197,7 +1232,7 @@ test("mimir-control MCP resolves repo-write plus logs-read to the composite runt
       );
       assert.equal(activeToolbox.result.structuredContent.profile.composite, true);
       assert.deepEqual(
-        activeToolbox.result.structuredContent.profile.baseProfiles,
+        activeToolbox.result.structuredContent.profile.includeBands,
         ["core-dev", "runtime-observe"]
       );
       assert.equal(
@@ -1246,6 +1281,79 @@ test("mimir-control MCP resolves repo-write plus logs-read to the composite runt
     } finally {
       await stopChild(runtimeChild);
     }
+  } finally {
+    await stopChild(child);
+  }
+});
+
+test("mimir-control MCP keeps selection task-first and uses actor role only as an equal-safety tie-break", async (t) => {
+  const manifestDirectory = await createRoleTieBreakManifestFixture();
+  t.after(async () => {
+    await rm(manifestDirectory, { recursive: true, force: true });
+  });
+
+  const child = spawnControlServer({
+    activeProfile: "bootstrap",
+    clientId: "codex",
+    manifestDirectory
+  });
+  try {
+    const transport = createMessageCollector(child.stdout);
+    await initializeMcp(transport, child.stdin);
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
+      id: 480,
+      method: "tools/call",
+      params: {
+        name: "request_toolbox_activation",
+        arguments: {
+          requiredCategories: ["docs-search", "repo-knowledge-read"],
+          actorRole: "retrieval"
+        }
+      }
+    });
+    const retrievalActivation = await transport.next();
+    assert.equal(retrievalActivation.result.structuredContent.approved, true);
+    assert.equal(
+      retrievalActivation.result.structuredContent.approvedToolbox,
+      "zzz-retrieval-research"
+    );
+    assert.equal(
+      retrievalActivation.result.structuredContent.approvedProfile,
+      "zzz-retrieval-research"
+    );
+    assert.equal(
+      retrievalActivation.result.structuredContent.details.approval.trustClass,
+      "external-read"
+    );
+    assert.notEqual(
+      retrievalActivation.result.structuredContent.approvedToolbox,
+      "bbb-retrieval-ops-research"
+    );
+    assert.notEqual(
+      retrievalActivation.result.structuredContent.approvedToolbox,
+      "ccc-retrieval-write-research"
+    );
+
+    writeMcpMessage(child.stdin, {
+      jsonrpc: "2.0",
+      id: 481,
+      method: "tools/call",
+      params: {
+        name: "request_toolbox_activation",
+        arguments: {
+          requiredCategories: ["docs-search"],
+          actorRole: "retrieval"
+        }
+      }
+    });
+    const narrowActivation = await transport.next();
+    assert.equal(narrowActivation.result.structuredContent.approved, true);
+    assert.equal(
+      narrowActivation.result.structuredContent.approvedToolbox,
+      "voltagent-docs"
+    );
   } finally {
     await stopChild(child);
   }
@@ -1668,6 +1776,228 @@ async function createTempSqlitePath() {
     root,
     sqlitePath: path.join(root, "mimir.sqlite")
   };
+}
+
+async function createRoleTieBreakManifestFixture() {
+  const manifestDirectory = await mkdtemp(path.join(os.tmpdir(), "mimir-toolbox-role-tiebreak-"));
+  await cp(path.resolve("docker", "mcp"), manifestDirectory, { recursive: true });
+
+  const sharedBandBody = [
+    "  trustClass: external-read",
+    "  mutationLevel: read",
+    "  autoExpand: true",
+    "  requiresApproval: false",
+    "  includeServers:",
+    "    - mimir-control",
+    "    - mimir-core",
+    "    - deepwiki-read",
+    "    - voltagent-docs",
+    "  allowedCategories:",
+    "    - repo-read",
+    "    - local-docs",
+    "    - internal-memory",
+    "    - docs-search",
+    "    - repo-knowledge-read",
+    "  deniedCategories:",
+    "    - github-write",
+    "    - docker-write",
+    "    - deployment",
+    "  contraction:",
+    "    taskAware: true",
+    "    onLeaseExpiry: true"
+  ];
+
+  await writeFile(
+    path.join(manifestDirectory, "bands", "aaa-generic-research.yaml"),
+    [
+      "band:",
+      "  id: aaa-generic-research",
+      "  displayName: AAA Generic Research",
+      ...sharedBandBody
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    path.join(manifestDirectory, "bands", "zzz-retrieval-research.yaml"),
+    [
+      "band:",
+      "  id: zzz-retrieval-research",
+      "  displayName: ZZZ Retrieval Research",
+      "  preferredActorRoles:",
+      "    - retrieval",
+      ...sharedBandBody
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    path.join(manifestDirectory, "bands", "bbb-retrieval-ops-research.yaml"),
+    [
+      "band:",
+      "  id: bbb-retrieval-ops-research",
+      "  displayName: BBB Retrieval Ops Research",
+      "  trustClass: ops-read",
+      "  preferredActorRoles:",
+      "    - retrieval",
+      ...sharedBandBody.slice(1)
+    ].join("\n"),
+    "utf8"
+  );
+  await writeFile(
+    path.join(manifestDirectory, "profiles", "voltagent-docs.yaml"),
+    [
+      "profile:",
+      "  id: voltagent-docs",
+      "  displayName: voltagent-docs",
+      "  sessionMode: toolbox-activated",
+      "  includeBands:",
+      "    - voltagent-docs",
+      "  fallbackProfile: bootstrap"
+    ].join("\n"),
+    "utf8"
+  );
+
+  for (const profileId of [
+    "aaa-generic-research",
+    "zzz-retrieval-research",
+    "bbb-retrieval-ops-research"
+  ]) {
+    await writeFile(
+      path.join(manifestDirectory, "profiles", `${profileId}.yaml`),
+      [
+        "profile:",
+        `  id: ${profileId}`,
+        `  displayName: ${profileId}`,
+        "  sessionMode: toolbox-activated",
+        "  includeBands:",
+        `    - ${profileId}`,
+        "  fallbackProfile: bootstrap"
+      ].join("\n"),
+      "utf8"
+    );
+  }
+  await writeFile(
+    path.join(manifestDirectory, "workflows", "ccc-retrieval-write-research.yaml"),
+    [
+      "workflow:",
+      "  id: ccc-retrieval-write-research",
+      "  displayName: CCC Retrieval Write Research",
+      "  includeBands:",
+      "    - core-dev",
+      "    - zzz-retrieval-research",
+      "  compositeReason: repeated_workflow",
+      "  preferredActorRoles:",
+      "    - retrieval",
+      "  fallbackProfile: core-dev"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const intentsPath = path.join(manifestDirectory, "intents.yaml");
+  const intentsYaml = await readFile(intentsPath, "utf8");
+  const extraIntents = [
+    "",
+    "  aaa-generic-research:",
+    "    displayName: AAA Generic Research",
+    "    summary: Generic docs and repository research.",
+    "    exampleTasks:",
+      "      - Retrieve repository knowledge and docs in one toolbox.",
+    "    targetProfile: aaa-generic-research",
+    "    trustClass: external-read",
+    "    requiresApproval: false",
+    "    activationMode: session-switch",
+    "    allowedCategories:",
+      "      - repo-read",
+    "      - local-docs",
+    "      - internal-memory",
+    "      - docs-search",
+    "      - repo-knowledge-read",
+    "    deniedCategories:",
+    "      - github-write",
+    "      - docker-write",
+    "      - deployment",
+    "    fallbackProfile: bootstrap",
+    "  voltagent-docs:",
+    "    displayName: VoltAgent Docs",
+    "    summary: Narrow docs-only research.",
+    "    exampleTasks:",
+    "      - Read VoltAgent docs without broader repo research tools.",
+    "    targetProfile: voltagent-docs",
+    "    trustClass: external-read",
+    "    requiresApproval: false",
+    "    activationMode: session-switch",
+    "    allowedCategories:",
+    "      - docs-search",
+    "    deniedCategories:",
+    "      - github-write",
+    "      - docker-write",
+    "      - deployment",
+    "    fallbackProfile: bootstrap",
+    "  zzz-retrieval-research:",
+    "    displayName: ZZZ Retrieval Research",
+    "    summary: Retrieval-affine docs and repository research.",
+    "    exampleTasks:",
+      "      - Retrieve repository knowledge and docs in one toolbox.",
+    "    targetProfile: zzz-retrieval-research",
+    "    trustClass: external-read",
+    "    requiresApproval: false",
+    "    activationMode: session-switch",
+    "    allowedCategories:",
+      "      - repo-read",
+    "      - local-docs",
+    "      - internal-memory",
+    "      - docs-search",
+    "      - repo-knowledge-read",
+    "    deniedCategories:",
+    "      - github-write",
+    "      - docker-write",
+    "      - deployment",
+    "    fallbackProfile: bootstrap",
+    "  bbb-retrieval-ops-research:",
+    "    displayName: BBB Retrieval Ops Research",
+    "    summary: Retrieval-affine but higher-trust research that must lose on safety.",
+    "    exampleTasks:",
+    "      - Retrieve repository knowledge and docs in one toolbox.",
+    "    targetProfile: bbb-retrieval-ops-research",
+    "    trustClass: ops-read",
+    "    requiresApproval: false",
+    "    activationMode: session-switch",
+    "    allowedCategories:",
+    "      - repo-read",
+    "      - local-docs",
+    "      - internal-memory",
+    "      - docs-search",
+    "      - repo-knowledge-read",
+    "    deniedCategories:",
+    "      - github-write",
+    "      - docker-write",
+    "      - deployment",
+    "    fallbackProfile: bootstrap",
+    "  ccc-retrieval-write-research:",
+    "    displayName: CCC Retrieval Write Research",
+    "    summary: Retrieval-affine but write-capable research that must lose on safety.",
+    "    exampleTasks:",
+    "      - Retrieve repository knowledge and docs while editing code.",
+    "    targetProfile: ccc-retrieval-write-research",
+    "    trustClass: external-read",
+    "    requiresApproval: false",
+    "    activationMode: session-switch",
+    "    allowedCategories:",
+    "      - repo-read",
+    "      - repo-write",
+    "      - local-docs",
+    "      - internal-memory",
+    "      - internal-memory-write",
+    "      - docs-search",
+    "      - repo-knowledge-read",
+    "    deniedCategories:",
+    "      - github-write",
+    "      - docker-write",
+    "      - deployment",
+    "    fallbackProfile: core-dev"
+  ].join("\n");
+  await writeFile(intentsPath, `${intentsYaml.trimEnd()}\n${extraIntents}\n`, "utf8");
+
+  return manifestDirectory;
 }
 
 async function readAuditHistory(sqlitePath) {

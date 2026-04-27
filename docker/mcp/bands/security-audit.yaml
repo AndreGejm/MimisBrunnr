@@ -1,0 +1,24 @@
+band:
+  id: security-audit
+  displayName: Security Audit
+  trustClass: external-read
+  mutationLevel: read
+  autoExpand: true
+  requiresApproval: false
+  includeServers:
+    - mimir-control
+    - mimir-core
+    - semgrep-audit
+  allowedCategories:
+    - repo-read
+    - local-docs
+    - internal-memory
+    - security-scan-read
+  deniedCategories:
+    - github-write
+    - docker-write
+    - deployment
+  contraction:
+    taskAware: true
+    idleTimeoutSeconds: 1200
+    onLeaseExpiry: true

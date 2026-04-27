@@ -72,6 +72,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/c
   -Json
 
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
+  -Operation audit-toolbox-rollout-readiness `
+  -Json
+
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
   -Operation audit-docker-mcp-toolkit `
   -Json
 
@@ -101,6 +105,9 @@ What this backend does today:
 - validates tracked `docker/mcp` toolbox assets through the real compiler and
   Docker runtime-plan path
 - writes a compiled toolbox runtime artifact for later Docker apply work
+- aggregates rollout-readiness blockers across toolbox discovery, active
+  session, reconnect handoff, Docker governance drift, and Docker apply-plan
+  compatibility
 - inspects the live Docker MCP Toolkit state through `docker mcp`
 - prepares a reviewed Docker Toolkit apply plan and blocks honestly when the
   installed Toolkit surface is incompatible with the compiled commands

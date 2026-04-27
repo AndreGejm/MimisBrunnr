@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir as fsMkdir, mkdtemp, readFile as fsReadFile, rm, writeFile as fsWriteFile } from "node:fs/promises";
 import os from "node:os";
@@ -211,6 +212,83 @@ test("default access doctor reports Docker MCP profile compatibility without mak
   assert.equal(unsupported.status, "healthy");
 });
 
+test("default access doctor surfaces toolbox rollout readiness blockers without changing top-level health semantics", async (t) => {
+  const actualRepoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-doctor-toolbox-rollout-"));
+  const binDir = path.join(root, "bin");
+  const codexConfigPath = path.join(root, "config.toml");
+  const manifestPath = path.join(root, "installation.json");
+  const supportedStub = path.join(root, "docker-supported.cjs");
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await fsMkdir(binDir, { recursive: true });
+  await fsWriteFile(codexConfigPath, "[mcp_servers.mimir]\ncommand = 'node'\n", "utf8");
+  await fsWriteFile(manifestPath, "{}\n", "utf8");
+  for (const launcherName of COMPATIBILITY_LAUNCHER_NAMES) {
+    await fsWriteFile(path.join(binDir, `${launcherName}.cmd`), "", "utf8");
+  }
+  await fsWriteFile(
+    supportedStub,
+    renderDockerMcpStub({
+      profileSupported: true,
+      enabledServers: [
+        { name: "brave" },
+        { name: "github" }
+      ]
+    }),
+    "utf8"
+  );
+
+  const report = evaluateDefaultAccess({
+    repoRoot: actualRepoRoot,
+    codexConfigPath,
+    launcherBinDir: binDir,
+    manifestPath,
+    pathValue: binDir,
+    dockerExecutable: process.execPath,
+    dockerExecutableArgs: [supportedStub],
+    toolboxClientId: "codex"
+  });
+
+  assert.equal(report.status, "healthy");
+  assert.equal(report.toolboxRolloutReadiness.status, "user_action_required");
+  assert.equal(report.toolboxRolloutReadiness.reasonCode, "toolbox_rollout_follow_up");
+  assert.equal(report.toolboxRolloutReadiness.clientId, "codex");
+  assert.equal(report.toolboxRolloutReadiness.summary.controlSurfaceReady, true);
+  assert.equal(report.toolboxRolloutReadiness.summary.activeSessionAudited, true);
+  assert.equal(report.toolboxRolloutReadiness.summary.sessionMode, "toolbox-bootstrap");
+  assert.equal(report.toolboxRolloutReadiness.summary.bootstrapSession, true);
+  assert.equal(report.toolboxRolloutReadiness.summary.clientHandoffReady, true);
+  assert.equal(report.toolboxRolloutReadiness.summary.runtimeClientMatchesSelectedClient, true);
+  assert.equal(report.toolboxRolloutReadiness.summary.dockerGovernanceStatus, "drift_detected");
+  assert.equal(report.toolboxRolloutReadiness.summary.dockerGovernanceClean, false);
+  assert.equal(report.toolboxRolloutReadiness.summary.dockerApplyCompatible, false);
+  assert.deepEqual(report.toolboxRolloutReadiness.summary.blockedAreas, [
+    "docker_mcp_governance_drift",
+    "docker_mcp_apply_blocked"
+  ]);
+  assert.equal(report.toolboxRolloutReadiness.governanceSummaryCounts.governedEnabledServerCount, 1);
+  assert.equal(report.toolboxRolloutReadiness.governanceSummaryCounts.unsafeEnabledServerCount, 1);
+  assert.equal(report.toolboxRolloutReadiness.governanceSummaryCounts.unmanagedEnabledServerCount, 0);
+  assert.ok(
+    report.toolboxRolloutReadiness.nextActions.some((action) =>
+      /bootstrap mode/i.test(action)
+    )
+  );
+  assert.ok(
+    report.toolboxRolloutReadiness.nextActions.some((action) =>
+      /repo-governed toolbox runtime/i.test(action)
+    )
+  );
+  assert.ok(
+    report.toolboxRolloutReadiness.nextActions.some((action) =>
+      /descriptor-only/i.test(action)
+    )
+  );
+});
+
 test("default access health does not require optional Docker tool assets", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "mimir-doctor-base-install-"));
   const binDir = path.join(root, "bin");
@@ -251,7 +329,101 @@ test("default access health does not require optional Docker tool assets", async
   );
 });
 
-function renderDockerMcpStub({ profileSupported }) {
+test("default access reports additive toolbox rollout readiness summary and doctor prints concise lines", async (t) => {
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-doctor-toolbox-rollout-"));
+  const binDir = path.join(root, "bin");
+  const codexConfigPath = path.join(root, "config.toml");
+  const manifestPath = path.join(root, "installation.json");
+  const supportedStub = path.join(root, "docker-supported.cjs");
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await fsMkdir(binDir, { recursive: true });
+  await fsWriteFile(codexConfigPath, "[mcp_servers.mimir]\ncommand = 'node'\n", "utf8");
+  await fsWriteFile(manifestPath, "{}\n", "utf8");
+  for (const launcherName of COMPATIBILITY_LAUNCHER_NAMES) {
+    await fsWriteFile(path.join(binDir, `${launcherName}.cmd`), "", "utf8");
+  }
+  await fsWriteFile(
+    supportedStub,
+    renderDockerMcpStub({
+      profileSupported: true,
+      enabledServers: []
+    }),
+    "utf8"
+  );
+
+  const report = evaluateDefaultAccess({
+    repoRoot,
+    codexConfigPath,
+    launcherBinDir: binDir,
+    manifestPath,
+    pathValue: binDir,
+    dockerExecutable: process.execPath,
+    dockerExecutableArgs: [supportedStub],
+    toolboxClientId: "codex"
+  });
+
+  assert.equal(report.toolboxRolloutReadiness.status, "user_action_required");
+  assert.equal(report.toolboxRolloutReadiness.reasonCode, "toolbox_rollout_follow_up");
+  assert.equal(report.toolboxRolloutReadiness.clientId, "codex");
+  assert.equal(report.toolboxRolloutReadiness.summary.controlSurfaceReady, true);
+  assert.equal(report.toolboxRolloutReadiness.summary.activeSessionAudited, true);
+  assert.equal(report.toolboxRolloutReadiness.summary.sessionMode, "toolbox-bootstrap");
+  assert.equal(report.toolboxRolloutReadiness.summary.bootstrapSession, true);
+  assert.equal(report.toolboxRolloutReadiness.summary.clientHandoffReady, true);
+  assert.equal(report.toolboxRolloutReadiness.summary.runtimeClientMatchesSelectedClient, true);
+  assert.equal(report.toolboxRolloutReadiness.summary.dockerGovernanceStatus, "clean");
+  assert.equal(report.toolboxRolloutReadiness.summary.dockerGovernanceClean, true);
+  assert.equal(report.toolboxRolloutReadiness.summary.dockerApplyCompatible, false);
+  assert.deepEqual(report.toolboxRolloutReadiness.summary.blockedAreas, [
+    "docker_mcp_apply_blocked"
+  ]);
+  assert.ok(
+    report.toolboxRolloutReadiness.nextActions.some((action) =>
+      /bootstrap mode/i.test(action)
+    )
+  );
+  assert.ok(
+    report.toolboxRolloutReadiness.nextActions.some((action) =>
+      /descriptor-only/i.test(action)
+    )
+  );
+  assert.equal(report.status, "healthy");
+
+  const doctor = spawnSync(
+    process.execPath,
+    [
+      path.join(repoRoot, "scripts", "doctor-default-access.mjs"),
+      "--repo-root",
+      repoRoot,
+      "--config",
+      codexConfigPath,
+      "--bin-dir",
+      binDir,
+      "--manifest",
+      manifestPath
+    ],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: binDir,
+        MIMIR_DOCKER_EXECUTABLE: process.execPath,
+        MIMIR_DOCKER_EXECUTABLE_ARGS_JSON: JSON.stringify([supportedStub])
+      }
+    }
+  );
+
+  assert.equal(doctor.status, 0);
+  assert.match(doctor.stdout, /toolboxRolloutReadiness: user_action_required/);
+  assert.match(doctor.stdout, /toolboxSessionMode: toolbox-bootstrap/);
+  assert.match(doctor.stdout, /toolboxNext: This client is still in bootstrap mode/);
+});
+
+function renderDockerMcpStub({ profileSupported, enabledServers = [] }) {
   const commandLines = profileSupported
     ? [
         "  catalog     Manage MCP server catalogs",
@@ -286,6 +458,7 @@ function renderDockerMcpStub({ profileSupported }) {
 
   return [
     `const helpText = ${JSON.stringify(helpText)};`,
+    `const enabledServers = ${JSON.stringify(enabledServers)};`,
     `const gatewayRunHelpText = ${JSON.stringify([
       "Docker MCP Toolkit's CLI - Manage your MCP servers and clients.",
       "",
@@ -304,6 +477,10 @@ function renderDockerMcpStub({ profileSupported }) {
     "}",
     "if (args[0] === 'mcp' && args[1] === 'gateway' && args[2] === 'run' && args[3] === '--help') {",
     "  process.stdout.write(gatewayRunHelpText);",
+    "  process.exit(0);",
+    "}",
+    "if (args[0] === 'mcp' && args[1] === 'server' && args[2] === 'ls' && args[3] === '--json') {",
+    "  process.stdout.write(JSON.stringify(enabledServers));",
     "  process.exit(0);",
     "}",
     "process.exit(2);",

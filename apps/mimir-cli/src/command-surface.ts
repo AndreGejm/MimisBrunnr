@@ -16,6 +16,10 @@ export type SystemCommandName =
   | "describe-toolbox"
   | "freshness-status"
   | "issue-auth-token"
+  | "scaffold-toolbox"
+  | "scaffold-toolbox-band"
+  | "preview-toolbox"
+  | "list-toolbox-servers"
   | "list-active-toolbox"
   | "list-active-tools"
   | "list-toolboxes"
@@ -24,6 +28,7 @@ export type SystemCommandName =
   | "revoke-auth-tokens"
   | "set-auth-issuer-state"
   | "sync-mcp-profiles"
+  | "sync-toolbox-runtime"
   | "sync-toolbox-client";
 
 export type CliCommandName = SystemCommandName | RuntimeCliCommandName;
@@ -45,6 +50,10 @@ export const SYSTEM_COMMAND_NAMES = [
   "describe-toolbox",
   "freshness-status",
   "issue-auth-token",
+  "scaffold-toolbox",
+  "scaffold-toolbox-band",
+  "preview-toolbox",
+  "list-toolbox-servers",
   "list-active-toolbox",
   "list-active-tools",
   "list-toolboxes",
@@ -53,6 +62,7 @@ export const SYSTEM_COMMAND_NAMES = [
   "revoke-auth-tokens",
   "set-auth-issuer-state",
   "sync-mcp-profiles",
+  "sync-toolbox-runtime",
   "sync-toolbox-client"
 ] as const satisfies ReadonlyArray<SystemCommandName>;
 

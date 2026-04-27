@@ -2,24 +2,6 @@ profile:
   id: runtime-observe
   displayName: Runtime Observe
   sessionMode: toolbox-activated
-  includeServers:
-    - mimir-control
-    - mimir-core
-    - grafana-observe
-    - docker-read
-    - kubernetes-read
-  allowedCategories:
-    - repo-read
-    - internal-memory
-    - logs-read
-    - metrics-read
-    - traces-read
-    - docker-read
-    - k8s-read
-    - k8s-logs-read
-    - k8s-events-read
-  deniedCategories:
-    - github-write
-    - docker-write
-    - deployment
+  includeBands:
+    - runtime-observe
   fallbackProfile: core-dev

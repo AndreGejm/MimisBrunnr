@@ -4,6 +4,7 @@
     { "path": "./apps/mimir-api" },
     { "path": "./apps/mimir-cli" },
     { "path": "./apps/mimir-control-mcp" },
+    { "path": "./apps/mimir-toolbox-mcp" },
     { "path": "./apps/mimir-mcp" },
     { "path": "./packages/domain" },
     { "path": "./packages/contracts" },

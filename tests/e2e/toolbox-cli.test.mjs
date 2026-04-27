@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cp, mkdtemp, rm } from "node:fs/promises";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -147,7 +147,7 @@ test("mimir-cli exposes toolbox discovery, activation, and sync commands from re
   );
   assert.equal(describeCompositePayload.toolbox.profile.composite, true);
   assert.deepEqual(
-    describeCompositePayload.toolbox.profile.baseProfiles,
+    describeCompositePayload.toolbox.profile.includeBands,
     ["core-dev", "docs-research"]
   );
   assert.equal(
@@ -414,6 +414,542 @@ test("mimir-cli check-mcp-profiles reports Docker MCP profile readiness", async 
   }
 });
 
+test("mimir-cli scaffold-toolbox creates a reusable toolbox band from one payload", async (t) => {
+  const manifestDirectory = await mkdtemp(path.join(os.tmpdir(), "mimir-toolbox-scaffold-unified-"));
+  await cp(path.resolve("docker", "mcp"), manifestDirectory, { recursive: true });
+  t.after(async () => {
+    await rm(manifestDirectory, { recursive: true, force: true });
+  });
+
+  const env = {
+    ...process.env,
+    MAB_NODE_ENV: "test",
+    MAB_TOOLBOX_MANIFEST_DIR: manifestDirectory
+  };
+
+  const result = await runCliCommand(
+    [
+      "scaffold-toolbox",
+      "--json",
+      JSON.stringify({
+        mode: "toolbox",
+        manifestDirectory,
+        bandId: "temp-docs-toolbox-unified",
+        displayName: "Temp Docs Toolbox Unified",
+        serverIds: ["mimir-control", "mimir-core", "docker-docs"],
+        summary: "Temporary docs toolbox created through the unified scaffolder.",
+        exampleTasks: ["Check docs without widening into the full research toolbox."],
+        autoExpand: true,
+        preferredActorRoles: ["retrieval"],
+        fallbackProfile: "bootstrap"
+      }),
+      "--no-pretty"
+    ],
+    env
+  );
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.mode, "toolbox");
+  assert.equal(payload.createdBandId, "temp-docs-toolbox-unified");
+  assert.equal(payload.createdProfileId, "temp-docs-toolbox-unified");
+
+  const policy = compileToolboxPolicyFromDirectory(manifestDirectory);
+  assert.ok(policy.bands["temp-docs-toolbox-unified"]);
+  assert.deepEqual(
+    policy.profiles["temp-docs-toolbox-unified"].includeBands,
+    ["temp-docs-toolbox-unified"]
+  );
+  assert.equal(
+    policy.intents["temp-docs-toolbox-unified"].targetProfile,
+    "temp-docs-toolbox-unified"
+  );
+});
+
+test("mimir-cli scaffold-toolbox --wizard creates a reusable toolbox band from stdin answers", async (t) => {
+  const manifestDirectory = await mkdtemp(path.join(os.tmpdir(), "mimir-toolbox-scaffold-wizard-band-"));
+  await cp(path.resolve("docker", "mcp"), manifestDirectory, { recursive: true });
+  t.after(async () => {
+    await rm(manifestDirectory, { recursive: true, force: true });
+  });
+
+  const env = {
+    ...process.env,
+    MAB_NODE_ENV: "test",
+    MAB_TOOLBOX_MANIFEST_DIR: manifestDirectory
+  };
+
+  const result = await runCliCommand(
+    ["scaffold-toolbox", "--wizard", "--no-pretty"],
+    env,
+    process.cwd(),
+    [
+      "toolbox",
+      "wizard-docs-toolbox",
+      "Wizard Docs Toolbox",
+      "mimir-control,mimir-core,docker-docs",
+      "Wizard-created docs toolbox.",
+      "Check docs in a narrow surface.",
+      "bootstrap",
+      "retrieval",
+      "y",
+      "n"
+    ].join("\n")
+  );
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.mode, "toolbox");
+  assert.equal(payload.createdBandId, "wizard-docs-toolbox");
+  assert.equal(payload.createdProfileId, "wizard-docs-toolbox");
+
+  const policy = compileToolboxPolicyFromDirectory(manifestDirectory);
+  assert.ok(policy.bands["wizard-docs-toolbox"]);
+  assert.equal(policy.bands["wizard-docs-toolbox"].autoExpand, true);
+  assert.equal(policy.bands["wizard-docs-toolbox"].requiresApproval, false);
+  assert.deepEqual(policy.bands["wizard-docs-toolbox"].preferredActorRoles, ["retrieval"]);
+  assert.deepEqual(policy.profiles["wizard-docs-toolbox"].includeBands, ["wizard-docs-toolbox"]);
+  assert.equal(policy.intents["wizard-docs-toolbox"].targetProfile, "wizard-docs-toolbox");
+});
+
+test("mimir-cli scaffold-toolbox creates a repeated workflow from existing bands", async (t) => {
+  const manifestDirectory = await mkdtemp(path.join(os.tmpdir(), "mimir-toolbox-workflow-scaffold-"));
+  await cp(path.resolve("docker", "mcp"), manifestDirectory, { recursive: true });
+  t.after(async () => {
+    await rm(manifestDirectory, { recursive: true, force: true });
+  });
+
+  const env = {
+    ...process.env,
+    MAB_NODE_ENV: "test",
+    MAB_TOOLBOX_MANIFEST_DIR: manifestDirectory
+  };
+
+  const result = await runCliCommand(
+    [
+      "scaffold-toolbox",
+      "--json",
+      JSON.stringify({
+        mode: "workflow",
+        manifestDirectory,
+        workflowId: "core-dev+temp-workflow-docs",
+        displayName: "Core Dev Plus Temp Workflow Docs",
+        includeBands: ["core-dev", "docs-research"],
+        summary: "Composite workflow created through the unified scaffolder.",
+        exampleTasks: ["Implement a change while consulting docs through a repeated workflow."],
+        fallbackProfile: "core-dev"
+      }),
+      "--no-pretty"
+    ],
+    env
+  );
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.mode, "workflow");
+  assert.equal(payload.createdWorkflowId, "core-dev+temp-workflow-docs");
+  assert.equal(payload.createdProfileId, "core-dev+temp-workflow-docs");
+
+  const policy = compileToolboxPolicyFromDirectory(manifestDirectory);
+  assert.ok(policy.workflows["core-dev+temp-workflow-docs"]);
+  assert.deepEqual(
+    policy.profiles["core-dev+temp-workflow-docs"].includeBands,
+    ["core-dev", "docs-research"]
+  );
+  assert.equal(
+    policy.intents["core-dev+temp-workflow-docs"].targetProfile,
+    "core-dev+temp-workflow-docs"
+  );
+});
+
+test("mimir-cli scaffold-toolbox --wizard creates a repeated workflow from stdin answers", async (t) => {
+  const manifestDirectory = await mkdtemp(path.join(os.tmpdir(), "mimir-toolbox-scaffold-wizard-workflow-"));
+  await cp(path.resolve("docker", "mcp"), manifestDirectory, { recursive: true });
+  t.after(async () => {
+    await rm(manifestDirectory, { recursive: true, force: true });
+  });
+
+  const env = {
+    ...process.env,
+    MAB_NODE_ENV: "test",
+    MAB_TOOLBOX_MANIFEST_DIR: manifestDirectory
+  };
+
+  const result = await runCliCommand(
+    ["scaffold-toolbox", "--wizard", "--no-pretty"],
+    env,
+    process.cwd(),
+    [
+      "workflow",
+      "core-dev+wizard-docs",
+      "Core Dev Plus Wizard Docs",
+      "core-dev,docs-research",
+      "Wizard-created repeated workflow.",
+      "Implement a change while reading docs.",
+      "core-dev",
+      "retrieval",
+      "n",
+      "n"
+    ].join("\n")
+  );
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.mode, "workflow");
+  assert.equal(payload.createdWorkflowId, "core-dev+wizard-docs");
+  assert.equal(payload.createdProfileId, "core-dev+wizard-docs");
+
+  const policy = compileToolboxPolicyFromDirectory(manifestDirectory);
+  assert.ok(policy.workflows["core-dev+wizard-docs"]);
+  assert.deepEqual(policy.workflows["core-dev+wizard-docs"].preferredActorRoles, ["retrieval"]);
+  assert.equal(policy.workflows["core-dev+wizard-docs"].autoExpand, false);
+  assert.equal(policy.workflows["core-dev+wizard-docs"].requiresApproval, false);
+  assert.deepEqual(policy.profiles["core-dev+wizard-docs"].includeBands, ["core-dev", "docs-research"]);
+  assert.equal(policy.intents["core-dev+wizard-docs"].targetProfile, "core-dev+wizard-docs");
+});
+
+test("mimir-cli list-toolbox-servers returns available server metadata from a temp manifest directory", async (t) => {
+  const manifestDirectory = await mkdtemp(path.join(os.tmpdir(), "mimir-toolbox-server-list-"));
+  await cp(path.resolve("docker", "mcp"), manifestDirectory, { recursive: true });
+  t.after(async () => {
+    await rm(manifestDirectory, { recursive: true, force: true });
+  });
+
+  const policy = compileToolboxPolicyFromDirectory(manifestDirectory);
+  const result = await runCliCommand(
+    [
+      "list-toolbox-servers",
+      "--json",
+      JSON.stringify({ manifestDirectory }),
+      "--no-pretty"
+    ],
+    {
+      ...process.env,
+      MAB_NODE_ENV: "test",
+      MAB_TOOLBOX_MANIFEST_DIR: manifestDirectory
+    }
+  );
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.servers.length, Object.keys(policy.servers).length);
+
+  const dockerDocs = payload.servers.find((server) => server.id === "docker-docs");
+  assert.equal(dockerDocs.id, "docker-docs");
+  assert.equal(dockerDocs.displayName, "Docker Docs");
+  assert.equal(dockerDocs.source, "peer");
+  assert.equal(dockerDocs.kind, "peer");
+  assert.equal(dockerDocs.trustClass, "external-read");
+  assert.equal(dockerDocs.mutationLevel, "read");
+  assert.deepEqual(dockerDocs.categories, ["docs-search"]);
+  assert.equal(dockerDocs.runtimeBindingKind, "docker-catalog");
+  assert.equal(dockerDocs.dockerApplyMode, "catalog");
+
+  const voltAgentDocs = payload.servers.find((server) => server.id === "voltagent-docs");
+  assert.equal(voltAgentDocs.id, "voltagent-docs");
+  assert.equal(voltAgentDocs.displayName, "VoltAgent Docs");
+  assert.equal(voltAgentDocs.source, "peer");
+  assert.equal(voltAgentDocs.kind, "peer");
+  assert.equal(voltAgentDocs.trustClass, "external-read");
+  assert.equal(voltAgentDocs.mutationLevel, "read");
+  assert.deepEqual(voltAgentDocs.categories, ["docs-search"]);
+  assert.equal(voltAgentDocs.runtimeBindingKind, "local-stdio");
+});
+
+test("mimir-cli preview-toolbox shows a toolbox band preview without writing files", async (t) => {
+  const manifestDirectory = await mkdtemp(path.join(os.tmpdir(), "mimir-toolbox-preview-band-"));
+  await cp(path.resolve("docker", "mcp"), manifestDirectory, { recursive: true });
+  t.after(async () => {
+    await rm(manifestDirectory, { recursive: true, force: true });
+  });
+
+  const intentsPath = path.join(manifestDirectory, "intents.yaml");
+  const bandPath = path.join(manifestDirectory, "bands", "preview-docs-toolbox.yaml");
+  const profilePath = path.join(
+    manifestDirectory,
+    "profiles",
+    "preview-docs-toolbox.yaml"
+  );
+  const intentsBefore = readFileSync(intentsPath, "utf8");
+
+  const result = await runCliCommand(
+    [
+      "preview-toolbox",
+      "--json",
+      JSON.stringify({
+        mode: "toolbox",
+        manifestDirectory,
+        bandId: "preview-docs-toolbox",
+        displayName: "Preview Docs Toolbox",
+        serverIds: ["mimir-control", "docker-docs", "mimir-core"],
+        summary: "Preview-only docs toolbox.",
+        exampleTasks: ["Check a docs-only toolbox preview."],
+        preferredActorRoles: ["retrieval"],
+        fallbackProfile: "bootstrap"
+      }),
+      "--no-pretty"
+    ],
+    {
+      ...process.env,
+      MAB_NODE_ENV: "test",
+      MAB_TOOLBOX_MANIFEST_DIR: manifestDirectory
+    }
+  );
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.preview.mode, "toolbox");
+  assert.equal(payload.preview.targetProfileId, "preview-docs-toolbox");
+  assert.deepEqual(payload.preview.profile.includeBands, ["preview-docs-toolbox"]);
+  assert.deepEqual(
+    [...payload.preview.band.includeServers].sort(),
+    ["docker-docs", "mimir-control", "mimir-core"]
+  );
+  assert.equal(existsSync(bandPath), false, "preview must not write band files");
+  assert.equal(existsSync(profilePath), false, "preview must not write profile files");
+  assert.equal(readFileSync(intentsPath, "utf8"), intentsBefore);
+});
+
+test("mimir-cli preview-toolbox shows a workflow preview without writing files", async (t) => {
+  const manifestDirectory = await mkdtemp(path.join(os.tmpdir(), "mimir-toolbox-preview-workflow-"));
+  await cp(path.resolve("docker", "mcp"), manifestDirectory, { recursive: true });
+  t.after(async () => {
+    await rm(manifestDirectory, { recursive: true, force: true });
+  });
+
+  const intentsPath = path.join(manifestDirectory, "intents.yaml");
+  const workflowPath = path.join(
+    manifestDirectory,
+    "workflows",
+    "core-dev+preview-workflow.yaml"
+  );
+  const intentsBefore = readFileSync(intentsPath, "utf8");
+
+  const result = await runCliCommand(
+    [
+      "preview-toolbox",
+      "--json",
+      JSON.stringify({
+        mode: "workflow",
+        manifestDirectory,
+        workflowId: "core-dev+preview-workflow",
+        displayName: "Core Dev Plus Preview Workflow",
+        includeBands: ["core-dev", "docs-research"],
+        fallbackProfile: "core-dev"
+      }),
+      "--no-pretty"
+    ],
+    {
+      ...process.env,
+      MAB_NODE_ENV: "test",
+      MAB_TOOLBOX_MANIFEST_DIR: manifestDirectory
+    }
+  );
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.preview.mode, "workflow");
+  assert.equal(payload.preview.targetProfileId, "core-dev+preview-workflow");
+  assert.deepEqual(payload.preview.profile.includeBands, ["core-dev", "docs-research"]);
+  assert.equal(existsSync(workflowPath), false, "preview must not write workflow files");
+  assert.equal(readFileSync(intentsPath, "utf8"), intentsBefore);
+});
+
+test("mimir-cli scaffold-toolbox-band creates a band, base profile, and controlled composite intent wiring", async (t) => {
+  const manifestDirectory = await mkdtemp(path.join(os.tmpdir(), "mimir-toolbox-scaffold-"));
+  await cp(path.resolve("docker", "mcp"), manifestDirectory, { recursive: true });
+  t.after(async () => {
+    await rm(manifestDirectory, { recursive: true, force: true });
+  });
+
+  const env = {
+    ...process.env,
+    MAB_NODE_ENV: "test",
+    MAB_TOOLBOX_MANIFEST_DIR: manifestDirectory
+  };
+
+  const result = await runCliCommand(
+    [
+      "scaffold-toolbox-band",
+      "--json",
+      JSON.stringify({
+        manifestDirectory,
+        bandId: "temp-docs-toolbox",
+        displayName: "Temp Docs Toolbox",
+        serverIds: ["mimir-control", "mimir-core", "docker-docs"],
+        summary: "Temporary docs toolbox for narrow research sessions.",
+        exampleTasks: ["Check docs without widening into the full research toolbox."],
+        autoExpand: true,
+        preferredActorRoles: ["retrieval"],
+        fallbackProfile: "bootstrap",
+        compatibilityProfiles: [
+          {
+            id: "core-dev+temp-docs-toolbox",
+            displayName: "Core Dev Plus Temp Docs Toolbox",
+            additionalBands: ["core-dev"],
+            summary: "Patch code while checking a narrow docs surface.",
+            exampleTasks: ["Implement a change while consulting one narrow docs toolbox."]
+          }
+        ]
+      }),
+      "--no-pretty"
+    ],
+    env
+  );
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.createdBandId, "temp-docs-toolbox");
+  assert.ok(payload.createdIntentIds.includes("temp-docs-toolbox"));
+  assert.ok(payload.createdIntentIds.includes("core-dev+temp-docs-toolbox"));
+
+  const policy = compileToolboxPolicyFromDirectory(manifestDirectory);
+  assert.ok(policy.bands["temp-docs-toolbox"]);
+  assert.deepEqual(
+    policy.bands["temp-docs-toolbox"].preferredActorRoles,
+    ["retrieval"]
+  );
+  assert.deepEqual(
+    policy.profiles["temp-docs-toolbox"].includeBands,
+    ["temp-docs-toolbox"]
+  );
+  assert.deepEqual(
+    policy.profiles["core-dev+temp-docs-toolbox"].includeBands,
+    ["core-dev", "temp-docs-toolbox"]
+  );
+  assert.equal(
+    policy.intents["temp-docs-toolbox"].targetProfile,
+    "temp-docs-toolbox"
+  );
+  assert.equal(
+    policy.intents["core-dev+temp-docs-toolbox"].targetProfile,
+    "core-dev+temp-docs-toolbox"
+  );
+});
+
+test("mimir-cli scaffold-toolbox-band does not leave partial files behind when a compatibility intent already exists", async (t) => {
+  const manifestDirectory = await mkdtemp(path.join(os.tmpdir(), "mimir-toolbox-scaffold-atomic-band-"));
+  await cp(path.resolve("docker", "mcp"), manifestDirectory, { recursive: true });
+  t.after(async () => {
+    await rm(manifestDirectory, { recursive: true, force: true });
+  });
+
+  const intentsPath = path.join(manifestDirectory, "intents.yaml");
+  writeFileSync(
+    intentsPath,
+    [
+      "intents:",
+      "  atomic-collision-intent:",
+      "    displayName: Atomic Collision Intent",
+      "    summary: Pre-existing test intent.",
+      "    exampleTasks:",
+      "      - Keep the id occupied.",
+      "    targetProfile: bootstrap",
+      "    trustClass: local-read",
+      "    requiresApproval: false",
+      "    activationMode: session-switch",
+      "    allowedCategories:",
+      "      - local-docs",
+      "    deniedCategories: []",
+      "    fallbackProfile: bootstrap",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+
+  const env = {
+    ...process.env,
+    MAB_NODE_ENV: "test",
+    MAB_TOOLBOX_MANIFEST_DIR: manifestDirectory
+  };
+  const bandFile = path.join(manifestDirectory, "bands", "atomic-temp-docs.yaml");
+  const profileFile = path.join(manifestDirectory, "profiles", "atomic-temp-docs.yaml");
+
+  const result = await runCliCommand(
+    [
+      "scaffold-toolbox-band",
+      "--json",
+      JSON.stringify({
+        manifestDirectory,
+        bandId: "atomic-temp-docs",
+        displayName: "Atomic Temp Docs",
+        serverIds: ["mimir-control", "mimir-core", "docker-docs"],
+        compatibilityProfiles: [
+          {
+            id: "atomic-collision-intent",
+            displayName: "Conflicting Atomic Intent",
+            additionalBands: ["core-dev"]
+          }
+        ]
+      }),
+      "--no-pretty"
+    ],
+    env
+  );
+  assert.notEqual(result.exitCode, 0);
+  assert.match(result.stdout, /Intent 'atomic-collision-intent' already exists\./);
+  assert.equal(existsSync(bandFile), false);
+  assert.equal(existsSync(profileFile), false);
+});
+
+test("mimir-cli scaffold-toolbox workflow does not leave partial files behind when the workflow intent already exists", async (t) => {
+  const manifestDirectory = await mkdtemp(path.join(os.tmpdir(), "mimir-toolbox-scaffold-atomic-workflow-"));
+  await cp(path.resolve("docker", "mcp"), manifestDirectory, { recursive: true });
+  t.after(async () => {
+    await rm(manifestDirectory, { recursive: true, force: true });
+  });
+
+  const intentsPath = path.join(manifestDirectory, "intents.yaml");
+  writeFileSync(
+    intentsPath,
+    [
+      "intents:",
+      "  collision-workflow:",
+      "    displayName: Collision Workflow",
+      "    summary: Pre-existing test intent.",
+      "    exampleTasks:",
+      "      - Keep the id occupied.",
+      "    targetProfile: bootstrap",
+      "    trustClass: local-read",
+      "    requiresApproval: false",
+      "    activationMode: session-switch",
+      "    allowedCategories:",
+      "      - local-docs",
+      "    deniedCategories: []",
+      "    fallbackProfile: bootstrap",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+
+  const env = {
+    ...process.env,
+    MAB_NODE_ENV: "test",
+    MAB_TOOLBOX_MANIFEST_DIR: manifestDirectory
+  };
+  const workflowFile = path.join(manifestDirectory, "workflows", "collision-workflow.yaml");
+
+  const result = await runCliCommand(
+    [
+      "scaffold-toolbox",
+      "--json",
+      JSON.stringify({
+        mode: "workflow",
+        manifestDirectory,
+        workflowId: "collision-workflow",
+        displayName: "Collision Workflow",
+        includeBands: ["core-dev", "docs-research"],
+        fallbackProfile: "core-dev"
+      }),
+      "--no-pretty"
+    ],
+    env
+  );
+  assert.notEqual(result.exitCode, 0);
+  assert.match(result.stdout, /Intent 'collision-workflow' already exists\./);
+  assert.equal(existsSync(workflowFile), false);
+});
+
 test("mimir-cli surfaces Codex client materialization metadata and sync-toolbox-client writes deterministic local-stdio config", async (t) => {
   const sqlitePath = await createTempSqlitePath();
   const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "mimir-codex-client-"));
@@ -625,6 +1161,83 @@ test("mimir-cli surfaces Codex client materialization metadata and sync-toolbox-
     JSON.parse(readFileSync(expectedMaterializationPath, "utf8")),
     dryRunPayload.materialization.content
   );
+});
+
+test("mimir-cli sync-toolbox-runtime summarizes Docker and client runtime outputs and only applies client artifacts", async (t) => {
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "mimir-toolbox-runtime-sync-"));
+  t.after(async () => {
+    await rm(workspaceRoot, { recursive: true, force: true });
+  });
+
+  const env = {
+    ...process.env,
+    MAB_NODE_ENV: "test",
+    MAB_TOOLBOX_MANIFEST_DIR: path.resolve("docker", "mcp"),
+    MAB_TOOLBOX_ACTIVE_PROFILE: "core-dev+voltagent-docs",
+    MAB_TOOLBOX_CLIENT_ID: "codex",
+    MAB_TOOLBOX_LEASE_ISSUER: "mimir-control",
+    MAB_TOOLBOX_LEASE_AUDIENCE: "mimir-core",
+    MAB_TOOLBOX_LEASE_ISSUER_SECRET: "toolbox-secret"
+  };
+  const expectedMaterializationPath = path.join(
+    workspaceRoot,
+    ".mimir",
+    "toolbox",
+    "codex.mcp.json"
+  );
+
+  const dryRunResult = await runCliCommand(
+    [
+      "sync-toolbox-runtime",
+      "--json",
+      JSON.stringify({ generatedAt: "2026-04-27T12:00:00.000Z" }),
+      "--no-pretty"
+    ],
+    env,
+    workspaceRoot
+  );
+  assert.equal(dryRunResult.exitCode, 0, dryRunResult.stderr);
+  const dryRunPayload = JSON.parse(dryRunResult.stdout);
+  assert.equal(dryRunPayload.ok, true);
+  assert.equal(dryRunPayload.dryRun, true);
+  assert.equal(dryRunPayload.activeProfileId, "core-dev+voltagent-docs");
+  assert.equal(dryRunPayload.clientId, "codex");
+  assert.equal(dryRunPayload.manifestRevision.length > 0, true);
+  assert.equal(dryRunPayload.docker.plan.generatedAt, "2026-04-27T12:00:00.000Z");
+  assert.ok(
+    dryRunPayload.docker.applyPlan.omittedServers.some(
+      (server) =>
+        server.id === "voltagent-docs" &&
+        server.blockedReason.includes("client-materialized local-stdio peer")
+    )
+  );
+  assert.equal(dryRunPayload.client.applied, false);
+  assert.equal(dryRunPayload.client.materialization.format, "codex-mcp-json");
+  assert.equal(dryRunPayload.client.materialization.path, expectedMaterializationPath);
+  assert.deepEqual(dryRunPayload.client.materialization.serverIds, ["voltagent-docs"]);
+
+  const applyResult = await runCliCommand(
+    [
+      "sync-toolbox-runtime",
+      "--apply",
+      "--json",
+      JSON.stringify({ generatedAt: "2026-04-27T12:00:00.000Z" }),
+      "--no-pretty"
+    ],
+    env,
+    workspaceRoot
+  );
+  assert.equal(applyResult.exitCode, 0, applyResult.stderr);
+  const applyPayload = JSON.parse(applyResult.stdout);
+  assert.equal(applyPayload.ok, true);
+  assert.equal(applyPayload.dryRun, false);
+  assert.equal(applyPayload.client.applied, true);
+  assert.equal(applyPayload.client.materialization.path, expectedMaterializationPath);
+  assert.deepEqual(
+    JSON.parse(readFileSync(expectedMaterializationPath, "utf8")),
+    applyPayload.client.materialization.content
+  );
+  assert.equal(applyPayload.docker.applied, false);
 });
 
 test("mimir-cli accepts the legacy VoltAgent docs toolbox id and resolves it to the canonical profile", async (t) => {
@@ -1480,7 +2093,7 @@ test("mimir-cli resolves repo-write plus docs-search to the composite docs toolb
   assert.equal(activeToolboxPayload.workflow.requiresApproval, false);
   assert.equal(activeToolboxPayload.workflow.fallbackProfile, "core-dev");
   assert.equal(activeToolboxPayload.profile.composite, true);
-  assert.deepEqual(activeToolboxPayload.profile.baseProfiles, ["core-dev", "docs-research"]);
+  assert.deepEqual(activeToolboxPayload.profile.includeBands, ["core-dev", "docs-research"]);
   assert.equal(activeToolboxPayload.profile.fallbackProfile, "core-dev");
   assert.equal(activeToolboxPayload.client.handoffStrategy, "env-reconnect");
 });
@@ -1798,13 +2411,13 @@ test("mimir-cli temp sqlite helper reuses a single process exit cleanup hook", a
   );
 });
 
-function runCliCommand(args, env, cwd = process.cwd()) {
+function runCliCommand(args, env, cwd = process.cwd(), stdinText) {
   const scriptPath = path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js");
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [scriptPath, ...args], {
       cwd,
       env,
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["pipe", "pipe", "pipe"]
     });
 
     let stdout = "";
@@ -1817,6 +2430,7 @@ function runCliCommand(args, env, cwd = process.cwd()) {
       stderr += String(chunk);
     });
     child.once("error", reject);
+    child.stdin.end(stdinText ?? "");
     child.once("close", (exitCode) => {
       resolve({ exitCode, stdout, stderr });
     });

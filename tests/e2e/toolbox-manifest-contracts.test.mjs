@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
   buildDockerMcpRuntimeApplyPlan,
+  compileToolboxCandidateCatalogFromDirectory,
   compileDockerMcpRuntimePlan,
   compileToolboxPolicyFromDirectory
 } from "../../packages/infrastructure/dist/index.js";
@@ -322,6 +323,427 @@ test("compileToolboxPolicyFromDirectory returns deterministic normalized IR", ()
     });
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("compileToolboxPolicyFromDirectory compiles authored bands and derives profile membership from includeBands", () => {
+  const root = createFixtureRoot();
+  try {
+    seedBaseFixture(root);
+    writeUtf8(
+      root,
+      "bands/bootstrap.yaml",
+      [
+        "band:",
+        "  id: bootstrap",
+        "  displayName: Bootstrap",
+        "  trustClass: local-read",
+        "  mutationLevel: read",
+        "  autoExpand: false",
+        "  requiresApproval: false",
+        "  includeServers:",
+        "    - mimir-control",
+        "    - mimir-core",
+        "  allowedCategories:",
+        "    - repo-read",
+        "  deniedCategories:",
+        "    - docker-write",
+        "  contraction:",
+        "    taskAware: false",
+        "    onLeaseExpiry: true"
+      ].join("\n")
+    );
+    writeUtf8(
+      root,
+      "bands/docs-research.yaml",
+      [
+        "band:",
+        "  id: docs-research",
+        "  displayName: Docs Research",
+        "  trustClass: external-read",
+        "  mutationLevel: read",
+        "  autoExpand: true",
+        "  requiresApproval: false",
+        "  includeServers:",
+        "    - github-read",
+        "  allowedCategories:",
+        "    - docs-search",
+        "  deniedCategories:",
+        "    - docker-write",
+        "  contraction:",
+        "    taskAware: true",
+        "    idleTimeoutSeconds: 600",
+        "    onLeaseExpiry: true"
+      ].join("\n")
+    );
+    writeUtf8(
+      root,
+      "profiles/bootstrap.yaml",
+      [
+        "profile:",
+        "  id: bootstrap",
+        "  displayName: Bootstrap",
+        "  sessionMode: toolbox-bootstrap",
+        "  includeBands:",
+        "    - bootstrap",
+        "  deniedCategories:",
+        "    - docker-write"
+      ].join("\n")
+    );
+    writeUtf8(
+      root,
+      "profiles/docs-research.yaml",
+      [
+        "profile:",
+        "  id: docs-research",
+        "  displayName: Docs Research",
+        "  sessionMode: toolbox-activated",
+        "  includeBands:",
+        "    - bootstrap",
+        "    - docs-research",
+        "  compositeReason: repeated_workflow",
+        "  fallbackProfile: bootstrap"
+      ].join("\n")
+    );
+
+    const compiled = compileToolboxPolicyFromDirectory(root);
+
+    assert.equal(compiled.bands.bootstrap.id, "bootstrap");
+    assert.equal(compiled.bands["docs-research"].autoExpand, true);
+    assert.equal(compiled.bands["docs-research"].contraction.idleTimeoutSeconds, 600);
+    assert.deepEqual(compiled.profiles["docs-research"].includeBands, [
+      "bootstrap",
+      "docs-research"
+    ]);
+    assert.ok(compiled.profiles["docs-research"].includeServers.includes("github-read"));
+    assert.ok(
+      compiled.profiles["docs-research"].tools.some((tool) => tool.toolId === "github.search")
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("compileToolboxPolicyFromDirectory derives composite compatibility profiles from band metadata without authored composite profile manifests", () => {
+  const root = createFixtureRoot();
+  try {
+    seedBaseFixture(root);
+    rmSync(path.join(root, "profiles", "core-dev+docs-research.yaml"), { force: true });
+    writeUtf8(
+      root,
+      "bands/core-dev.yaml",
+      [
+        "band:",
+        "  id: core-dev",
+        "  displayName: Core Dev",
+        "  trustClass: local-readwrite",
+        "  mutationLevel: write",
+        "  autoExpand: true",
+        "  requiresApproval: false",
+        "  includeServers:",
+        "    - mimir-control",
+        "    - mimir-core",
+        "  allowedCategories:",
+        "    - repo-read",
+        "    - repo-write",
+        "  deniedCategories:",
+        "    - docker-write",
+        "  contraction:",
+        "    taskAware: true",
+        "    idleTimeoutSeconds: 900",
+        "    onLeaseExpiry: true"
+      ].join("\n")
+    );
+    writeUtf8(
+      root,
+      "bands/docs-research.yaml",
+      [
+        "band:",
+        "  id: docs-research",
+        "  displayName: Docs Research",
+        "  trustClass: external-read",
+        "  mutationLevel: read",
+        "  autoExpand: true",
+        "  requiresApproval: false",
+        "  includeServers:",
+        "    - mimir-control",
+        "    - mimir-core",
+        "    - github-read",
+        "  allowedCategories:",
+        "    - repo-read",
+        "    - docs-search",
+        "  deniedCategories:",
+        "    - docker-write",
+        "  contraction:",
+        "    taskAware: true",
+        "    idleTimeoutSeconds: 600",
+        "    onLeaseExpiry: true",
+        "  compatibilityProfiles:",
+        "    - id: core-dev+docs-research",
+        "      displayName: Core Dev Plus Docs",
+        "      additionalBands:",
+        "        - core-dev",
+        "      compositeReason: repeated_workflow",
+        "      fallbackProfile: core-dev"
+      ].join("\n")
+    );
+    writeUtf8(
+      root,
+      "profiles/core-dev.yaml",
+      [
+        "profile:",
+        "  id: core-dev",
+        "  displayName: Core Dev",
+        "  sessionMode: toolbox-activated",
+        "  includeBands:",
+        "    - core-dev",
+        "  fallbackProfile: bootstrap"
+      ].join("\n")
+    );
+    writeUtf8(
+      root,
+      "profiles/docs-research.yaml",
+      [
+        "profile:",
+        "  id: docs-research",
+        "  displayName: Docs Research",
+        "  sessionMode: toolbox-activated",
+        "  includeBands:",
+        "    - docs-research",
+        "  fallbackProfile: core-dev"
+      ].join("\n")
+    );
+
+    const compiled = compileToolboxPolicyFromDirectory(root);
+    const compositeProfile = compiled.profiles["core-dev+docs-research"];
+
+    assert.ok(
+      compositeProfile,
+      "core-dev+docs-research should compile from band metadata even without an authored composite profile manifest"
+    );
+    assert.deepEqual(compositeProfile.includeBands, ["core-dev", "docs-research"]);
+    assert.equal(compositeProfile.fallbackProfile, "core-dev");
+    assert.ok(compositeProfile.includeServers.includes("github-read"));
+    assert.ok(compositeProfile.allowedCategories.includes("repo-write"));
+    assert.ok(compositeProfile.allowedCategories.includes("docs-search"));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("workflow manifests compile into compatibility profiles without authored composite profile files", () => {
+  const root = createFixtureRoot();
+  try {
+    seedBaseFixture(root);
+    rmSync(path.join(root, "profiles", "core-dev+docs-research.yaml"), { force: true });
+    writeUtf8(
+      root,
+      "bands/core-dev.yaml",
+      [
+        "band:",
+        "  id: core-dev",
+        "  displayName: Core Dev",
+        "  trustClass: local-readwrite",
+        "  mutationLevel: write",
+        "  autoExpand: true",
+        "  requiresApproval: false",
+        "  includeServers:",
+        "    - mimir-control",
+        "    - mimir-core",
+        "  allowedCategories:",
+        "    - repo-read",
+        "    - repo-write",
+        "  deniedCategories:",
+        "    - docker-write",
+        "  contraction:",
+        "    taskAware: true",
+        "    idleTimeoutSeconds: 900",
+        "    onLeaseExpiry: true"
+      ].join("\n")
+    );
+    writeUtf8(
+      root,
+      "bands/docs-research.yaml",
+      [
+        "band:",
+        "  id: docs-research",
+        "  displayName: Docs Research",
+        "  trustClass: external-read",
+        "  mutationLevel: read",
+        "  autoExpand: true",
+        "  requiresApproval: false",
+        "  includeServers:",
+        "    - mimir-control",
+        "    - mimir-core",
+        "    - github-read",
+        "  allowedCategories:",
+        "    - repo-read",
+        "    - docs-search",
+        "  deniedCategories:",
+        "    - docker-write",
+        "  contraction:",
+        "    taskAware: true",
+        "    idleTimeoutSeconds: 600",
+        "    onLeaseExpiry: true"
+      ].join("\n")
+    );
+    writeUtf8(
+      root,
+      "workflows/core-dev+docs-research.yaml",
+      [
+        "workflow:",
+        "  id: core-dev+docs-research",
+        "  displayName: Core Dev Plus Docs Research",
+        "  includeBands:",
+        "    - core-dev",
+        "    - docs-research",
+        "  compositeReason: repeated_workflow",
+        "  fallbackProfile: core-dev"
+      ].join("\n")
+    );
+
+    const compiled = compileToolboxPolicyFromDirectory(root);
+    const workflowProfile = compiled.profiles["core-dev+docs-research"];
+
+    assert.ok(
+      workflowProfile,
+      "core-dev+docs-research should compile from workflow manifests even without an authored composite profile manifest"
+    );
+    assert.deepEqual(workflowProfile.includeBands, ["core-dev", "docs-research"]);
+    assert.equal(workflowProfile.fallbackProfile, "core-dev");
+    assert.ok(workflowProfile.includeServers.includes("github-read"));
+    assert.ok(workflowProfile.allowedCategories.includes("repo-write"));
+    assert.ok(workflowProfile.allowedCategories.includes("docs-search"));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("compileToolboxCandidateCatalogFromDirectory returns deterministic curated candidate registries", () => {
+  const root = createFixtureRoot();
+  try {
+    seedBaseFixture(root);
+    writeUtf8(
+      root,
+      "candidates/awesome-mcp-servers.yaml",
+      [
+        "registry:",
+        "  id: awesome-mcp-servers",
+        "  displayName: Awesome MCP Servers Curation",
+        "  sourceUrl: https://github.com/punkpeye/awesome-mcp-servers",
+        "  candidates:",
+        "    - candidateId: example-docs-search",
+        "      displayName: Example Docs Search",
+        "      upstreamUrl: https://github.com/example/docs-search-mcp",
+        "      targetProfile: docs-research",
+        "      category: docs-search",
+        "      trustClass: external-read",
+        "      mutationLevel: read",
+        "      overlapsWith:",
+        "        - github-read",
+        "      decision: deferred",
+        "      vettingNotes: Defer until an operational need exists beyond the current docs stack.",
+        "    - candidateId: example-docker-admin",
+        "      displayName: Example Docker Admin",
+        "      upstreamUrl: https://github.com/example/docker-admin-mcp",
+        "      category: docker-write",
+        "      trustClass: ops-mutate",
+        "      mutationLevel: admin",
+        "      overlapsWith:",
+        "        - docker-admin",
+        "      decision: rejected",
+        "      vettingNotes: Reject because the toolbox must not add a second Docker admin surface."
+      ].join("\n")
+    );
+
+    const policy = compileToolboxPolicyFromDirectory(root);
+    const first = compileToolboxCandidateCatalogFromDirectory(path.join(root, "candidates"), policy);
+    const second = compileToolboxCandidateCatalogFromDirectory(path.join(root, "candidates"), policy);
+
+    assert.equal(first.registryRevision, second.registryRevision);
+    assert.equal(JSON.stringify(first), JSON.stringify(second));
+    assert.equal(first.candidateCount, 2);
+    assert.equal(first.registries.length, 1);
+    assert.equal(first.registries[0].id, "awesome-mcp-servers");
+    assert.equal(first.registries[0].candidates.length, 2);
+    const docsCandidate = first.registries[0].candidates.find(
+      (candidate) => candidate.candidateId === "example-docs-search"
+    );
+    const rejectedCandidate = first.registries[0].candidates.find(
+      (candidate) => candidate.candidateId === "example-docker-admin"
+    );
+    assert.equal(docsCandidate?.targetProfile, "docs-research");
+    assert.equal(docsCandidate?.decision, "deferred");
+    assert.equal(rejectedCandidate?.decision, "rejected");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("checked-in awesome-mcp-servers candidate registry stays curated and non-runtime", () => {
+  const policy = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+  const catalog = compileToolboxCandidateCatalogFromDirectory(
+    path.resolve("docker", "mcp", "candidates"),
+    policy
+  );
+
+  assert.ok(catalog.candidateCount > 0, "candidate catalog must contain at least one reviewed candidate");
+  const registry = catalog.registries.find((entry) => entry.id === "awesome-mcp-servers");
+  assert.ok(registry, "awesome-mcp-servers candidate registry must exist");
+  assert.match(registry.sourceUrl, /punkpeye\/awesome-mcp-servers/i);
+  assert.ok(
+    registry.candidates.some((candidate) => candidate.decision === "deferred"),
+    "awesome-mcp-servers registry must keep at least one deferred candidate"
+  );
+  assert.ok(
+    registry.candidates.some((candidate) => candidate.decision === "rejected"),
+    "awesome-mcp-servers registry must keep at least one rejected candidate"
+  );
+  assert.ok(
+    registry.candidates.every((candidate) => !policy.profiles[candidate.candidateId]),
+    "candidate registry entries must not become runtime profiles by name"
+  );
+});
+
+test("checked-in workflow manifests compile composite compatibility profiles without authored composite profile YAML files", () => {
+  const compositeProfileFiles = [
+    "core-dev+docs-research.yaml",
+    "core-dev+runtime-observe.yaml",
+    "core-dev+security-audit.yaml",
+    "core-dev+voltagent-docs.yaml",
+    "core-dev+voltagent-dev.yaml"
+  ];
+  const workflowManifestFiles = [...compositeProfileFiles];
+  for (const profileFile of compositeProfileFiles) {
+    assert.equal(
+      existsSync(path.resolve("docker", "mcp", "profiles", profileFile)),
+      false,
+      `${profileFile} should not remain as an authored composite compatibility profile manifest`
+    );
+  }
+  for (const workflowFile of workflowManifestFiles) {
+    assert.equal(
+      existsSync(path.resolve("docker", "mcp", "workflows", workflowFile)),
+      true,
+      `${workflowFile} should exist as an authored workflow manifest`
+    );
+  }
+
+  const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
+  for (const profileId of [
+    "core-dev+docs-research",
+    "core-dev+runtime-observe",
+    "core-dev+security-audit",
+    "core-dev+voltagent-docs",
+    "core-dev+voltagent-dev"
+  ]) {
+    assert.ok(compiled.profiles[profileId], `${profileId} must still compile as a compatibility profile`);
+    assert.ok(compiled.workflows[profileId], `${profileId} must be represented as a compiled workflow`);
+    assert.equal(
+      compiled.profiles[profileId].composite,
+      true,
+      `${profileId} must remain a derived composite compatibility profile`
+    );
   }
 });
 
@@ -1027,9 +1449,19 @@ test("runtime-observe, runtime-admin, and full intents include k8s categories in
 test("checked-in docker/mcp manifests compile into the bootstrap and activated profile graph", () => {
   const compiled = compileToolboxPolicyFromDirectory(path.resolve("docker", "mcp"));
 
+  assert.ok(compiled.bands.bootstrap, "bootstrap band must exist");
+  assert.ok(compiled.bands["docs-research"], "docs-research band must exist");
+  assert.equal(compiled.bands["docs-research"].autoExpand, true);
+  assert.equal(compiled.bands["runtime-admin"].requiresApproval, true);
   assert.equal(compiled.profiles.bootstrap.sessionMode, "toolbox-bootstrap");
+  assert.deepEqual(compiled.profiles.bootstrap.includeBands, ["bootstrap"]);
+  assert.deepEqual(compiled.profiles["docs-research"].includeBands, ["docs-research"]);
   assert.equal(compiled.profiles["docs-research"].sessionMode, "toolbox-activated");
   assert.equal(compiled.profiles["core-dev+docs-research"].composite, true);
+  assert.deepEqual(compiled.profiles["core-dev+docs-research"].includeBands, [
+    "core-dev",
+    "docs-research"
+  ]);
   assert.equal(compiled.profiles["core-dev+runtime-observe"].composite, true);
   assert.ok(compiled.intents["core-dev+docs-research"]);
   assert.ok(compiled.intents["core-dev+runtime-observe"]);
@@ -1623,12 +2055,12 @@ test("core-dev+security-audit composite profile includes semgrep-audit and allow
   const profile = compiled.profiles["core-dev+security-audit"];
   assert.equal(profile.composite, true, "core-dev+security-audit must be a composite profile");
   assert.ok(
-    profile.baseProfiles.includes("core-dev"),
-    "core-dev+security-audit must list core-dev as a base profile"
+    profile.includeBands.includes("core-dev"),
+    "core-dev+security-audit must list core-dev as an included band"
   );
   assert.ok(
-    profile.baseProfiles.includes("security-audit"),
-    "core-dev+security-audit must list security-audit as a base profile"
+    profile.includeBands.includes("security-audit"),
+    "core-dev+security-audit must list security-audit as an included band"
   );
   assert.ok(
     profile.includeServers.includes("semgrep-audit"),
@@ -1834,7 +2266,7 @@ test("checked-in VoltAgent toolbox manifests declare local-stdio Codex materiali
 
   const profile = compiled.profiles["core-dev+voltagent-docs"];
   assert.ok(profile, "core-dev+voltagent-docs profile must exist");
-  assert.ok(profile.baseProfiles.includes("core-dev+docs-research"));
+  assert.deepEqual(profile.includeBands, ["core-dev", "docs-research", "voltagent-docs"]);
   assert.ok(profile.includeServers.includes("voltagent-docs"));
   assert.ok(profile.allowedCategories.includes("docs-search"));
   assert.ok(profile.allowedCategories.includes("repo-write"));

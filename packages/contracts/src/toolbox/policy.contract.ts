@@ -1,3 +1,5 @@
+import type { ActorRole } from "../common/actor-context.js";
+
 export type ToolboxMutationLevel = "read" | "write" | "admin";
 export type ToolboxServerUsageClass = "general" | "docs-only";
 export type ToolboxSessionMode = "toolbox-bootstrap" | "toolbox-activated";
@@ -88,15 +90,60 @@ export interface ToolboxServerManifest {
   dockerRuntime?: ToolboxDockerRuntimeManifest;
 }
 
+export interface ToolboxBandContractionManifest {
+  taskAware: boolean;
+  idleTimeoutSeconds?: number;
+  onLeaseExpiry: boolean;
+}
+
+export interface ToolboxBandCompatibilityProfileManifest {
+  id: string;
+  displayName: string;
+  additionalBands?: string[];
+  sessionMode?: ToolboxSessionMode;
+  compositeReason?: string;
+  fallbackProfile?: string;
+}
+
+export interface ToolboxBandManifest {
+  id: string;
+  displayName: string;
+  trustClass: string;
+  mutationLevel: ToolboxMutationLevel;
+  autoExpand: boolean;
+  requiresApproval: boolean;
+  preferredActorRoles?: ActorRole[];
+  includeServers: string[];
+  allowedCategories: string[];
+  deniedCategories: string[];
+  contraction: ToolboxBandContractionManifest;
+  compatibilityProfiles?: ToolboxBandCompatibilityProfileManifest[];
+}
+
+export interface ToolboxWorkflowManifest {
+  id: string;
+  displayName: string;
+  includeBands: string[];
+  compositeReason: string;
+  fallbackProfile?: string;
+  sessionMode?: ToolboxSessionMode;
+  preferredActorRoles?: ActorRole[];
+  autoExpand?: boolean;
+  requiresApproval?: boolean;
+  summary?: string;
+  exampleTasks?: string[];
+}
+
 export interface ToolboxProfileManifest {
   id: string;
   displayName: string;
   sessionMode: ToolboxSessionMode;
   baseProfiles?: string[];
   compositeReason?: string;
-  includeServers: string[];
-  allowedCategories: string[];
-  deniedCategories: string[];
+  includeBands?: string[];
+  includeServers?: string[];
+  allowedCategories?: string[];
+  deniedCategories?: string[];
   fallbackProfile?: string;
 }
 
@@ -142,6 +189,38 @@ export interface CompiledToolboxServer extends ToolboxServerManifest {
   tools: CompiledToolboxToolDescriptor[];
 }
 
+export interface CompiledToolboxBand {
+  id: string;
+  displayName: string;
+  trustClass: string;
+  mutationLevel: ToolboxMutationLevel;
+  autoExpand: boolean;
+  requiresApproval: boolean;
+  preferredActorRoles: ActorRole[];
+  includeServers: string[];
+  allowedCategories: string[];
+  deniedCategories: string[];
+  contraction: ToolboxBandContractionManifest;
+  tools: CompiledToolboxToolDescriptor[];
+  semanticCapabilities: string[];
+  bandRevision: string;
+}
+
+export interface CompiledToolboxWorkflow {
+  id: string;
+  displayName: string;
+  includeBands: string[];
+  compositeReason: string;
+  fallbackProfile?: string;
+  sessionMode: ToolboxSessionMode;
+  preferredActorRoles: ActorRole[];
+  autoExpand: boolean;
+  requiresApproval: boolean;
+  summary?: string;
+  exampleTasks: string[];
+  workflowRevision: string;
+}
+
 export interface CompiledToolboxProfile {
   id: string;
   displayName: string;
@@ -149,6 +228,7 @@ export interface CompiledToolboxProfile {
   composite: boolean;
   compositeReason?: string;
   baseProfiles: string[];
+  includeBands: string[];
   includeServers: string[];
   allowedCategories: string[];
   deniedCategories: string[];
@@ -179,6 +259,8 @@ export interface CompiledToolboxPolicy {
   categories: Record<string, ToolboxCategoryManifest>;
   trustClasses: Record<string, ToolboxTrustClassManifest>;
   servers: Record<string, CompiledToolboxServer>;
+  bands: Record<string, CompiledToolboxBand>;
+  workflows: Record<string, CompiledToolboxWorkflow>;
   profiles: Record<string, CompiledToolboxProfile>;
   intents: Record<string, CompiledToolboxIntent>;
   clients: Record<string, CompiledToolboxClientOverlay>;

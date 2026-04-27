@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AuditHistoryService } from "@mimir/application";
 import type {
+  ActorRole,
   ToolboxActiveToolboxResponse,
   CompiledToolboxClientOverlay,
   CompiledToolboxIntent,
@@ -37,6 +38,7 @@ interface RequestToolboxActivationInput {
   requiredCategories?: string[];
   taskSummary?: string;
   clientId?: string;
+  actorRole?: ActorRole;
   approval?: ToolboxApprovalGrant;
 }
 
@@ -167,6 +169,7 @@ export class MimirControlSurface {
           sessionMode: profile.sessionMode,
           composite: profile.composite,
           baseProfiles: profile.baseProfiles,
+          includeBands: profile.includeBands,
           compositeReason: profile.compositeReason,
           fallbackProfile: profile.fallbackProfile ?? null,
           profileRevision: profile.profileRevision
@@ -775,6 +778,7 @@ export class MimirControlSurface {
         sessionMode: profile.sessionMode,
         composite: profile.composite,
         baseProfiles: profile.baseProfiles,
+        includeBands: profile.includeBands,
         compositeReason: profile.compositeReason,
         fallbackProfile: profile.fallbackProfile ?? null,
         allowedCategories: profile.allowedCategories,
@@ -961,67 +965,25 @@ export class MimirControlSurface {
     }
 
     if (input.requiredCategories?.length) {
-      const requestedCategories = new Set(input.requiredCategories);
-      const candidates = Object.values(this.policy.intents).filter((intent) =>
-        [...requestedCategories].every((category) => intent.allowedCategories.includes(category))
+      return resolveToolboxIntentForCategories(
+        this.policy,
+        input.requiredCategories,
+        input.actorRole
       );
-      if (candidates.length === 0) {
-        return undefined;
-      }
-
-      return candidates
-        .slice()
-        .sort((left, right) =>
-          this.compareToolboxIntentCandidates(left, right, requestedCategories)
-        )[0];
     }
 
     return undefined;
   }
 
-  private compareToolboxIntentCandidates(
-    left: CompiledToolboxIntent,
-    right: CompiledToolboxIntent,
-    requestedCategories: Set<string>
-  ): number {
-    const score = (intent: CompiledToolboxIntent) => ({
-      requiresApproval: intent.requiresApproval ? 1 : 0,
-      mutationRank: this.getIntentMutationRank(intent),
-      trustLevel: this.policy.trustClasses[intent.trustClass]?.level ?? Number.MAX_SAFE_INTEGER,
-      extraCategoryCount: intent.allowedCategories.filter(
-        (category) => !requestedCategories.has(category)
-      ).length,
-      allowedCategoryCount: intent.allowedCategories.length,
-      id: intent.id
-    });
-
-    const leftScore = score(left);
-    const rightScore = score(right);
-
-    return (
-      leftScore.requiresApproval - rightScore.requiresApproval
-      || leftScore.mutationRank - rightScore.mutationRank
-      || leftScore.trustLevel - rightScore.trustLevel
-      || leftScore.extraCategoryCount - rightScore.extraCategoryCount
-      || leftScore.allowedCategoryCount - rightScore.allowedCategoryCount
-      || leftScore.id.localeCompare(rightScore.id)
-    );
-  }
-
   private findIntentForProfile(profileId: string): CompiledToolboxIntent | undefined {
+    const exactMatch = this.policy.intents[profileId];
+    if (exactMatch?.targetProfile === profileId) {
+      return exactMatch;
+    }
+
     return Object.values(this.policy.intents).find(
       (intent) => intent.targetProfile === profileId
     );
-  }
-
-  private getIntentMutationRank(intent: CompiledToolboxIntent): number {
-    return intent.allowedCategories.reduce((highestRank, categoryId) => {
-      const mutationLevel = this.policy.categories[categoryId]?.mutationLevel;
-      return Math.max(
-        highestRank,
-        mutationLevel ? TOOLBOX_MUTATION_LEVEL_RANK[mutationLevel] : TOOLBOX_MUTATION_LEVEL_RANK.admin
-      );
-    }, TOOLBOX_MUTATION_LEVEL_RANK.read);
   }
 
   private buildToolVisibilityReport(
@@ -1346,7 +1308,7 @@ export class MimirControlSurface {
       };
     }
 
-    const expiresAt = new Date(Date.now() + 30 * 60_000).toISOString();
+    const expiresAt = new Date(Date.now() + resolveLeaseTtlMs()).toISOString();
     const leaseToken = issueToolboxSessionLease(
       {
         version: 1,
@@ -1393,7 +1355,7 @@ export class MimirControlSurface {
     try {
       const claims = verifyToolboxSessionLease(leaseToken, this.options.leaseIssuerSecret);
       try {
-        assertToolboxSessionLeaseLifecycle(claims, 30_000);
+        assertToolboxSessionLeaseLifecycle(claims, resolveLeaseClockSkewToleranceMs());
       } catch (error) {
         if (
           error instanceof Error &&
@@ -1434,6 +1396,64 @@ export function buildMimirControlSurface(
   options: MimirControlSurfaceOptions
 ): MimirControlSurface {
   return new MimirControlSurface(options);
+}
+
+export function resolveToolboxIntentForCategories(
+  policy: CompiledToolboxPolicy,
+  requiredCategories: string[],
+  actorRole?: ActorRole,
+  options?: {
+    filter?: (intent: CompiledToolboxIntent) => boolean;
+  }
+): CompiledToolboxIntent | undefined {
+  const requestedCategories = new Set(requiredCategories);
+  const candidates = Object.values(policy.intents).filter((intent) =>
+    [...requestedCategories].every((category) => intent.allowedCategories.includes(category))
+    && (options?.filter ? options.filter(intent) : true)
+  );
+  if (candidates.length === 0) {
+    return undefined;
+  }
+
+  return candidates
+    .slice()
+    .sort((left, right) =>
+      compareToolboxIntentCandidates(policy, left, right, requestedCategories, actorRole)
+    )[0];
+}
+
+export function findAutoExpandIntentIdForCategories(
+  policy: CompiledToolboxPolicy,
+  activeBandIds: string[],
+  requiredCategories: string[],
+  actorRole?: ActorRole
+): string | undefined {
+  const normalizedActiveBands = uniqueSorted(activeBandIds);
+  if (!(normalizedActiveBands.length === 1 && normalizedActiveBands[0] === "bootstrap")) {
+    return undefined;
+  }
+
+  const intent = resolveToolboxIntentForCategories(
+    policy,
+    requiredCategories,
+    actorRole,
+    {
+      filter: (candidate) => {
+        if (candidate.requiresApproval) {
+          return false;
+        }
+        const profile = policy.profiles[candidate.targetProfile];
+        if (!profile || profile.includeBands.length !== 1) {
+          return false;
+        }
+        const [bandId] = profile.includeBands;
+        const band = policy.bands[bandId];
+        return Boolean(band?.autoExpand && !band.requiresApproval);
+      }
+    }
+  );
+
+  return intent?.id;
 }
 
 function normalizeApprovalGrant(
@@ -1477,8 +1497,127 @@ function safeReadLeaseId(leaseToken: string, issuerSecret?: string): string | un
   }
 }
 
+function resolveLeaseTtlMs(): number {
+  const configuredSeconds = Number.parseInt(
+    process.env.MAB_TOOLBOX_LEASE_TTL_SECONDS?.trim() ?? "",
+    10
+  );
+  if (Number.isFinite(configuredSeconds) && configuredSeconds > 0) {
+    return configuredSeconds * 1000;
+  }
+  return 30 * 60_000;
+}
+
+function resolveLeaseClockSkewToleranceMs(): number {
+  const configuredMs = Number.parseInt(
+    process.env.MAB_TOOLBOX_LEASE_CLOCK_SKEW_MS?.trim() ?? "",
+    10
+  );
+  if (Number.isFinite(configuredMs) && configuredMs >= 0) {
+    return configuredMs;
+  }
+  if (process.env.MAB_TOOLBOX_LEASE_TTL_SECONDS?.trim()) {
+    return 0;
+  }
+  return 30_000;
+}
+
 function compactObject<T extends Record<string, unknown>>(value: T): T {
   return Object.fromEntries(
     Object.entries(value).filter(([, entry]) => entry !== undefined)
   ) as T;
+}
+
+function uniqueSorted<T extends string>(values: T[]): T[] {
+  return [...new Set(values)].sort((left, right) => left.localeCompare(right));
+}
+
+function compareToolboxIntentCandidates(
+  policy: CompiledToolboxPolicy,
+  left: CompiledToolboxIntent,
+  right: CompiledToolboxIntent,
+  requestedCategories: Set<string>,
+  actorRole?: ActorRole
+): number {
+  const leftScore = buildIntentCandidateScore(policy, left, requestedCategories, actorRole);
+  const rightScore = buildIntentCandidateScore(policy, right, requestedCategories, actorRole);
+
+  return (
+    leftScore.requiresApproval - rightScore.requiresApproval
+    || leftScore.mutationRank - rightScore.mutationRank
+    || leftScore.trustLevel - rightScore.trustLevel
+    || leftScore.extraCategoryCount - rightScore.extraCategoryCount
+    || leftScore.bandCount - rightScore.bandCount
+    || rightScore.roleAffinity - leftScore.roleAffinity
+    || leftScore.allowedCategoryCount - rightScore.allowedCategoryCount
+    || leftScore.id.localeCompare(rightScore.id)
+  );
+}
+
+function buildIntentCandidateScore(
+  policy: CompiledToolboxPolicy,
+  intent: CompiledToolboxIntent,
+  requestedCategories: Set<string>,
+  actorRole?: ActorRole
+) {
+  const profile = policy.profiles[intent.targetProfile];
+  const preferredActorRoles = getPreferredActorRolesForProfile(policy, intent.targetProfile);
+  return {
+    requiresApproval: intent.requiresApproval ? 1 : 0,
+    mutationRank: getIntentMutationRank(policy, intent),
+    trustLevel: policy.trustClasses[intent.trustClass]?.level ?? Number.MAX_SAFE_INTEGER,
+    extraCategoryCount: intent.allowedCategories.filter(
+      (category) => !requestedCategories.has(category)
+    ).length,
+    bandCount: profile?.includeBands.length ?? Number.MAX_SAFE_INTEGER,
+    roleAffinity:
+      actorRole && preferredActorRoles.includes(actorRole)
+        ? 1
+        : 0,
+    allowedCategoryCount: intent.allowedCategories.length,
+    id: intent.id
+  };
+}
+
+function getIntentMutationRank(
+  policy: CompiledToolboxPolicy,
+  intent: CompiledToolboxIntent
+): number {
+  const profile = policy.profiles[intent.targetProfile];
+  const categoryRank = intent.allowedCategories.reduce((highestRank, categoryId) => {
+    const mutationLevel = policy.categories[categoryId]?.mutationLevel;
+    return Math.max(
+      highestRank,
+      mutationLevel ? TOOLBOX_MUTATION_LEVEL_RANK[mutationLevel] : TOOLBOX_MUTATION_LEVEL_RANK.admin
+    );
+  }, TOOLBOX_MUTATION_LEVEL_RANK.read);
+
+  const bandRank = (profile?.includeBands ?? []).reduce((highestRank, bandId) => {
+    const mutationLevel = policy.bands[bandId]?.mutationLevel;
+    return Math.max(
+      highestRank,
+      mutationLevel ? TOOLBOX_MUTATION_LEVEL_RANK[mutationLevel] : TOOLBOX_MUTATION_LEVEL_RANK.read
+    );
+  }, TOOLBOX_MUTATION_LEVEL_RANK.read);
+
+  return Math.max(categoryRank, bandRank);
+}
+
+function getPreferredActorRolesForProfile(
+  policy: CompiledToolboxPolicy,
+  profileId: string
+): ActorRole[] {
+  const workflowRoles = policy.workflows[profileId]?.preferredActorRoles;
+  if (workflowRoles?.length) {
+    return workflowRoles;
+  }
+
+  const profile = policy.profiles[profileId];
+  if (!profile) {
+    return [];
+  }
+
+  return uniqueSorted(
+    profile.includeBands.flatMap((bandId) => policy.bands[bandId]?.preferredActorRoles ?? [])
+  ) as ActorRole[];
 }

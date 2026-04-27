@@ -1,0 +1,22 @@
+band:
+  id: heavy-rag
+  displayName: Heavy RAG
+  trustClass: local-readwrite
+  mutationLevel: write
+  autoExpand: false
+  requiresApproval: false
+  includeServers:
+    - mimir-control
+    - mimir-core
+  allowedCategories:
+    - internal-memory
+    - internal-memory-write
+    - model-inference
+  deniedCategories:
+    - github-write
+    - docker-write
+    - deployment
+  contraction:
+    taskAware: true
+    idleTimeoutSeconds: 900
+    onLeaseExpiry: true

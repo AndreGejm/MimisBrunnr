@@ -1056,6 +1056,69 @@ test("windows installer cli audit-toolbox-control-surface reports toolbox discov
   assert.equal(persistedReport.operationId, "audit-toolbox-control-surface");
 });
 
+test("windows installer cli audit-toolbox-control-surface tolerates package-runner noise before JSON payloads", async (t) => {
+  if (process.platform !== "win32") {
+    t.skip("Windows-only installer contract");
+    return;
+  }
+
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-installer-"));
+  const binDir = path.join(root, "bin");
+  const stateRoot = path.join(root, "state");
+  await mkdir(binDir, { recursive: true });
+  await writeFile(
+    path.join(binDir, "corepack.cmd"),
+    [
+      "@echo off",
+      "if \"%~1 %~2 %~3 %~4\"==\"pnpm cli -- list-toolboxes\" (",
+      "  echo ^> @mimir/workspace@1.0.1 cli F:\\Dev\\scripts\\Mimir\\mimir",
+      "  echo ^> pnpm --filter @mimir/cli cli \"--\" \"list-toolboxes\" \"--json\" \"{}\"",
+      "  echo ^(node:12345^) ExperimentalWarning: SQLite is an experimental feature and might change at any time 1^>^&2",
+      "  echo {\"reasonCode\":\"toolbox_discovery\",\"toolboxes\":[{\"id\":\"core-dev\",\"displayName\":\"Core Development\",\"summary\":\"Safe local repository work.\",\"exampleTasks\":[\"Inspect code\"],\"targetProfile\":\"core-dev\",\"trustClass\":\"local-readwrite\",\"requiresApproval\":false,\"allowedCategories\":[\"repo-read\",\"repo-write\"],\"deniedCategories\":[\"deployment\"],\"fallbackProfile\":\"bootstrap\"}]}",
+      "  exit /b 0",
+      ")",
+      "if \"%~1 %~2 %~3 %~4 %~5\"==\"pnpm cli -- describe-toolbox --input\" (",
+      "  echo ^> @mimir/cli@0.1.0 cli F:\\Dev\\scripts\\Mimir\\mimir\\apps\\mimir-cli",
+      "  echo {\"reasonCode\":\"toolbox_discovery\",\"toolbox\":{\"id\":\"core-dev\",\"displayName\":\"Core Development\",\"summary\":\"Safe local repository work.\",\"exampleTasks\":[\"Inspect code\"],\"targetProfile\":\"core-dev\",\"trustClass\":\"local-readwrite\",\"requiresApproval\":false,\"allowedCategories\":[\"repo-read\",\"repo-write\"],\"deniedCategories\":[\"deployment\"],\"fallbackProfile\":\"bootstrap\",\"workflow\":{\"activationMode\":\"session-switch\",\"sessionMode\":\"toolbox-activated\",\"requiresApproval\":false,\"fallbackProfile\":\"bootstrap\"},\"profile\":{\"id\":\"core-dev\",\"displayName\":\"Core Development\",\"sessionMode\":\"toolbox-activated\",\"composite\":false,\"baseProfiles\":[],\"fallbackProfile\":\"bootstrap\",\"profileRevision\":\"profile-core-dev-v1\"},\"tools\":[{\"toolId\":\"repo.read\",\"category\":\"repo-read\"}],\"antiUseCases\":[{\"type\":\"denied_category\",\"category\":\"deployment\"}]}}",
+      "  exit /b 0",
+      ")",
+      "echo unexpected corepack args: %* 1>&2",
+      "exit /b 1"
+    ].join("\r\n"),
+    "utf8"
+  );
+
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const result = await runInstallerCommand(
+    [
+      "-Operation",
+      "audit-toolbox-control-surface",
+      "-RepoRoot",
+      process.cwd(),
+      "-StateRoot",
+      stateRoot,
+      "-Json"
+    ],
+    {
+      env: {
+        ...process.env,
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`
+      }
+    }
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const envelope = JSON.parse(result.stdout);
+  assert.equal(envelope.operationId, "audit-toolbox-control-surface");
+  assert.equal(envelope.status, "success");
+  assert.equal(envelope.reasonCode, "toolbox_control_surface_audited");
+  assert.equal(envelope.details.toolboxControlSurface.toolboxCount, 1);
+  assert.equal(envelope.details.toolboxControlSurface.describedToolboxId, "core-dev");
+});
+
 test("windows installer cli audit-active-toolbox-session reports active workflow, profile, and filtered tool counts", async (t) => {
   if (process.platform !== "win32") {
     t.skip("Windows-only installer contract");
@@ -1264,6 +1327,185 @@ test("windows installer cli audit-toolbox-client-handoff reports reconnect contr
     await readFile(path.join(stateRoot, "last-report.json"), "utf8")
   );
   assert.equal(persistedReport.operationId, "audit-toolbox-client-handoff");
+});
+
+test("windows installer cli audit-toolbox-rollout-readiness combines handoff, session, and Docker apply blockers", async (t) => {
+  if (process.platform !== "win32") {
+    t.skip("Windows-only installer contract");
+    return;
+  }
+
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-installer-"));
+  const binDir = path.join(root, "bin");
+  const stateRoot = path.join(root, "state");
+  const configPath = path.join(root, "config.toml");
+  const manifestPath = path.join(root, "installation.json");
+  const workspacePath = path.join(root, "workspace");
+  const homeRoot = path.join(root, "home");
+  await mkdir(binDir, { recursive: true });
+  await mkdir(workspacePath, { recursive: true });
+  await writeFile(path.join(binDir, "mimir.cmd"), "@echo off\r\nREM placeholder\r\n", "utf8");
+  await writeFile(
+    path.join(binDir, "corepack.cmd"),
+    [
+      "@echo off",
+      "if \"%~1 %~2 %~3 %~4\"==\"pnpm cli -- list-toolboxes\" (",
+      "  echo {\"reasonCode\":\"toolbox_discovery\",\"toolboxes\":[{\"id\":\"core-dev\",\"displayName\":\"Core Development\",\"summary\":\"Safe local repository work.\",\"exampleTasks\":[\"Inspect code\"],\"targetProfile\":\"core-dev\",\"trustClass\":\"local-readwrite\",\"requiresApproval\":false,\"allowedCategories\":[\"repo-read\",\"repo-write\"],\"deniedCategories\":[\"deployment\"],\"fallbackProfile\":\"bootstrap\"},{\"id\":\"core-dev+docs-research\",\"displayName\":\"Core Dev Plus Docs Research\",\"summary\":\"Code plus docs.\",\"exampleTasks\":[\"Implement a fix with docs\"],\"targetProfile\":\"core-dev+docs-research\",\"trustClass\":\"external-read\",\"requiresApproval\":false,\"allowedCategories\":[\"repo-read\",\"repo-write\",\"docs-search\"],\"deniedCategories\":[\"deployment\"],\"fallbackProfile\":\"core-dev\"},{\"id\":\"runtime-admin\",\"displayName\":\"Runtime Admin\",\"summary\":\"Approved runtime mutation.\",\"exampleTasks\":[\"Restart a container\"],\"targetProfile\":\"runtime-admin\",\"trustClass\":\"ops-mutate\",\"requiresApproval\":true,\"allowedCategories\":[\"docker-read\",\"docker-write\"],\"deniedCategories\":[\"deployment\"],\"fallbackProfile\":\"runtime-observe\"}]}",
+      "  exit /b 0",
+      ")",
+      "if \"%~1 %~2 %~3 %~4\"==\"pnpm cli -- describe-toolbox\" (",
+      "  echo {\"reasonCode\":\"toolbox_discovery\",\"toolbox\":{\"id\":\"core-dev\",\"displayName\":\"Core Development\",\"summary\":\"Safe local repository work.\",\"exampleTasks\":[\"Inspect code\"],\"targetProfile\":\"core-dev\",\"trustClass\":\"local-readwrite\",\"requiresApproval\":false,\"allowedCategories\":[\"repo-read\",\"repo-write\"],\"deniedCategories\":[\"deployment\"],\"fallbackProfile\":\"bootstrap\",\"workflow\":{\"activationMode\":\"session-switch\",\"sessionMode\":\"toolbox-activated\",\"requiresApproval\":false,\"fallbackProfile\":\"bootstrap\"},\"profile\":{\"id\":\"core-dev\",\"displayName\":\"Core Development\",\"sessionMode\":\"toolbox-activated\",\"composite\":false,\"baseProfiles\":[],\"fallbackProfile\":\"bootstrap\",\"profileRevision\":\"profile-core-dev-v1\"},\"tools\":[{\"toolId\":\"repo.read\",\"category\":\"repo-read\"},{\"toolId\":\"repo.write\",\"category\":\"repo-write\"}],\"antiUseCases\":[{\"type\":\"denied_category\",\"category\":\"deployment\"}]}}",
+      "  exit /b 0",
+      ")",
+      "if \"%~1 %~2 %~3 %~4\"==\"pnpm cli -- list-active-toolbox\" (",
+      "  echo {\"workflow\":{\"toolboxId\":\"core-dev\",\"activationMode\":\"session-switch\",\"sessionMode\":\"toolbox-bootstrap\",\"requiresApproval\":false,\"fallbackProfile\":\"bootstrap\"},\"profile\":{\"id\":\"bootstrap\",\"displayName\":\"Bootstrap\",\"sessionMode\":\"toolbox-bootstrap\",\"composite\":false,\"baseProfiles\":[],\"fallbackProfile\":\"bootstrap\",\"allowedCategories\":[\"repo-read\"],\"deniedCategories\":[\"docker-write\"],\"semanticCapabilities\":[\"repo.read\"],\"profileRevision\":\"profile-bootstrap-v1\"},\"client\":{\"id\":\"codex\",\"displayName\":\"Codex\",\"handoffStrategy\":\"env-reconnect\",\"handoffPresetRef\":\"codex/toolbox\",\"suppressServerIds\":[],\"suppressToolIds\":[],\"suppressCategories\":[],\"suppressedSemanticCapabilities\":[]}}",
+      "  exit /b 0",
+      ")",
+      "if \"%~1 %~2 %~3 %~4\"==\"pnpm cli -- list-active-tools\" (",
+      "  echo {\"declaredTools\":[{\"toolId\":\"repo.read\"},{\"toolId\":\"repo.write\"},{\"toolId\":\"github.write\"}],\"activeTools\":[{\"toolId\":\"repo.read\"},{\"toolId\":\"repo.write\"}],\"suppressedTools\":[{\"toolId\":\"github.write\",\"suppressionReasons\":[\"client_suppress_category\"]}],\"tools\":[{\"toolId\":\"repo.read\"},{\"toolId\":\"repo.write\"}]}",
+      "  exit /b 0",
+      ")",
+      "echo unexpected corepack args: %* 1>&2",
+      "exit /b 1"
+    ].join("\r\n"),
+    "utf8"
+  );
+  await writeFile(
+    path.join(binDir, "docker.cmd"),
+    [
+      "@echo off",
+      "if \"%~1 %~2\"==\"mcp version\" (",
+      "  echo v0.40.3",
+      "  exit /b 0",
+      ")",
+      "if \"%~1 %~2 %~3 %~4\"==\"mcp server ls --json\" (",
+      "  echo [{\"name\":\"mimir-control\",\"description\":\"Control server\",\"secrets\":\"none\",\"config\":\"done\",\"oauth\":\"none\"},{\"name\":\"brave\",\"description\":\"Brave Search\",\"secrets\":\"done\",\"config\":\"done\",\"oauth\":\"none\"},{\"name\":\"grafana\",\"description\":\"Grafana\",\"secrets\":\"done\",\"config\":\"done\",\"oauth\":\"none\"},{\"name\":\"github\",\"description\":\"GitHub\",\"secrets\":\"done\",\"config\":\"done\",\"oauth\":\"none\"},{\"name\":\"filesystem\",\"description\":\"Filesystem\",\"secrets\":\"none\",\"config\":\"done\",\"oauth\":\"none\"},{\"name\":\"rtk-codex\",\"description\":\"RTK Codex\",\"secrets\":\"none\",\"config\":\"done\",\"oauth\":\"none\"}]",
+      "  exit /b 0",
+      ")",
+      "if \"%~1 %~2 %~3 %~4\"==\"mcp client ls --json\" (",
+      "  echo {\"codex\":{\"displayName\":\"Codex\",\"dockerMCPCatalogConnected\":true,\"profile\":\"workspace\",\"error\":null,\"Cfg\":null,\"isConfigured\":true}}",
+      "  exit /b 0",
+      ")",
+      "if \"%~1 %~2 %~3\"==\"mcp config read\" (",
+      "  echo filesystem:",
+      "  echo   paths:",
+      "  echo     - F:\\Dev",
+      "  exit /b 0",
+      ")",
+      "if \"%~1 %~2 %~3\"==\"mcp feature ls\" (",
+      "  echo dynamic-tools enabled",
+      "  exit /b 0",
+      ")",
+      "if \"%~1 %~2 %~3\"==\"mcp profile --help\" (",
+      "  echo unknown command \"profile\" 1>&2",
+      "  exit /b 1",
+      ")",
+      "echo unexpected docker args: %* 1>&2",
+      "exit /b 1"
+    ].join("\r\n"),
+    "utf8"
+  );
+
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const applyResult = await runInstallerCommand(
+    [
+      "-Operation",
+      "apply-client-access",
+      "-RepoRoot",
+      process.cwd(),
+      "-ClientName",
+      "codex",
+      "-ConfigPath",
+      configPath,
+      "-BinDir",
+      binDir,
+      "-ManifestPath",
+      manifestPath,
+      "-WorkspacePath",
+      workspacePath,
+      "-HomeRoot",
+      homeRoot,
+      "-StateRoot",
+      stateRoot,
+      "-Json"
+    ],
+    {
+      env: {
+        ...process.env,
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`
+      }
+    }
+  );
+  assert.equal(applyResult.exitCode, 0, applyResult.stderr);
+
+  const result = await runInstallerCommand(
+    [
+      "-Operation",
+      "audit-toolbox-rollout-readiness",
+      "-RepoRoot",
+      process.cwd(),
+      "-ClientName",
+      "codex",
+      "-ConfigPath",
+      configPath,
+      "-BinDir",
+      binDir,
+      "-ManifestPath",
+      manifestPath,
+      "-StateRoot",
+      stateRoot,
+      "-Json"
+    ],
+    {
+      env: {
+        ...process.env,
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`
+      }
+    }
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const envelope = JSON.parse(result.stdout);
+  assert.equal(envelope.operationId, "audit-toolbox-rollout-readiness");
+  assert.equal(envelope.mode, "audit_only");
+  assert.equal(envelope.status, "user_action_required");
+  assert.equal(envelope.reasonCode, "toolbox_rollout_follow_up");
+  assert.equal(envelope.commandsRun.length, 14);
+  assert.equal(envelope.details.toolboxRolloutReadiness.clientId, "codex");
+  assert.equal(envelope.details.toolboxRolloutReadiness.summary.controlSurfaceReady, true);
+  assert.equal(envelope.details.toolboxRolloutReadiness.summary.clientHandoffReady, true);
+  assert.equal(envelope.details.toolboxRolloutReadiness.summary.bootstrapSession, true);
+  assert.equal(
+    envelope.details.toolboxRolloutReadiness.summary.dockerGovernanceStatus,
+    "drift_detected"
+  );
+  assert.equal(envelope.details.toolboxRolloutReadiness.summary.dockerApplyCompatible, false);
+  assert.deepEqual(envelope.details.toolboxRolloutReadiness.summary.blockedAreas, [
+    "docker_mcp_governance_drift",
+    "docker_mcp_apply_blocked"
+  ]);
+  assert.equal(
+    envelope.details.toolboxRolloutReadiness.toolboxClientHandoff.reasonCode,
+    "toolbox_client_handoff_ready"
+  );
+  assert.equal(
+    envelope.details.toolboxRolloutReadiness.dockerMcpToolkitApplyPlan.reasonCode,
+    "docker_mcp_toolkit_apply_plan_blocked"
+  );
+  assert.ok(
+    envelope.nextActions.some((item) => /align enabled docker mcp servers/i.test(item))
+  );
+  assert.ok(
+    envelope.nextActions.some((item) => /upgrade or adapt the docker mcp toolkit contract/i.test(item))
+  );
+
+  const persistedReport = JSON.parse(
+    await readFile(path.join(stateRoot, "last-report.json"), "utf8")
+  );
+  assert.equal(persistedReport.operationId, "audit-toolbox-rollout-readiness");
 });
 
 test("windows installer cli plan-docker-mcp-toolkit-apply remains blocked when profile support exists but descriptor-only servers are present", async (t) => {

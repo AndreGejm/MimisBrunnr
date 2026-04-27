@@ -1,0 +1,22 @@
+band:
+  id: delivery-admin
+  displayName: Delivery Admin
+  trustClass: operator-only
+  mutationLevel: admin
+  autoExpand: false
+  requiresApproval: true
+  includeServers:
+    - mimir-control
+    - mimir-core
+    - github-write
+    - docker-admin
+  allowedCategories:
+    - repo-read
+    - github-write
+    - docker-write
+    - deployment
+  deniedCategories: []
+  contraction:
+    taskAware: true
+    idleTimeoutSeconds: 600
+    onLeaseExpiry: true

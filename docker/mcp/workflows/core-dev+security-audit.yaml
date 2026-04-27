@@ -1,0 +1,8 @@
+workflow:
+  id: core-dev+security-audit
+  displayName: Core Dev Plus Security Audit
+  includeBands:
+    - core-dev
+    - security-audit
+  compositeReason: repeated_workflow
+  fallbackProfile: core-dev

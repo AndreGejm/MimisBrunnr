@@ -1,0 +1,19 @@
+band:
+  id: voltagent-docs
+  displayName: VoltAgent Docs
+  trustClass: external-read
+  mutationLevel: read
+  autoExpand: true
+  requiresApproval: false
+  includeServers:
+    - voltagent-docs
+  allowedCategories:
+    - docs-search
+  deniedCategories:
+    - github-write
+    - docker-write
+    - deployment
+  contraction:
+    taskAware: true
+    idleTimeoutSeconds: 1200
+    onLeaseExpiry: true

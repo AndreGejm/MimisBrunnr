@@ -1,0 +1,23 @@
+band:
+  id: bootstrap
+  displayName: Bootstrap
+  trustClass: local-read
+  mutationLevel: read
+  autoExpand: false
+  requiresApproval: false
+  includeServers:
+    - mimir-control
+    - mimir-core
+  allowedCategories:
+    - repo-read
+    - local-docs
+    - internal-memory
+  deniedCategories:
+    - repo-write
+    - internal-memory-write
+    - github-write
+    - docker-write
+    - deployment
+  contraction:
+    taskAware: false
+    onLeaseExpiry: true

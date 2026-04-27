@@ -3,6 +3,7 @@
 import path from "node:path";
 import process from "node:process";
 import {
+  compileToolboxCandidateCatalogFromDirectory,
   compileDockerMcpRuntimePlan,
   compileToolboxPolicyFromDirectory
 } from "../../packages/infrastructure/dist/index.js";
@@ -30,6 +31,10 @@ function parseArgs(argv) {
 
 function buildValidReport(sourceDirectory) {
   const policy = compileToolboxPolicyFromDirectory(sourceDirectory);
+  const candidateCatalog = compileToolboxCandidateCatalogFromDirectory(
+    path.join(sourceDirectory, "candidates"),
+    policy
+  );
   const runtimePlan = compileDockerMcpRuntimePlan(policy, {
     generatedAt: new Date().toISOString()
   });
@@ -45,7 +50,9 @@ function buildValidReport(sourceDirectory) {
       profiles: Object.keys(policy.profiles).length,
       intents: Object.keys(policy.intents).length,
       clients: Object.keys(policy.clients).length,
-      tools: Object.values(policy.servers).reduce((total, server) => total + server.tools.length, 0)
+      tools: Object.values(policy.servers).reduce((total, server) => total + server.tools.length, 0),
+      candidateRegistries: candidateCatalog.registries.length,
+      candidates: candidateCatalog.candidateCount
     },
     runtimePlan: {
       generatedAt: runtimePlan.generatedAt,
@@ -53,6 +60,25 @@ function buildValidReport(sourceDirectory) {
       profileCount: runtimePlan.profiles.length,
       serverIds: runtimePlan.servers.map((server) => server.id),
       profileIds: runtimePlan.profiles.map((profile) => profile.id)
+    },
+    candidateCatalog: {
+      registryRevision: candidateCatalog.registryRevision,
+      registryCount: candidateCatalog.registries.length,
+      candidateCount: candidateCatalog.candidateCount,
+      registryIds: candidateCatalog.registries.map((registry) => registry.id),
+      registries: candidateCatalog.registries.map((registry) => ({
+        id: registry.id,
+        displayName: registry.displayName,
+        sourceUrl: registry.sourceUrl,
+        candidateCount: registry.candidates.length,
+        decisionCounts: registry.candidates.reduce(
+          (counts, candidate) => {
+            counts[candidate.decision] += 1;
+            return counts;
+          },
+          { accepted: 0, deferred: 0, rejected: 0 }
+        )
+      }))
     },
     bootstrapProfilePresent: Object.hasOwn(policy.profiles, "bootstrap"),
     controlServerPresent: Object.hasOwn(policy.servers, "mimir-control"),
@@ -73,7 +99,9 @@ function buildInvalidReport(sourceDirectory, error) {
       profiles: 0,
       intents: 0,
       clients: 0,
-      tools: 0
+      tools: 0,
+      candidateRegistries: 0,
+      candidates: 0
     },
     runtimePlan: {
       generatedAt: null,
@@ -81,6 +109,13 @@ function buildInvalidReport(sourceDirectory, error) {
       profileCount: 0,
       serverIds: [],
       profileIds: []
+    },
+    candidateCatalog: {
+      registryRevision: null,
+      registryCount: 0,
+      candidateCount: 0,
+      registryIds: [],
+      registries: []
     },
     bootstrapProfilePresent: false,
     controlServerPresent: false,
@@ -99,10 +134,13 @@ function renderSummary(report) {
   if (report.status === "valid") {
     lines.push(`manifestRevision: ${report.manifestRevision}`);
     lines.push(
-      `counts: categories=${report.counts.categories}, trustClasses=${report.counts.trustClasses}, servers=${report.counts.servers}, profiles=${report.counts.profiles}, intents=${report.counts.intents}, clients=${report.counts.clients}, tools=${report.counts.tools}`
+      `counts: categories=${report.counts.categories}, trustClasses=${report.counts.trustClasses}, servers=${report.counts.servers}, profiles=${report.counts.profiles}, intents=${report.counts.intents}, clients=${report.counts.clients}, tools=${report.counts.tools}, candidateRegistries=${report.counts.candidateRegistries}, candidates=${report.counts.candidates}`
     );
     lines.push(
       `runtimePlan: profiles=${report.runtimePlan.profileCount}, servers=${report.runtimePlan.serverCount}`
+    );
+    lines.push(
+      `candidateCatalog: registries=${report.candidateCatalog.registryCount}, candidates=${report.candidateCatalog.candidateCount}`
     );
     lines.push(`bootstrapProfilePresent: ${report.bootstrapProfilePresent}`);
     lines.push(`controlServerPresent: ${report.controlServerPresent}`);

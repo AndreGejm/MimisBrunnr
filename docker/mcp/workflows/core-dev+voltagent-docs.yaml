@@ -1,0 +1,9 @@
+workflow:
+  id: core-dev+voltagent-docs
+  displayName: Core Dev Plus VoltAgent Docs
+  includeBands:
+    - core-dev
+    - docs-research
+    - voltagent-docs
+  compositeReason: repeated_workflow
+  fallbackProfile: core-dev+docs-research

@@ -17,7 +17,8 @@ function parseArgs(argv) {
     json: false,
     manifestPath: getDefaultInstallationManifestPath(),
     repoRoot: getRepoRootFromScript(import.meta.url),
-    serverName: "mimir"
+    serverName: "mimir",
+    toolboxClientId: "codex"
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -54,6 +55,12 @@ function parseArgs(argv) {
     if (value === "--server-name") {
       options.serverName = argv[index + 1];
       index += 1;
+      continue;
+    }
+
+    if (value === "--client-id") {
+      options.toolboxClientId = argv[index + 1];
+      index += 1;
     }
   }
 
@@ -70,6 +77,17 @@ function renderHumanReport(report) {
     `manifest: ${report.manifest.exists ? "present" : "missing"} (${report.manifest.path})`,
     `dockerMcpProfiles: ${report.dockerMcp.profileSupport.supported ? "supported" : "unsupported"} (${report.dockerMcp.profileSupport.executable} ${report.dockerMcp.profileSupport.probeCommand.join(" ")})`,
     `dockerMcpGatewayProfiles: ${report.dockerMcp.gatewayProfileSupport.supported ? "supported" : "unsupported"} (${report.dockerMcp.gatewayProfileSupport.executable} ${report.dockerMcp.gatewayProfileSupport.probeCommand.join(" ")})`,
+    `toolboxRolloutReadiness: ${report.toolboxRolloutReadiness.status} (${report.toolboxRolloutReadiness.reasonCode})`,
+    `toolboxSessionMode: ${report.toolboxRolloutReadiness.summary.sessionMode ?? "unknown"}`,
+    `toolboxClientHandoff: ${report.toolboxRolloutReadiness.summary.clientHandoffReady ? "ready" : "follow-up"}`,
+    `dockerGovernance: ${report.toolboxRolloutReadiness.summary.dockerGovernanceStatus ?? "unavailable"}`,
+    `dockerApply: ${report.toolboxRolloutReadiness.summary.dockerApplyCompatible ? "compatible" : "blocked"}`,
+    report.toolboxRolloutReadiness.summary.blockedAreas.length > 0
+      ? `toolboxBlockedAreas: ${report.toolboxRolloutReadiness.summary.blockedAreas.join(", ")}`
+      : "toolboxBlockedAreas: none",
+    report.toolboxRolloutReadiness.nextActions.length > 0
+      ? `toolboxNext: ${report.toolboxRolloutReadiness.nextActions.join(" ")}`
+      : "toolboxNext: no action needed",
     report.recommendations.length > 0
       ? `next: ${report.recommendations.join(" ")}`
       : "next: no action needed"
@@ -82,7 +100,8 @@ const report = evaluateDefaultAccess({
   codexConfigPath: options.configPath,
   launcherBinDir: options.binDir,
   manifestPath: options.manifestPath,
-  serverName: options.serverName
+  serverName: options.serverName,
+  toolboxClientId: options.toolboxClientId
 });
 
 if (options.json) {

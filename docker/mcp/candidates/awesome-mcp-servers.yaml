@@ -1,0 +1,97 @@
+registry:
+  id: awesome-mcp-servers
+  displayName: Awesome MCP Servers Curation
+  sourceUrl: https://github.com/punkpeye/awesome-mcp-servers
+  candidates:
+    - candidateId: mcp-shield
+      displayName: MCP Shield
+      upstreamUrl: https://github.com/muhannad-hash/mcp-shield
+      targetProfile: security-audit
+      category: security-scan-read
+      trustClass: external-read
+      mutationLevel: read
+      overlapsWith:
+        - semgrep-audit
+      decision: deferred
+      vettingNotes: >-
+        Strong fit for MCP/server supply-chain review, but defer until we add a
+        dedicated supply-chain audit lane or confirm a concrete gap beyond the
+        existing Semgrep-based security audit surface.
+    - candidateId: agent-bom
+      displayName: Agent BOM
+      upstreamUrl: https://github.com/msaad00/agent-bom
+      targetProfile: security-audit
+      category: security-scan-read
+      trustClass: external-read
+      mutationLevel: read
+      overlapsWith:
+        - semgrep-audit
+      decision: deferred
+      vettingNotes: >-
+        Promising for agent supply-chain and compliance posture, but broader
+        than the current v1 toolbox goal. Revisit after we separate static code
+        scanning from MCP and dependency governance.
+    - candidateId: openobserve-community-mcp
+      displayName: OpenObserve Community MCP
+      upstreamUrl: https://github.com/alilxxey/openobserve-community-mcp
+      targetProfile: runtime-observe
+      category: logs-read
+      trustClass: ops-read
+      mutationLevel: read
+      overlapsWith:
+        - grafana-observe
+      decision: deferred
+      vettingNotes: >-
+        Good read-only observability candidate if OpenObserve becomes part of
+        the stack. Defer until we need a second observability backend beyond
+        Grafana-centered workflows.
+    - candidateId: sentry-mcp
+      displayName: Sentry MCP
+      upstreamUrl: https://github.com/getsentry/sentry-mcp
+      targetProfile: runtime-observe
+      category: traces-read
+      trustClass: ops-read
+      mutationLevel: read
+      overlapsWith:
+        - grafana-observe
+      decision: deferred
+      vettingNotes: >-
+        Strong coding-agent debugging fit, but we should only add it when Sentry
+        becomes an active operational system in this environment to avoid
+        duplicate incident and trace surfaces.
+    - candidateId: ig-mcp-server
+      displayName: Inspektor Gadget MCP Server
+      upstreamUrl: https://github.com/inspektor-gadget/ig-mcp-server
+      targetProfile: runtime-observe
+      category: k8s-read
+      trustClass: ops-read
+      mutationLevel: read
+      overlapsWith:
+        - kubernetes-read
+      decision: deferred
+      vettingNotes: >-
+        Potentially valuable for deep Kubernetes and container debugging, but
+        it adds another cluster-observe surface. Revisit when the Docker Desktop
+        Kubernetes workflow needs eBPF-level diagnostics.
+    - candidateId: roundtable
+      displayName: Roundtable
+      upstreamUrl: https://github.com/askbudi/roundtable
+      overlapsWith:
+        - docker-gateway
+        - mimir-control
+      decision: rejected
+      vettingNotes: >-
+        Reject for v1 because a meta-MCP or assistant aggregator conflicts with
+        the toolbox control-plane split. Docker Gateway and Mimir already own
+        routing and intent resolution boundaries.
+    - candidateId: mcp-gateway
+      displayName: MCP Gateway
+      upstreamUrl: https://github.com/MikkoParkkola/mcp-gateway
+      overlapsWith:
+        - docker-gateway
+        - mimir-control
+      decision: rejected
+      vettingNotes: >-
+        Reject as a peer candidate for this toolbox. It duplicates the gateway
+        and discovery responsibilities that already belong to Docker MCP Gateway
+        plus the Mimir control surface.

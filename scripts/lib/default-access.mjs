@@ -3,6 +3,11 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  buildDockerMcpRuntimeApplyPlan,
+  compileDockerMcpRuntimePlan,
+  compileToolboxPolicyFromDirectory
+} from "../../packages/infrastructure/dist/index.js";
 
 export const COMPATIBILITY_LAUNCHER_NAMES = Object.freeze([
   "mimir",
@@ -582,6 +587,7 @@ export function evaluateDefaultAccess({
   launcherBinDir = getDefaultWindowsLauncherBinDir(),
   manifestPath = getDefaultInstallationManifestPath(),
   serverName = "mimir",
+  toolboxClientId = process.env.MAB_TOOLBOX_CLIENT_ID?.trim() || "codex",
   pathValue = process.env.PATH ?? "",
   dockerExecutable = process.env.MIMIR_DOCKER_EXECUTABLE?.trim() || "docker",
   dockerExecutableArgs = parseJsonStringArrayEnv(
@@ -659,6 +665,17 @@ export function evaluateDefaultAccess({
     },
     dockerTools,
     dockerMcp,
+    toolboxRolloutReadiness: evaluateToolboxRolloutReadiness({
+      repoRoot,
+      toolboxClientId,
+      codexConfigured,
+      launchersInstalled,
+      launchersOnPath,
+      manifestValid: manifest.exists && manifest.error === null,
+      dockerMcp,
+      dockerExecutable,
+      dockerExecutableArgs
+    }),
     recommendations: []
   };
 
@@ -716,6 +733,359 @@ export function evaluateDefaultAccess({
   }
 
   return report;
+}
+
+function evaluateToolboxRolloutReadiness({
+  repoRoot,
+  toolboxClientId,
+  codexConfigured,
+  launchersInstalled,
+  launchersOnPath,
+  manifestValid,
+  dockerMcp,
+  dockerExecutable,
+  dockerExecutableArgs
+}) {
+  const manifestDirectory = path.join(repoRoot, "docker", "mcp");
+  const activeProfileId = process.env.MAB_TOOLBOX_ACTIVE_PROFILE?.trim() || "bootstrap";
+  const clientId = toolboxClientId?.trim() || "codex";
+  const nextActions = new Set();
+
+  try {
+    const policy = compileToolboxPolicyFromDirectory(manifestDirectory);
+    const profile = policy.profiles[activeProfileId];
+    const client = policy.clients[clientId];
+    const bootstrapProfile = policy.profiles.bootstrap;
+    const controlServerPresent = Object.hasOwn(policy.servers, "mimir-control");
+    const coreServerPresent = Object.hasOwn(policy.servers, "mimir-core");
+    const controlSurfaceReady =
+      Boolean(bootstrapProfile) && controlServerPresent && coreServerPresent;
+    const activeSessionAudited = Boolean(profile);
+    const accessConfigured =
+      codexConfigured &&
+      launchersInstalled &&
+      launchersOnPath &&
+      manifestValid;
+    const runtimeClientMatchesSelectedClient = Boolean(client) && client.id === clientId;
+    const handoffStrategyDetected = typeof client?.handoffStrategy === "string" && client.handoffStrategy.trim() !== "";
+    const handoffPresetRequired = client?.handoffStrategy === "manual-env-reconnect";
+    const handoffPresetAvailable =
+      !handoffPresetRequired ||
+      (typeof client?.handoffPresetRef === "string" && client.handoffPresetRef.trim() !== "");
+    const clientHandoffReady =
+      accessConfigured &&
+      runtimeClientMatchesSelectedClient &&
+      handoffStrategyDetected &&
+      handoffPresetAvailable;
+    const plan = compileDockerMcpRuntimePlan(policy, {
+      generatedAt: "1970-01-01T00:00:00.000Z"
+    });
+    const applyPlan = buildDockerMcpRuntimeApplyPlan(plan);
+    const governance = evaluateDockerMcpGovernanceDrift({
+      plan,
+      executable: dockerExecutable,
+      executableArgs: dockerExecutableArgs
+    });
+    const dockerApplyCompatible =
+      dockerMcp.profileSupport.supported &&
+      dockerMcp.gatewayProfileSupport.supported &&
+      (applyPlan.blockedServers?.length ?? 0) === 0;
+    const sessionMode = profile?.sessionMode ?? null;
+    const bootstrapSession = sessionMode === "toolbox-bootstrap";
+    const blockedAreas = [];
+
+    if (!controlSurfaceReady) {
+      blockedAreas.push("toolbox_control_surface");
+    }
+    if (!clientHandoffReady) {
+      blockedAreas.push("client_handoff");
+    }
+    if (governance.governanceStatus === "unavailable") {
+      blockedAreas.push("docker_mcp_governance_unavailable");
+    } else if (governance.governanceStatus !== "clean") {
+      blockedAreas.push("docker_mcp_governance_drift");
+    }
+    if (!dockerApplyCompatible) {
+      blockedAreas.push("docker_mcp_apply_blocked");
+    }
+
+    if (!accessConfigured) {
+      nextActions.add(
+        "Run install-default-access.mjs before relying on toolbox reconnect handoff."
+      );
+    }
+    if (!runtimeClientMatchesSelectedClient) {
+      nextActions.add(
+        "Align the selected default-access client with the active toolbox runtime client before using reconnect handoff."
+      );
+    }
+    if (!handoffStrategyDetected) {
+      nextActions.add(
+        "Add handoffStrategy metadata for the selected client in docker/mcp/clients."
+      );
+    }
+    if (!handoffPresetAvailable) {
+      nextActions.add(
+        "Add a handoffPresetRef for manual reconnect clients before relying on toolbox handoff."
+      );
+    }
+    if (bootstrapSession) {
+      nextActions.add(
+        "This client is still in bootstrap mode; request toolbox activation through mimir-control outside the installer when broader capabilities are needed."
+      );
+    }
+    if (governance.governanceStatus === "drift_detected") {
+      nextActions.add(
+        "Align enabled Docker MCP servers with the repo-governed toolbox runtime before relying on rollout readiness."
+      );
+    } else if (governance.governanceStatus === "unavailable") {
+      nextActions.add(
+        "Fix Docker MCP governance drift evaluation before relying on rollout readiness."
+      );
+    }
+    if (!dockerApplyCompatible) {
+      nextActions.add(
+        "Upgrade or adapt the Docker MCP Toolkit contract before attempting toolbox runtime apply."
+      );
+    }
+    for (const blockedServer of applyPlan.blockedServers ?? []) {
+      if (blockedServer?.blockedReason) {
+        nextActions.add(blockedServer.blockedReason);
+      }
+    }
+
+    return {
+      status: blockedAreas.length === 0 ? "success" : "user_action_required",
+      reasonCode:
+        blockedAreas.length === 0
+          ? "toolbox_rollout_ready"
+          : "toolbox_rollout_follow_up",
+      clientId,
+      summary: {
+        controlSurfaceReady,
+        activeSessionAudited,
+        sessionMode,
+        bootstrapSession,
+        clientHandoffReady,
+        runtimeClientMatchesSelectedClient,
+        dockerGovernanceStatus: governance.governanceStatus,
+        dockerGovernanceClean: governance.governanceStatus === "clean",
+        dockerApplyCompatible,
+        blockedAreas
+      },
+      governanceSummaryCounts: governance.governanceSummaryCounts,
+      governedEnabledServers: governance.governedEnabledServers,
+      unsafeEnabledServers: governance.unsafeEnabledServers,
+      unmanagedEnabledServers: governance.unmanagedEnabledServers,
+      governanceUnavailableReason: governance.governanceUnavailableReason,
+      blockedServers: applyPlan.blockedServers ?? [],
+      nextActions: [...nextActions]
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      status: "user_action_required",
+      reasonCode: "toolbox_rollout_follow_up",
+      clientId,
+      summary: {
+        controlSurfaceReady: false,
+        activeSessionAudited: false,
+        sessionMode: null,
+        bootstrapSession: false,
+        clientHandoffReady: false,
+        runtimeClientMatchesSelectedClient: false,
+        dockerGovernanceStatus: "unavailable",
+        dockerGovernanceClean: false,
+        dockerApplyCompatible: false,
+        blockedAreas: [
+          "toolbox_control_surface",
+          "client_handoff",
+          "docker_mcp_governance_unavailable",
+          "docker_mcp_apply_blocked"
+        ]
+      },
+      governanceSummaryCounts: {
+        governedEnabledServerCount: 0,
+        unsafeEnabledServerCount: 0,
+        unmanagedEnabledServerCount: 0
+      },
+      governedEnabledServers: [],
+      unsafeEnabledServers: [],
+      unmanagedEnabledServers: [],
+      governanceUnavailableReason: message,
+      blockedServers: [],
+      nextActions: [
+        "Repair the checked-in toolbox policy manifests before relying on rollout readiness.",
+        "Fix Docker MCP governance drift evaluation before relying on rollout readiness.",
+        "Upgrade or adapt the Docker MCP Toolkit contract before attempting toolbox runtime apply."
+      ],
+      debug: {
+        manifestDirectory,
+        activeProfileId,
+        clientId,
+        error: message
+      }
+    };
+  }
+}
+
+function evaluateDockerMcpGovernanceDrift({
+  plan,
+  executable = "docker",
+  executableArgs = []
+}) {
+  const probeCommand = ["mcp", "server", "ls", "--json"];
+  let probe;
+  try {
+    probe = spawnSync(executable, [...executableArgs, ...probeCommand], {
+      encoding: "utf8"
+    });
+  } catch (error) {
+    return {
+      governanceStatus: "unavailable",
+      governanceSummaryCounts: {
+        governedEnabledServerCount: 0,
+        unsafeEnabledServerCount: 0,
+        unmanagedEnabledServerCount: 0
+      },
+      governedEnabledServers: [],
+      unsafeEnabledServers: [],
+      unmanagedEnabledServers: [],
+      governanceUnavailableReason: error instanceof Error ? error.message : String(error)
+    };
+  }
+
+  if (probe.status !== 0) {
+    return {
+      governanceStatus: "unavailable",
+      governanceSummaryCounts: {
+        governedEnabledServerCount: 0,
+        unsafeEnabledServerCount: 0,
+        unmanagedEnabledServerCount: 0
+      },
+      governedEnabledServers: [],
+      unsafeEnabledServers: [],
+      unmanagedEnabledServers: [],
+      governanceUnavailableReason: normalizeTextOutput(probe.stderr) || normalizeTextOutput(probe.stdout) || `docker exited with status ${String(probe.status)}`
+    };
+  }
+
+  let decodedServers;
+  try {
+    decodedServers = JSON.parse(normalizeTextOutput(probe.stdout));
+  } catch (error) {
+    return {
+      governanceStatus: "unavailable",
+      governanceSummaryCounts: {
+        governedEnabledServerCount: 0,
+        unsafeEnabledServerCount: 0,
+        unmanagedEnabledServerCount: 0
+      },
+      governedEnabledServers: [],
+      unsafeEnabledServers: [],
+      unmanagedEnabledServers: [],
+      governanceUnavailableReason: error instanceof Error ? error.message : String(error)
+    };
+  }
+
+  if (!Array.isArray(decodedServers)) {
+    return {
+      governanceStatus: "unavailable",
+      governanceSummaryCounts: {
+        governedEnabledServerCount: 0,
+        unsafeEnabledServerCount: 0,
+        unmanagedEnabledServerCount: 0
+      },
+      governedEnabledServers: [],
+      unsafeEnabledServers: [],
+      unmanagedEnabledServers: [],
+      governanceUnavailableReason: "Docker MCP server list did not return an array."
+    };
+  }
+
+  const governedByLiveName = new Map();
+  const unsafeByLiveName = new Map();
+
+  for (const server of plan.servers) {
+    if (server.source === "owned" && server.dockerServerName) {
+      governedByLiveName.set(server.dockerServerName, {
+        name: server.dockerServerName,
+        policyServerId: server.id,
+        matchType: "owned-dockerServerName"
+      });
+    } else if (server.dockerApplyMode === "catalog" && server.catalogServerId) {
+      governedByLiveName.set(server.catalogServerId, {
+        name: server.catalogServerId,
+        policyServerId: server.id,
+        matchType: "catalogServerId"
+      });
+    }
+
+    for (const unsafeCatalogServerId of server.unsafeCatalogServerIds ?? []) {
+      if (!unsafeByLiveName.has(unsafeCatalogServerId)) {
+        unsafeByLiveName.set(unsafeCatalogServerId, []);
+      }
+      unsafeByLiveName.get(unsafeCatalogServerId).push({
+        name: unsafeCatalogServerId,
+        policyServerId: server.id,
+        blockedReason: server.blockedReason ?? ""
+      });
+    }
+  }
+
+  const governedEnabledServers = [];
+  const unsafeEnabledServers = [];
+  const unmanagedEnabledServers = [];
+
+  for (const liveServer of [...decodedServers].sort((left, right) =>
+    String(left?.name ?? "").localeCompare(String(right?.name ?? ""))
+  )) {
+    const name = typeof liveServer?.name === "string" ? liveServer.name.trim() : "";
+    if (!name) {
+      continue;
+    }
+
+    if (governedByLiveName.has(name)) {
+      governedEnabledServers.push(governedByLiveName.get(name));
+      continue;
+    }
+
+    if (unsafeByLiveName.has(name)) {
+      const matches = [...unsafeByLiveName.get(name)].sort((left, right) =>
+        left.policyServerId.localeCompare(right.policyServerId)
+      );
+      unsafeEnabledServers.push({
+        name,
+        policyServerId: matches[0].policyServerId,
+        policyServerIds: matches.map((match) => match.policyServerId),
+        policyMatches: matches.map((match) => ({
+          policyServerId: match.policyServerId,
+          blockedReason: match.blockedReason
+        }))
+      });
+      continue;
+    }
+
+    unmanagedEnabledServers.push({ name });
+  }
+
+  const governanceStatus =
+    unsafeEnabledServers.length > 0 || unmanagedEnabledServers.length > 0
+      ? "drift_detected"
+      : "clean";
+
+  return {
+    governanceStatus,
+    governanceSummaryCounts: {
+      governedEnabledServerCount: governedEnabledServers.length,
+      unsafeEnabledServerCount: unsafeEnabledServers.length,
+      unmanagedEnabledServerCount: unmanagedEnabledServers.length
+    },
+    governedEnabledServers,
+    unsafeEnabledServers,
+    unmanagedEnabledServers,
+    governanceUnavailableReason: null
+  };
 }
 
 function parseJsonStringArrayEnv(value, envName) {
