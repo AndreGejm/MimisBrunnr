@@ -1,92 +1,112 @@
 # Interfaces
 
-This document lists the externally reachable interfaces that are implemented in tracked code.
+This is the current external interface map for tracked code.
 
 ## HTTP API
 
 Source of truth: `apps/mimir-api/src/server.ts`
 
-### Health and system
+### Health
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/health/live` | liveness and degraded-state health |
-| `GET` | `/health/ready` | readiness health |
-| `GET` | `/v1/system/auth` | auth registry summary plus issued-token summary |
-| `GET` | `/v1/system/auth/issuers` | effective central auth-issuer lifecycle state for registered issuers |
-| `GET` | `/v1/system/auth/issued-tokens` | issued-token listing |
-| `POST` | `/v1/system/auth/issuer-state` | update central auth-issuer lifecycle state for one issuer |
-| `POST` | `/v1/system/auth/issue-token` | centrally issue actor tokens |
-| `POST` | `/v1/system/auth/introspect-token` | inspect token validity and authorization |
-| `POST` | `/v1/system/auth/revoke-token` | revoke issued tokens |
-| `POST` | `/v1/system/auth/revoke-tokens` | bounded bulk revocation of issued tokens |
-| `GET` | `/v1/system/freshness` | temporal validity report |
-| `GET` | `/v1/system/version` | release metadata |
+| Method | Path |
+| --- | --- |
+| `GET` | `/health/live` |
+| `GET` | `/health/ready` |
+
+### System and auth
+
+| Method | Path |
+| --- | --- |
+| `GET` | `/v1/system/auth` |
+| `GET` | `/v1/system/auth/issuers` |
+| `GET` | `/v1/system/auth/issued-tokens` |
+| `POST` | `/v1/system/auth/issuer-state` |
+| `POST` | `/v1/system/auth/issue-token` |
+| `POST` | `/v1/system/auth/introspect-token` |
+| `POST` | `/v1/system/auth/revoke-token` |
+| `POST` | `/v1/system/auth/revoke-tokens` |
+| `GET` | `/v1/system/freshness` |
+| `GET` | `/v1/system/version` |
+
+### Coding and tool packaging
+
+| Method | Path |
+| --- | --- |
+| `POST` | `/v1/coding/execute` |
+| `POST` | `/v1/coding/traces` |
+| `POST` | `/v1/coding/tool-output` |
+| `POST` | `/v1/tools/ai` |
+| `POST` | `/v1/tools/ai/check` |
+| `POST` | `/v1/tools/ai/package-plan` |
 
 ### Retrieval and context
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `POST` | `/v1/context/search` | bounded retrieval |
-| `POST` | `/v1/context/agent-context` | fenced local-agent context assembly |
-| `POST` | `/v1/context/tree` | namespace tree listing |
-| `POST` | `/v1/context/node` | namespace node read |
-| `POST` | `/v1/context/packet` | direct context-packet assembly |
-| `POST` | `/v1/context/decision-summary` | decision-focused packet |
+| Method | Path |
+| --- | --- |
+| `POST` | `/v1/context/search` |
+| `POST` | `/v1/context/agent-context` |
+| `POST` | `/v1/context/tree` |
+| `POST` | `/v1/context/node` |
+| `POST` | `/v1/context/packet` |
+| `POST` | `/v1/context/decision-summary` |
 
-### Memory and governance
+### Drafts, review, promotion, and history
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `POST` | `/v1/notes/drafts` | create staging drafts |
-| `POST` | `/v1/review/queue` | list reviewable staging drafts |
-| `POST` | `/v1/review/note` | read one staging draft for review |
-| `POST` | `/v1/review/accept` | accept and promote one staging draft |
-| `POST` | `/v1/review/reject` | reject one staging draft |
-| `POST` | `/v1/system/freshness/refresh-draft` | create one governed refresh draft |
-| `POST` | `/v1/system/freshness/refresh-drafts` | create a bounded refresh-draft batch |
-| `POST` | `/v1/notes/validate` | deterministic validation |
-| `POST` | `/v1/notes/promote` | promote a staging draft |
-| `POST` | `/v1/maintenance/import-resource` | record an import job |
-| `POST` | `/v1/history/query` | bounded audit history query |
-| `POST` | `/v1/history/session-archives` | create session archives |
-| `POST` | `/v1/history/session-archives/search` | search non-authoritative session archives |
-
-### Coding
-
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `POST` | `/v1/coding/execute` | execute a coding-domain task through the Python bridge |
-| `POST` | `/v1/coding/traces` | list compact operational traces for one local-agent request |
-| `POST` | `/v1/coding/tool-output` | read a full spilled local-agent tool output by output id |
-| `POST` | `/v1/tools/ai` | list read-only Docker AI tool manifests without executing tools |
-| `POST` | `/v1/tools/ai/check` | validate Docker AI tool manifests without executing tools |
-| `POST` | `/v1/tools/ai/package-plan` | build reusable Docker package plans without executing tools |
+| Method | Path |
+| --- | --- |
+| `POST` | `/v1/notes/drafts` |
+| `POST` | `/v1/review/queue` |
+| `POST` | `/v1/review/note` |
+| `POST` | `/v1/review/accept` |
+| `POST` | `/v1/review/reject` |
+| `POST` | `/v1/system/freshness/refresh-draft` |
+| `POST` | `/v1/system/freshness/refresh-drafts` |
+| `POST` | `/v1/notes/validate` |
+| `POST` | `/v1/notes/promote` |
+| `POST` | `/v1/maintenance/import-resource` |
+| `POST` | `/v1/history/query` |
+| `POST` | `/v1/history/session-archives` |
+| `POST` | `/v1/history/session-archives/search` |
 
 ## CLI
 
 Source of truth: `apps/mimir-cli/src/main.ts`
 
-### Commands
+### System and auth commands
 
 - `version`
 - `auth-issuers`
 - `auth-status`
 - `auth-issued-tokens`
 - `auth-introspect-token`
-- `check-mcp-profiles`
-- `freshness-status`
 - `issue-auth-token`
+- `revoke-auth-token`
 - `revoke-auth-tokens`
 - `set-auth-issuer-state`
-- `list-active-toolbox`
-- `list-active-tools`
+- `freshness-status`
+
+### Toolbox authoring and sync commands
+
+- `check-mcp-profiles`
+- `list-toolbox-servers`
+- `scaffold-toolbox`
+- `scaffold-toolbox-band`
+- `preview-toolbox`
+- `sync-mcp-profiles`
+- `sync-toolbox-runtime`
+- `sync-toolbox-client`
+
+### Toolbox session commands
+
 - `list-toolboxes`
 - `describe-toolbox`
-- `deactivate-toolbox`
-- `revoke-auth-token`
 - `request-toolbox-activation`
-- `sync-mcp-profiles`
+- `list-active-toolbox`
+- `list-active-tools`
+- `deactivate-toolbox`
+
+### Coding and retrieval commands
+
 - `execute-coding-task`
 - `list-agent-traces`
 - `show-tool-output`
@@ -100,6 +120,11 @@ Source of truth: `apps/mimir-cli/src/main.ts`
 - `read-context-node`
 - `get-context-packet`
 - `fetch-decision-summary`
+- `query-history`
+- `create-session-archive`
+
+### Draft, review, and promotion commands
+
 - `draft-note`
 - `create-refresh-draft`
 - `create-refresh-drafts`
@@ -110,161 +135,44 @@ Source of truth: `apps/mimir-cli/src/main.ts`
 - `accept-note`
 - `reject-note`
 - `import-resource`
-- `query-history`
-- `create-session-archive`
 
-### Payload sources
+### Current CLI payload rules
 
-Commands read JSON from exactly one of:
+Commands read JSON from one of:
 
 - `--stdin`
 - `--input <path>`
 - `--json <payload>`
 
-Commands with no required payload:
+Current important command behavior:
 
-- `version`
-- `auth-status` with the caveat that enforced auth mode still requires operator or system actor context in the payload
-
-Commands with optional payload:
-
-- `auth-issuers`
-- `auth-issued-tokens`
-- `check-mcp-profiles`
-- `freshness-status`
-- `list-ai-tools`
-- `list-active-toolbox`
-- `list-active-tools`
-- `list-toolboxes`
-- `check-ai-tools`
-- `sync-mcp-profiles`
-- `tools-package-plan`
-- `list-review-queue`
-- `create-refresh-drafts`
-
-From the workspace root, the verified invocation form is `corepack pnpm cli -- <command>`.
-
-For CLI auth-control commands in enforced mode, pass an `actor` object with operator or system credentials in the JSON payload. That applies to `auth-issuers`, `auth-status`, `auth-issued-tokens`, `auth-introspect-token`, `issue-auth-token`, `revoke-auth-token`, `revoke-auth-tokens`, and `set-auth-issuer-state`.
-
-`auth-issued-tokens` and `GET /v1/system/auth/issued-tokens` return operator-attribution fields for token lifecycle operations. Active or future records can include `issuedByActorId`, `issuedByActorRole`, `issuedBySource`, and `issuedByTransport`. Revoked records can also include `revokedByActorId`, `revokedByActorRole`, `revokedBySource`, and `revokedByTransport` alongside `revokedAt` and `revokedReason`.
-
-Token issuance and revocation also emit queryable audit-history events. `issue-auth-token` / `POST /v1/system/auth/issue-token` write `issue_auth_token` entries, and `revoke-auth-token` / `POST /v1/system/auth/revoke-token` write `revoke_auth_token` entries. Those audit entries store the token id, target actor metadata, lifecycle-policy booleans, and revocation reason where applicable; they do not store the raw issued token.
-
-`query-history` / `POST /v1/history/query` can filter audit history before the bounded `limit` is applied. Supported request fields are:
-
-- `actorId`
-- `actionType`
-- `source`
-- `noteId`
-- `since`
-- `until`
-- `limit`
-
-Toolbox control commands are implemented through the shared control surface. The current commands are:
-
-- `check-mcp-profiles`
-- `sync-mcp-profiles`
-- `list-toolboxes`
-- `describe-toolbox`
-- `request-toolbox-activation`
-- `list-active-toolbox`
-- `list-active-tools`
-- `deactivate-toolbox`
-
-`list-active-tools` now returns three explicit buckets in addition to the compatibility `tools` alias:
-
-- `declaredTools`: tools declared by the active compiled profile before overlay suppression
-- `activeTools`: tools currently exposed to the session after overlay suppression
-- `suppressedTools`: declared tools hidden by overlay rules, including `suppressionReasons`
-
-`describe-toolbox` returns structured workflow and composition metadata in
-addition to the intent-level categories and tool list. The discovery payload now
-includes:
-
-- `summary`
-- `exampleTasks`
-- `trustClass`
-- `antiUseCases` entries such as `{ type: "denied_category", category: "docker-write" }`
-- `workflow.activationMode`
-- `workflow.sessionMode`
-- `workflow.requiresApproval`
-- `workflow.fallbackProfile`
-- `profile.composite`
-- `profile.baseProfiles`
-- `profile.compositeReason`
-- `profile.profileRevision`
-
-`list-active-toolbox` returns a structured active-session summary with three
-sections:
-
-- `workflow`: current toolbox mapping, activation mode, active session mode,
-  approval requirement, and fallback profile
-- `profile`: active profile identity, composition, category bounds, semantic
-  capabilities, and profile revision
-- `client`: current overlay handoff metadata plus suppression lists
-
-`sync-mcp-profiles` includes Docker runtime apply metadata in its generated plan:
-
-- server descriptors may include `dockerApplyMode`
-- catalog-mode peers include `catalogServerId`
-- descriptor-only peers include `blockedReason`
-- apply commands omit descriptor-only peers from `serverRefs` and report them in `blockedServers`
-- apply mode may return `status: "blocked"` when Docker profile support exists but the selected plan contains descriptor-only peers
-
-For sessions using `runtime-observe`, `core-dev+runtime-observe`, `runtime-admin`, or `full`, the active tool surface may include Kubernetes read-only descriptors from the `kubernetes-read` peer server. The current Kubernetes tool ids are:
-
-- `kubernetes.context.inspect`
-- `kubernetes.namespaces.list`
-- `kubernetes.workloads.list`
-- `kubernetes.pods.list`
-- `kubernetes.events.list`
-- `kubernetes.logs.query`
-
-All six are `mutationLevel: read`. There is no Kubernetes mutation tool in v1.
-
-For sessions using `docs-research`, `core-dev+docs-research`, or `full`, the active tool surface may include DockerHub read-only descriptors from the `dockerhub-read` peer server. The current DockerHub tool ids are:
-
-- `dockerhub.image.search`
-- `dockerhub.image.tags.list`
-- `dockerhub.image.inspect`
-
-All three are `mutationLevel: read`. There is no DockerHub publish, delete, pull, push, signing, or deployment tool in this band.
-
-Issued-token listing filters are implemented end to end across CLI and HTTP. The supported request fields are:
-
-- `actorId`
-- `issuedByActorId`
-- `revokedByActorId`
-- `lifecycleStatus` with `active`, `future`, `expired`, or `revoked`
-- `asOf`
-- `includeRevoked`
-- `limit`
-
-The issued-token summary returned alongside a filtered listing applies the same filters except for `limit`.
-
-Issuer lifecycle control is implemented end to end across CLI and HTTP:
-
-- `auth-issuers` and `GET /v1/system/auth/issuers` return `asOf`, a lifecycle `summary`, and per-issuer records.
-- Each issuer record includes registry lifecycle state, effective lifecycle state, registry capability booleans, effective issue and revoke booleans, enablement, optional `validFrom` and `validUntil`, and last update attribution fields.
-- `set-auth-issuer-state` and `POST /v1/system/auth/issuer-state` accept `actorId`, `enabled`, `allowIssueAuthToken`, `allowRevokeAuthToken`, and optional `validFrom`, `validUntil`, and `reason`.
-- Central issuer controls can narrow, disable, or time-bound a registered issuer, but they cannot widen an actor beyond the registry’s allowed admin actions.
+- `sync-mcp-profiles --apply` is the Docker apply path
+- `sync-toolbox-runtime --apply` writes the client artifact only
+- `sync-toolbox-client --apply` writes the client artifact only
+- `scaffold-toolbox --wizard` is supported only for `scaffold-toolbox`
 
 ## MCP
 
+### Direct Mimir MCP adapter
+
 Source of truth:
 
-- `apps/mimir-mcp/src/tool-definitions.ts`
 - `apps/mimir-mcp/src/main.ts`
-- `apps/mimir-control-mcp/src/tool-definitions.ts`
-- `apps/mimir-control-mcp/src/main.ts`
+- `apps/mimir-mcp/src/tool-definitions.ts`
 
-### Implemented methods
+Current transport behavior:
+
+- stdio
+- newline-delimited JSON messages
+- `tools.listChanged = false`
+
+Current implemented JSON-RPC methods:
 
 - `initialize`
 - `tools/list`
 - `tools/call`
 
-### Implemented tools
+Current tool names:
 
 - `execute_coding_task`
 - `list_agent_traces`
@@ -292,7 +200,23 @@ Source of truth:
 - `query_history`
 - `create_session_archive`
 
-### Toolbox control MCP tools
+The direct MCP adapter does not expose the HTTP auth-control routes and does not
+expose the toolbox control tools.
+
+### Toolbox control MCP adapter
+
+Source of truth:
+
+- `apps/mimir-control-mcp/src/main.ts`
+- `apps/mimir-control-mcp/src/tool-definitions.ts`
+
+Current transport behavior:
+
+- stdio
+- `Content-Length` framed JSON-RPC
+- `tools.listChanged = false`
+
+Current tools:
 
 - `list_toolboxes`
 - `describe_toolbox`
@@ -301,94 +225,44 @@ Source of truth:
 - `list_active_tools`
 - `deactivate_toolbox`
 
-`list_active_toolbox` returns the active workflow/profile summary plus client
-overlay diagnostics. The client block now includes both the configured
-suppression lists and `suppressedTools`, a machine-readable array describing
-which tool descriptors were hidden for the active session, why they were
-suppressed, and the `client-overlay-reduction` boundary that enforced it.
-Client reconnect metadata is available under both `handoffPresetRef` and the
-plan-aligned alias `clientPresetRef`.
-The diagnostics and emitted audit events now carry both `manifestRevision` and
-`profileRevision` so activation, denial, and reconnect flows can be explained
-against the exact compiled policy state.
+### Toolbox broker MCP adapter
 
-`describe_toolbox` returns the same style of suppression diagnostics for
-pre-activation discovery. In addition to the overlay-filtered `toolbox.tools`
-array, the response now includes:
+Source of truth:
 
-- `toolbox.suppressedTools` so clients can see which descriptors were hidden by
-  the current overlay and why
-- `toolbox.antiUseCases` so clients can explain denied-category boundaries in a
-  machine-readable way before activation
+- `apps/mimir-toolbox-mcp/src/main.ts`
+- `apps/mimir-toolbox-mcp/src/tool-definitions.ts`
+- `apps/mimir-toolbox-mcp/src/session-state.ts`
 
-`request_toolbox_activation` returns the same revision-aware diagnostics and
-stable-schema audit events, including the profile revision tied to the approved
-or active profile in scope for the decision. The reconnect handoff also carries
-both `handoffPresetRef` and `clientPresetRef` so existing clients and the
-Sprint 6 contract can use the same payload. Activation responses also surface
-the approved trust boundary under `details.approval.trustClass`.
+Current transport behavior:
 
-## Internal integration surfaces
+- stdio
+- `Content-Length` framed JSON-RPC
+- `tools.listChanged = true`
+- `notifications/tools/list_changed`
 
-### Filesystem
+The broker always keeps the same six toolbox control tools and changes the rest
+of the visible tool surface based on the active compiled profile, client
+overlay, and backend availability.
 
-- canonical note repository
-- staging note repository
+### Current toolbox session contract
 
-### SQLite
+Current session entry modes in toolbox policy:
 
-- metadata control store
-- audit log
-- issued token store
-- revocation store
-- import job store
-- session archive store
-- context namespace store
-- context representation store
-- lexical FTS index
-- local agent trace store
-- tool output spillover store plus `state/tool-output` payload files
+- `legacy-direct`
+- `toolbox-bootstrap`
+- `toolbox-activated`
 
-### External services
+Current runtime binding kinds in toolbox policy:
 
-- Qdrant over HTTP
-- Docker/Ollama-compatible model endpoint(s) over HTTP
-- optional paid OpenAI-compatible endpoint over HTTP
+- `docker-catalog`
+- `descriptor-only`
+- `local-stdio`
 
-### Docker AI tool registry
+Current reconnect handoff env keys:
 
-- read-only manifest discovery and validation from `docker/tool-registry/*.json` through `FileSystemToolRegistry`
-- `list-ai-tools`, `/v1/tools/ai`, and MCP `list_ai_tools` accept optional `ids`, `includeEnvironment`, and `includeRuntime` request fields
-- `includeRuntime: true` adds reusable Docker runtime descriptors for compose files, profile/service names, container image/entrypoint/working directory, workspace/cache mount contracts, Mimisbrunnr mount policy, and expected environment keys
-- `check-ai-tools`, `/v1/tools/ai/check`, and MCP `check_ai_tools` validate manifests without starting containers
-- `tools-package-plan`, `/v1/tools/ai/package-plan`, and MCP `tools_package_plan` return installer-facing compose run plans, build recipe status, mount contracts, and packaging caveats without starting containers
-- `mimir doctor --json` reports installer-facing `dockerTools` status, invalid manifest count, per-file manifest errors, and compact valid-tool package summaries
-- no generic tool execution gateway is exposed by the current interfaces
+- `MAB_TOOLBOX_ACTIVE_PROFILE`
+- `MAB_TOOLBOX_CLIENT_ID`
+- `MAB_TOOLBOX_SESSION_MODE`
+- `MAB_TOOLBOX_SESSION_POLICY_TOKEN`
 
-### Local subprocess boundary
-- Python subprocess launched by `PythonCodingControllerBridge`
-
-## Known interface consistency risks
-
-- `packages/contracts/src/retrieval/glob-context.contract.ts` and `packages/contracts/src/retrieval/grep-context.contract.ts` exist, but the tracked transport adapters do not expose matching runtime commands or routes
-
-## What is not present
-
-- no tracked webhook receiver
-- no tracked queue consumer or producer
-- no tracked socket server
-- no tracked REST deployment API beyond the local HTTP adapter
-
-## Evidence status
-
-### Verified facts
-
-- Every interface listed here is grounded in tracked adapter code or tracked contracts
-
-### Assumptions
-
-- None
-
-### TODO gaps
-
-- If the retrieval-only contract placeholders become live transport surfaces, update this file and the adapter docs together
+Lease issuance depends on `MAB_TOOLBOX_LEASE_ISSUER_SECRET`.

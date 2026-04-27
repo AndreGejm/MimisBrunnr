@@ -1,195 +1,81 @@
 # Backlog
 
-Statuses:
+This backlog is current-state only. Completed foundation work is summarized
+briefly; the detailed tables from older phases are intentionally pruned here.
 
-- `done`: implemented in the current repository
-- `ready`: can be implemented now
-- `blocked`: depends on earlier backlog items
-- `later`: intentionally deferred until the core is stable
-- `partial`: enabled in part, but not complete
-- `not-in-stack`: intentionally outside the current production stack
+## Current baseline
 
-## How To Read This File
+Already implemented in the repo:
 
-This is the general backlog for the repository.
+- the memory, retrieval, review, promotion, and history core
+- auth registry, issued-token lifecycle, and issuer controls
+- the direct MCP adapter
+- the toolbox control surface
+- the dynamic toolbox broker
+- manifest-driven toolbox policy with bands, workflows, clients, and compiled
+  profiles
+- read-only Docker AI tool discovery and packaging helpers
+- the external-client boundary that keeps skills and subagents outside Mimir
 
-Use it to distinguish:
+## Rollout-critical backlog
 
-- what is already implemented
-- what still needs completion
-- what is intentionally deferred
-- what is not part of the current stack even if the architecture can support it
+These are the active items that still matter for broad rollout.
 
-For the current implemented state, see [`current-implementation.md`](./current-implementation.md).
-
-For rollout readiness and the MCP adoption path, see [`go-live-gates.md`](./go-live-gates.md).
-
-## Rollout-Critical Priority
-
-If the goal is to make mimir the default MCP tool across all workspaces, the next backlog order is:
-
-1. close the remaining freshness-governance work under `BK-007`
-2. keep hierarchical retrieval behind packet-diff-reviewed rollout gates under `BK-008`
-3. decide whether `RV-006` authority-state and namespace semantics should be promoted from ready guidance into enforced runtime policy
-
-The pilot and all-workspace go-live gates for this sequence are documented in [`go-live-gates.md`](./go-live-gates.md).
-
-## Architectural Review Carry-Forward
-
-The highest-priority items from the earlier architectural review are now implemented.
-
-The next implementation order now begins with the stricter read-path governance groundwork from [`read-path-alignment-rfc.md`](./read-path-alignment-rfc.md):
-
-1. define authority-state invariants and namespace semantics under `RV-006`
-2. close the remaining freshness-governance work under `BK-007`
-3. keep hierarchical retrieval behind packet-diff-reviewed rollout gates under `BK-008`
-
-## Active Toolbox Workstream
-
-The Docker toolbox work is no longer speculative. The repo now has a working
-toolbox compiler, control surface, lease enforcement layer, Docker runtime
-planner, installer audit path, and regression coverage. The remaining toolbox
-backlog should start from that implemented baseline rather than re-planning the
-foundation.
-
-The refreshed remaining-work execution plan for this baseline lives in
-[`../superpowers/plans/2026-04-19-mcp-toolbox-v1-remaining-work-plan.md`](../superpowers/plans/2026-04-19-mcp-toolbox-v1-remaining-work-plan.md).
-
-This does not replace the repo-wide backlog order above. It is the current
-toolbox-specific execution order while the broader memory and retrieval backlog
-remains in force.
-
-Current toolbox execution order:
-
-1. validate reconnect presets and Docker Toolkit apply behavior across target client environments
-2. add Kubernetes mutation only after the read-only band is stable and explicitly approval-gated
-
-| ID | Work Item | Why It Is Still Here | Status |
+| ID | Item | Current state | Status |
 | --- | --- | --- | --- |
-| TB-001 | Manifest-driven toolbox compiler, normalized IR, deterministic revisions, and duplicate-capability detection | Compiler, manifest families, profile revisions, overlay no-widening rules, and deterministic sync planning are implemented | done |
-| TB-002 | Toolbox discovery and approval surface through CLI and `mimir-control` MCP | Discovery, activation, active-tool inspection, deactivation, approval metadata, and reconnect handoffs are implemented and covered by e2e tests | done |
-| TB-003 | Lease-bound session enforcement, explicit session modes, and structured diagnostics | Revision-bound leases, session-mode separation, audit events, suppression diagnostics, anti-use-case metadata, trust-class reporting, and reconnect preset metadata are implemented | done |
-| TB-004 | Docker runtime sync and installer compatibility gates for toolbox rollout | Plan-first sync, deterministic dry-run output, installer audits, and compatibility blockers exist; current-machine validation is in place, but broader target-machine rollout validation is still pending | partial |
-| TB-005 | Add a read-only Kubernetes peer band for toolbox runtime observation | Kubernetes read-only categories, peer manifest, profile wiring, and regression coverage are implemented for observation toolboxes | done |
-| TB-006 | Add approval-gated Kubernetes mutation to `runtime-admin` and `delivery-admin` | Still intentionally blocked until the read-only band is stable in real use and the operator approval surface is extended for Kubernetes mutation | blocked |
-| TB-007 | Validate reconnect presets and Docker Toolkit apply behavior across target client environments | Current-machine validation is in place, but cross-environment rollout validation still needs explicit target-machine execution | partial |
+| `TB-004` | Close Docker toolbox governance drift and apply blockers | `sync-mcp-profiles` and doctor already report the failures, but the current Docker toolkit still lacks `docker mcp profile` and selected peers remain `descriptor-only` | partial |
+| `TB-007` | Validate toolbox rollout across real target client environments | local validation exists, but broader target-machine coverage is still missing for the reconnect and broker paths | partial |
+| `TB-009` | Broaden broker peer/backend parity | owned tools, local-stdio peers, and opt-in `docker-catalog` routing exist; `descriptor-only` peers are still not routable in-session | partial |
+| `BK-007` | Finish stronger temporal-validity governance | validity windows, refresh candidates, and refresh drafts exist; stronger lifecycle policy and automation are still incomplete | partial |
+| `BK-008` | Keep hierarchical retrieval behind explicit rollout review until default enablement is approved | hierarchical retrieval exists, but flat remains the default and packet-diff review is still required before any default change | partial |
+| `RV-006` | Finish authority-state and namespace follow-through | core authority-state and namespace projections exist, but broader enforcement and rollout guardrails are still incomplete | partial |
 
-## Review-Driven Ready Work
+## Current toolbox-specific notes
 
-| ID | Work Item | Maps To | Status |
-| --- | --- | --- | --- |
-| RV-001 | Introduce an atomic promotion saga or outbox for filesystem, SQLite, FTS, and vector index writes | `F1` | done |
-| RV-002 | Hard-enforce token budgets and summary-sentence limits during packet assembly | `F3` | done |
-| RV-003 | Implement `tagFilters` end-to-end through lexical retrieval, vector retrieval, and fusion | `F4` | done |
-| RV-004 | Add runtime schema validation at CLI, HTTP, and MCP ingress | `F8` | done |
-| RV-005 | Harden SQLite access strategy and make vector degraded mode explicit in telemetry and health reporting | `F6`, `F7` | done |
-| RV-006 | Define authority-state invariants and namespace semantics before namespace, import, session, or hierarchical retrieval work | Contract-level authority-state invariant enforcement plus namespace projection for canonical notes, staging drafts, imported artifacts, and session archives are implemented, but broader namespace coverage and rollout guardrails remain incomplete | partial |
+The toolbox backlog now sits on top of live code, not a paper design.
 
-## Ready Now
+Current live layers:
 
-| ID | Work Item | Source Requirement | Complexity | Status | Repo Targets |
-| --- | --- | --- | --- | --- | --- |
-| WF-001 | Finalize workspace root scripts and package metadata | Requirement-Service-Oriented-Architecture | high | done | `package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json` |
-| WF-002 | Expand common contracts for retrieval, drafting, validation, promotion, and history | Requirement-Typed-Service-Contracts | medium | done | `packages/contracts/src/**` |
-| WF-003 | Lock in core domain primitives for corpora, note types, lifecycle, chunk records, and context packets | Requirement-Service-Oriented-Architecture | high | done | `packages/domain/src/**` |
-| WF-004 | Define repository, index, provider, and audit ports | Requirement-Transport-Isolation | high | done | `packages/application/src/ports/**` |
-| WF-005 | Create environment loader and service container bootstrap | Requirement-Docker-Readiness | medium | done | `packages/infrastructure/src/config/env.ts`, `packages/infrastructure/src/bootstrap/build-service-container.ts` |
-| WF-006 | Write boundary tests for role/capability separation at the service layer | Requirement-Boundary-Hardening | high | done | `tests/e2e/` |
-| WF-007 | Reserve future MCP tool shapes in docs and keep service outputs bounded | Requirement-MCP-Adapter-Readiness | medium | done | `documentation/planning/*`, `packages/contracts/src/**` |
+1. checked-in policy under `docker/mcp`
+2. compatibility discovery and reconnect through `mimir-control`
+3. same-session brokering through `mimir-toolbox-mcp`
 
-## Blocked Until Canonical Authority Is Implemented
+What is already done:
 
-| ID | Work Item | Source Requirement | Complexity | Status | Depends On | Repo Targets |
-| --- | --- | --- | --- | --- | --- | --- |
-| CA-001 | Implement filesystem-backed canonical note repository | Requirement-Canonical-Vault | high | done | WF-004 | `packages/infrastructure/src/vault/file-system-canonical-note-repository.ts` |
-| CA-002 | Implement filesystem-backed staging note repository | Requirement-Writer-Staging-Plane | medium | done | WF-004 | `packages/infrastructure/src/vault/file-system-staging-note-repository.ts` |
-| CA-003 | Design SQLite schema for notes, chunks, tags, lifecycle, and audit | Requirement-SQLite-Control-Store | high | done | WF-004, WF-005 | `packages/infrastructure/src/sqlite/sqlite-metadata-control-store.ts` |
-| CA-004 | Implement deterministic note schema and controlled tag validation | Requirement-Note-Schema-And-Tags | medium | done | CA-001, CA-003 | `packages/application/src/services/note-validation-service.ts` |
-| CA-005 | Enforce corpus separation for `mimisbrunnr` and `general_notes` | Requirement-Corpus-Separation | medium | done | CA-001, CA-003 | `packages/application/src/services/canonical-note-service.ts`, `packages/application/src/services/staging-draft-service.ts`, `packages/application/src/services/note-validation-service.ts` |
+- bands and workflows are first-class authoring units
+- workflow files compile into composite profile ids
+- client overlays are enforced as no-widening filters
+- the broker starts in `bootstrap`, emits `notifications/tools/list_changed`,
+  and contracts on idle timeout or lease expiry
+- Codex client materialization works for `local-stdio` peers marked
+  `configTarget: codex-mcp-json`
 
-## Retrieval Core
+What still blocks default rollout:
 
-| ID | Work Item | Source Requirement | Complexity | Status | Depends On | Repo Targets |
-| --- | --- | --- | --- | --- | --- | --- |
-| RT-001 | Implement Markdown-aware chunking with adjacency and heading preservation | Requirement-Markdown-Chunking | high | done | CA-001, CA-003 | `packages/application/src/services/chunking-service.ts` |
-| RT-002 | Persist derived chunk metadata for summaries, scope, qualifiers, and staleness | Requirement-Derived-Chunk-Metadata | medium | done | RT-001, CA-004 | `packages/infrastructure/src/sqlite/sqlite-metadata-control-store.ts` |
-| RT-003 | Add local query intent classification boundary | Requirement-Query-Intent-Classification | low | done | WF-004 | `packages/application/src/ports/local-reasoning-provider.ts`, `packages/application/src/services/*`, `packages/infrastructure/src/providers/heuristic-local-reasoning-provider.ts` |
-| RT-004 | Implement lexical retrieval with FTS5 over chunk records | Requirement-Hybrid-Retrieval-Assembly | high | done | RT-001, CA-003 | `packages/infrastructure/src/fts/sqlite-fts-index.ts` |
-| RT-005 | Implement vector retrieval as additive semantic search | Requirement-Hybrid-Retrieval-Assembly | high | done | RT-001, WF-004, WF-005 | `packages/infrastructure/src/vector/qdrant-vector-index.ts`, `packages/infrastructure/src/providers/hash-embedding-provider.ts` |
-| RT-006 | Encode ranking and staleness policy into fusion service | Requirement-Ranking-And-Staleness-Policy | medium | done | RT-002, RT-003, CA-005 | `packages/application/src/services/ranking-fusion-service.ts` |
-| RT-007 | Enforce bounded retrieval packet assembly | Requirement-Retrieval-Packet-Contract | medium | done | RT-002, RT-006 | `packages/application/src/services/context-packet-service.ts` |
-| RT-008 | Build hybrid retrieval pipeline that keeps stage-1 results internal | Requirement-Hybrid-Retrieval-Assembly | high | done | RT-004, RT-005, RT-006, RT-007 | `packages/application/src/services/lexical-retrieval-service.ts`, `packages/application/src/services/vector-retrieval-service.ts`, `packages/application/src/services/retrieve-context-service.ts` |
+- Docker governance drift against repo policy
+- descriptor-only peer apply blockers
+- broader broker validation outside the current local path
 
-## Promotion And Governance
+## Current boundary-specific notes
 
-| ID | Work Item | Source Requirement | Complexity | Status | Depends On | Repo Targets |
-| --- | --- | --- | --- | --- | --- | --- |
-| GV-001 | Implement writer drafting service against staging repository | Requirement-Writer-Staging-Plane | medium | done | CA-002, CA-004 | `packages/application/src/services/staging-draft-service.ts` |
-| GV-002 | Implement promotion policy checks and duplicate detection | Requirement-Promotion-Policy | medium | done | GV-001, CA-004, CA-005 | `packages/application/src/services/promotion-orchestrator-service.ts` |
-| GV-003 | Implement deterministic orchestrator as the only promotion authority | Requirement-Deterministic-Orchestrator | high | done | GV-002, RT-001 | `packages/application/src/services/promotion-orchestrator-service.ts` |
-| GV-004 | Add current-state snapshot note generation and supersede logic | Requirement-Current-State-Snapshots | low | done | GV-002, CA-001 | `packages/application/src/services/canonical-note-service.ts`, `packages/application/src/services/promotion-orchestrator-service.ts` |
-| GV-005 | Add audit log persistence and queryable history | Requirement-Audit-And-History | medium | done | GV-003, CA-003 | `packages/application/src/services/audit-history-service.ts`, `packages/infrastructure/src/sqlite/*` |
+The external-client boundary is no longer backlog. It is implemented policy.
 
-## Local Runtime And Validation
+Still active follow-through items:
 
-| ID | Work Item | Source Requirement | Complexity | Status | Depends On | Repo Targets |
-| --- | --- | --- | --- | --- | --- | --- |
-| LR-001 | Implement local-first provider adapters with optional model use | Requirement-Model-Provider-Abstractions | medium | done | WF-004, WF-005 | `packages/infrastructure/src/providers/*` |
-| LR-002 | Add CLI commands as thin wrappers over services | Requirement-Transport-Isolation | high | done | GV-003, RT-008 | `apps/mimir-cli/src/**` |
-| LR-003 | Add HTTP routes as thin wrappers over services | Requirement-Transport-Isolation | high | done | GV-003, RT-008 | `apps/mimir-api/src/**` |
-| LR-004 | Add health checks and Docker runtime assets | Requirement-Docker-Readiness | medium | done | LR-002, LR-003 | `docker/*`, `packages/infrastructure/src/health/*` |
-| LR-005 | Add regression suites for schema, chunking, packet size, promotion, and corpus separation | Requirement-Validation-And-Regression | medium | done | GV-005, RT-008 | `tests/e2e/*` |
-| LR-006 | Add MCP transport as a thin adapter over stable services | Requirement-MCP-Adapter-Readiness | medium | done | LR-002, LR-003, LR-005 | `apps/mimir-mcp/src/**` |
+- keep new client-facing work out of Mimir when it really belongs to client
+  skills or subagents
+- keep `voltagent-docs` scoped as a docs peer instead of letting it turn into a
+  general Workspace bridge
+- keep direct MCP and toolbox-mediated MCP as separate interface families in
+  docs and validation
 
-## Coding Runtime Integration
+## Intentionally not in the current stack
 
-| ID | Work Item | Source Requirement | Complexity | Status | Depends On | Repo Targets |
-| --- | --- | --- | --- | --- | --- | --- |
-| CR-001 | Vendor the local-experts coding runtime into this repository | Requirement-Service-Oriented-Architecture | medium | done | LR-006 | `runtimes/local_experts/**` |
-| CR-002 | Replace the placeholder coding bridge with an adapter over the vendored runtime | Requirement-Transport-Isolation | high | done | CR-001 | `packages/orchestration/src/coding/*`, `packages/infrastructure/src/coding/*`, `runtimes/local_experts/**` |
-| CR-003 | Add first-class coding-runtime regression coverage through the root orchestrator | Requirement-Validation-And-Regression | medium | done | CR-002 | `tests/e2e/*`, `runtimes/local_experts/tests/*` |
+These are still out of scope for the shipped baseline:
 
-## Partial Or Remaining Core Work
-
-| ID | Work Item | Why It Is Still Here | Status |
-| --- | --- | --- | --- |
-| BK-001 | Implement agent-scoped authentication and authorization | Actor-registry auth is enforced across runtime commands, HTTP auth-control routes, and CLI auth-control commands, with file-backed registry loading, rotated credentials, validity windows, issuer-secret-backed issued tokens, persisted issued-token lifecycle storage and operator listing, centrally managed auth issuer lifecycle controls, multi-operator issuer state overrides, registry-bounded no-widening semantics for issuer controls, bounded bulk issued-token revocation across CLI and HTTP, issuance and revocation attribution in the issued-token ledger, queryable issued-token lifecycle filtering by issuer, revoker, and lifecycle state across CLI and HTTP, and bounded audit-history events for token issue, issuer-control changes, and revoke operations | done |
-| BK-002 | Wire a real paid escalation provider behind the reserved `paid_escalation` role | A real OpenAI-compatible paid reasoning provider is now bound to the reserved role and can enrich escalation output when configured | done |
-| BK-003 | Expose context-packet assembly directly through transports | First-class packet assembly is now exposed through CLI, HTTP, and MCP | done |
-| BK-004 | Align `docker/compose.local.yml` with the live Docker Model Runner plus Qwen stack | Compose now mirrors the local Docker Model Runner plus Qwen role bindings | done |
-| BK-005 | Refresh repository documentation to match the current implementation | Core repo READMEs and planning docs are synchronized with the current implementation | done |
-| BK-006 | Define a formal Git-centric versioning contract | The runtime now exposes shared release metadata through CLI, HTTP, MCP initialization, and health surfaces, and the release workflow is documented in [`versioning-contract.md`](./versioning-contract.md) | done |
-| BK-007 | Expand temporal-validity handling beyond current-state and staleness heuristics | Validity windows (`validFrom` / `validUntil`), validation, metadata persistence, stale ranking, expired and expiring-note retrieval warnings, runtime freshness reporting, operator-visible refresh-candidate reporting, governed refresh-draft creation across CLI, HTTP, MCP, and orchestrator surfaces, bounded batch refresh-draft creation from current freshness candidates, and idempotent reuse of open refresh drafts for the same stale canonical note are implemented, but broader lifecycle governance and stronger automated refresh policies are still incomplete | partial |
-| BK-008 | Keep hierarchical retrieval behind rollout gates until default enablement is explicitly approved | Hierarchical retrieval is now available via explicit actor or transport strategy selection and exposes trace plus packet-diff metadata, but default enablement still requires side-by-side packet diff review and a documented rollback switch back to `flat` | partial |
-
-## Optional Enhancement Backlog
-
-| ID | Work Item | Why It Is Backlog | Status |
-| --- | --- | --- | --- |
-| BK-101 | Add entity graph storage and traversal | Compatible with the architecture, but not required for the current core stack | ready |
-| BK-102 | Add session briefing artifacts | Useful on top of retrieval and audit history, but not foundational | later |
-| BK-103 | Add import and export workflows | Useful for scale and interoperability, but not necessary for the local-first baseline | later |
-| BK-104 | Formalize LLM consolidation as a stack-governance feature | The stack is operationally consolidated, but not documented or enforced as policy | later |
-| BK-105 | Add reflection loops | Useful after the deterministic core is fully stable | later |
-| BK-106 | Add cross-agent corroboration | Advanced coordination feature, not part of the current write path | later |
-| BK-107 | Add client-resolution and richer multi-collection UX | Scaling and usability enhancement rather than a missing primitive | later |
-| BK-108 | Add batch ingest and update workflows | Operational scaling feature, not part of the current baseline | later |
-
-## Active Toolbox Workstream
-
-| ID | Work Item | Status | Notes |
-| --- | --- | --- | --- |
-| TB-001 | Compile and check-in Docker MCP manifests (categories, trust classes, intents, servers, profiles, clients) as policy source of truth | done | `docker/mcp` manifests compile deterministically; `check-mcp-profiles` validates them |
-| TB-002 | Implement toolbox control-plane MCP tools (list, describe, activate, deactivate, list-active-tools) | done | `mimir-control-mcp` exposes all six toolbox lifecycle tools with structured reconnect handoff |
-| TB-003 | Implement session leases and toolbox audit events | done | Revision-bound, audience-bound leases; `toolbox_expired` event on expiry deactivation |
-| TB-004 | Docker Toolkit apply: translate compiled plan into live `docker mcp profile` commands | partial | `docker:mcp:sync` produces the plan with catalog-vs-descriptor apply metadata and profileless `docker mcp gateway run --servers` diagnostic fallback commands for catalog-mode peer subsets; live apply remains blocked because `docker mcp profile` is absent from the current Toolkit build and selected profiles still contain descriptor-only peers that need read-filtered wrappers or vetted catalog entries |
-| TB-005 | Add Kubernetes read-only peer band to runtime observation profiles | done | `kubernetes-read` server with six read-only tools exposed in `runtime-observe`, `core-dev+runtime-observe`, `runtime-admin`, and `full`; no mutation tools in v1 |
-| TB-006 | Approval-gated Kubernetes mutation / deployment tooling | blocked | Depends on a separate governance decision and a future Kubernetes write server; no mutation tool is present in v1 |
-| TB-007 | Broader toolbox rollout beyond current curated peer bands | partial | `dockerhub-read` now adds read-only container registry discovery to `docs-research`, `core-dev+docs-research`, and `full`; `deepwiki-read` now adds generated repository documentation and Q&A to `docs-research`, `core-dev+docs-research`, and `full`; `semgrep-audit` now adds read-only security scanning to `security-audit`, `core-dev+security-audit`, and `full`; remaining peer bands still require manifest additions and test coverage |
-
-## Not In The Current Stack
-
-| ID | Work Item | Why It Is Not In Stack | Status |
-| --- | --- | --- | --- |
-| BK-201 | Add webhooks and SSE | The system is currently request-response oriented | not-in-stack |
-| BK-202 | Add dashboard and graph UI | The stack is service-first and currently has no UI layer | not-in-stack |
+- webhook or SSE transport
+- dashboard UI
+- queue worker or scheduler process
+- entity graph
+- Kubernetes mutation tooling
+- generic client-skill orchestration through Mimir

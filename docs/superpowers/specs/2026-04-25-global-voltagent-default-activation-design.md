@@ -1,5 +1,14 @@
 # Global VoltAgent Default Activation Design
 
+> **Status note (2026-04-27):** This is still the intended activation model for
+> the vendored Codex/VoltAgent client. It governs client-side default
+> activation, not toolbox policy ownership. It is target-state design material,
+> not a claim that the shipped client has already completed the global-default
+> migration. Use it together with
+> `documentation/reference/external-client-boundary.md` and
+> `documentation/operations/docker-toolbox-v1.md` when reasoning about current
+> repo boundaries.
+
 ## Summary
 
 Move VoltAgent activation from a workspace-local `client-config.json` model to a
@@ -24,7 +33,7 @@ That blocks the desired operating model:
 - VoltAgent should also be active by default in every new Codex workspace.
 - Users should not have to bootstrap each workspace individually.
 
-Current implementation points enforcing the workspace-local model include:
+Implementation points that enforced the workspace-local model at the time include:
 
 - `vendor/codex-claude-voltagent-client/src/config/schema.ts`
 - `vendor/codex-claude-voltagent-client/plugins/codex-voltagent-default/scripts/lib/client-config.mjs`
@@ -49,15 +58,15 @@ Current implementation points enforcing the workspace-local model include:
 - No requirement that Docker Desktop or toolbox setup become part of core activation.
 - No removal of workspace-local config support.
 
-## Current behavior
+## Baseline On 2026-04-25
 
-Current config discovery is effectively workspace-local:
+When this design was written, config discovery was effectively workspace-local:
 
 1. installer or onboarding writes `<workspace>/client-config.json`
 2. status/doctor/runtime commands expect an explicit config path
 3. `runtime.trustedWorkspaceRoots` gates non-`local-only` modes
 
-Current default bootstrap path therefore requires per-workspace setup.
+The default bootstrap path at that time therefore required per-workspace setup.
 
 ## Target behavior
 

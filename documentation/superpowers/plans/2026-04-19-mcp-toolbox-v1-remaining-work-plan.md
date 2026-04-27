@@ -1,5 +1,15 @@
 # Mimir Docker Toolbox V1 Remaining Work Implementation Plan
 
+> **Status note (2026-04-27):** This plan captured the reconnect-first
+> remaining-work phase. The Kubernetes read-only slice landed, and the repo has
+> since moved beyond this plan into the dynamic broker and guided authoring
+> phases. Read this as historical execution context, not as the current live
+> backlog. For current shipped behavior and backlog, use
+> `documentation/planning/current-implementation.md`,
+> `documentation/operations/docker-toolbox-v1.md`, and
+> `documentation/planning/backlog.md`. Unchecked boxes below are historical
+> execution artifacts, not the live work queue.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Finish the remaining Docker Toolbox v1 work from the verified current baseline by adding a read-only Kubernetes observation band, keeping Docker runtime and installer planning aligned, and updating rollout/backlog status without widening toolbox authority.
@@ -10,7 +20,7 @@
 
 ---
 
-## Current Verified Baseline
+## Historical Verified Baseline On 2026-04-19
 
 This is the starting point. Do not re-plan these foundations.
 

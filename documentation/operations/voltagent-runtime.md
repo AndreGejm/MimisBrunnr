@@ -1,40 +1,46 @@
-# VoltAgent runtime operations
+# VoltAgent runtime
 
-This document covers the supported Mimir-owned VoltAgent integration:
+This document covers the bounded VoltAgent-related surfaces that Mimir owns
+today.
 
-- `paid_escalation` can use `voltagent_agent`
-- `coding_advisory` can use `voltagent_agent`
-- Claude fallback is configured inside the paid harness, not through a separate
-  orchestration policy layer
-- `voltagent-docs` is exposed as an optional development-only local-stdio docs
-  peer for Codex
+## Current scope
+
+Mimir currently owns two paid helper roles that can use the VoltAgent-backed
+provider path:
+
+- `paid_escalation`
+- `coding_advisory`
+
+Mimir also exposes one optional VoltAgent docs peer:
+
+- `voltagent-docs`
+
+That docs peer is a local-stdio MCP server used for documentation lookup during
+development. It is not the mechanism for routing client skills, subagents, or
+general Workspace behavior through Mimir.
 
 ## Boundary
 
-Mimir owns only the bounded paid-runtime roles and the durable context layer:
+Mimir owns:
 
-- memory and retrieval
-- local models and local-agent execution
-- audit and trace records for paid helper roles
+- durable memory and retrieval
+- governed note mutation
+- local execution
+- bounded paid helper roles inside this repo
 
-Codex and Claude remain responsible for their own:
+External clients still own:
 
 - skills
 - subagents
 - workspace skill roots
-- paid-agent quality orchestration outside these bounded Mimir roles
+- client-local VoltAgent orchestration quality
 
-`voltagent-docs` is a docs lookup convenience only. It is not the architectural
-path for routing VoltAgent skills, workspace tools, or subagent behavior
-through Mimir.
+The full boundary is in
+`documentation/reference/external-client-boundary.md`.
 
-See [external-client-boundary.md](/F:/Dev/scripts/Mimir/mimir/documentation/reference/external-client-boundary.md)
-for the supported split between Mimir-owned runtime responsibilities and
-Codex/Claude-owned skills and subagents.
+## Current configuration
 
-## Supported configuration
-
-Primary plus Claude fallback:
+The current env contract for the two Mimir-owned helper roles is:
 
 ```bash
 set OPENAI_API_KEY=replace-me
@@ -47,68 +53,73 @@ set MAB_ROLE_CODING_ADVISORY_MODEL=openai/gpt-4.1-mini
 set MAB_ROLE_CODING_ADVISORY_FALLBACK_MODEL=anthropic/claude-sonnet-4
 ```
 
-Use `MAB_ROLE_<ROLE>_FALLBACK_MODELS_JSON` when you need more than one ordered
-fallback candidate.
+Use `MAB_ROLE_<ROLE>_FALLBACK_MODELS_JSON` for an ordered fallback list instead
+of one fallback model.
 
-## Upgrade-safety commands
+## Current validation lanes
 
-Contract lane:
+Focused validation commands:
 
 ```bash
 corepack pnpm test:voltagent-contracts
-```
-
-This verifies:
-
-- role-binding parsing, including fallback model ids
-- VoltAgent harness contract shape
-- paid-path telemetry classification
-- coding advisory adapter contract behavior
-
-Smoke lane:
-
-```bash
 corepack pnpm test:voltagent-smoke
 ```
 
-This verifies:
+Current coverage:
 
-- CLI/API/MCP coding advisory parity
+- VoltAgent-related provider config parsing
+- helper-role contract behavior
+- coding advisory parity across CLI, HTTP, and MCP
 - toolbox manifest compilation for `voltagent-docs`
-- local-stdio Codex materialization
-- Docker profile sync omission behavior for client-materialized peers
+- Codex local-stdio materialization
+- Docker sync omission of client-materialized peers
 
-## Toolbox activation for VoltAgent development
+Current tracked CI workflows:
 
-Activate the optional development-only VoltAgent docs toolbox:
+- `.github/workflows/voltagent-contracts.yml`
+- `.github/workflows/voltagent-upstream-canary.yml`
+
+The canary workflow temporarily upgrades upstream VoltAgent packages and reruns
+the focused checks.
+
+## Current toolbox path for VoltAgent docs
+
+The development-oriented workflow is `core-dev+voltagent-docs`.
+
+It includes:
+
+- `core-dev`
+- `docs-research`
+- `voltagent-docs`
+
+Its fallback profile is `core-dev+docs-research`.
+
+Activate it:
 
 ```bash
-corepack pnpm cli -- request-toolbox-activation --json "{\"requestedToolbox\":\"core-dev+voltagent-docs\",\"taskSummary\":\"Need VoltAgent docs while editing the current repository\"}"
+corepack pnpm cli -- request-toolbox-activation --json "{\"requestedToolbox\":\"core-dev+voltagent-docs\",\"taskSummary\":\"Need VoltAgent docs while editing this repository\"}"
 ```
 
-Materialize the Codex MCP config:
+Render the current Codex client artifact:
 
 ```bash
 corepack pnpm cli -- sync-toolbox-client --apply --json "{\"activeProfileId\":\"core-dev+voltagent-docs\",\"clientId\":\"codex\"}"
 ```
 
-Expected file:
+Current output:
 
-- `.mimir/toolbox/codex.mcp.json`
+- file: `.mimir/toolbox/codex.mcp.json`
+- server: `voltagent-docs`
+- command: `npx -y @voltagent/docs-mcp`
 
-Expected peer:
+Current important limitation:
 
-- `voltagent-docs` via `npx -y @voltagent/docs-mcp`
+- `voltagent-docs` is `local-stdio` and client-materialized
+- it is intentionally omitted from Docker profile sync
 
-Legacy compatibility note:
+## Stable failure modes
 
-- `core-dev+voltagent-dev` remains accepted as a profile/id alias during the
-  current compatibility window, but new docs and automation should use
-  `core-dev+voltagent-docs`
-
-## Failure modes
-
-Stable errors you should expect:
+Current VoltAgent-related errors in code and tests:
 
 - `voltagent_invalid_model_id`
 - `voltagent_missing_openai_api_key`
@@ -116,18 +127,14 @@ Stable errors you should expect:
 - `voltagent_auth`
 - `voltagent_timeout`
 
-Operational rule:
+Operationally:
 
-- if the paid path is unavailable, Mimir remains authoritative and preserves the
-  original local escalation semantics
-- if a local-stdio peer is active, Docker MCP sync omits it instead of treating
-  it as a Docker apply blocker
+- if the paid path fails, Mimir still remains the authority for local retrieval
+  and local execution
+- failure of `voltagent-docs` does not change toolbox policy ownership or make
+  it a Docker apply blocker
 
-## Upgrade policy
+## Compatibility note
 
-- keep `@voltagent/core` as a normal dependency, never vendored
-- use the CI `voltagent-contracts` workflow for package updates
-- use the scheduled `voltagent-upstream-canary` workflow to detect upstream
-  breakage before normal upgrade work lands
-- review `pnpm-lock.yaml` changes together with the contract and smoke lanes
-- keep `paid_openai_compat` available during the current compatibility window
+`core-dev+voltagent-dev` still exists as a compatibility alias in the current
+manifest tree, but the current canonical name is `core-dev+voltagent-docs`.

@@ -1,12 +1,23 @@
 # MCP Toolbox V1 Implementation Specification
 
-Status: draft for implementation
+> **Status note (2026-04-27):** This is the original reconnect-first v1
+> implementation spec. Its baseline requirements remain useful for leases,
+> compiled policy, Docker planning, installer audits, and control-surface
+> authority. The live repo now also includes the dynamic broker in
+> `apps/mimir-toolbox-mcp` plus band/workflow authoring. For current runtime
+> behavior, prefer `documentation/operations/docker-toolbox-v1.md`,
+> `documentation/architecture/session-semantics.md`, and
+> `documentation/planning/current-implementation.md`. Treat the "current
+> baseline", "remaining backlog", and acceptance language below as phase-scoped
+> to this 2026-04-18 design slice, not as the live runtime checklist.
+
+Status: historical implementation spec retained for toolbox phase context
 Date: 2026-04-18
 Scope: `docker/mcp/**`, toolbox compiler/runtime/control surfaces, lease enforcement, Docker sync, installer readiness, and client activation flows
 
 ## Purpose
 
-This document defines the implementation requirements for the Mimir Docker Toolbox v1 change using the current codebase as the source of truth. It is intended to prevent the toolbox work from drifting into ad hoc Docker profile mutation, undocumented client behavior, or parallel policy systems.
+This document defined the implementation requirements for the Mimir Docker Toolbox v1 change using the 2026-04-18 repo state as the source of truth for that phase. It is retained to show the original authority boundaries and acceptance criteria that shaped the reconnect-first rollout.
 
 This is not a greenfield design. The repo already contains a substantial toolbox foundation:
 
@@ -20,7 +31,7 @@ This is not a greenfield design. The repo already contains a substantial toolbox
 
 The goal of this spec is to define the remaining authority boundaries, implementation requirements, and acceptance criteria so the toolbox change can be completed correctly.
 
-## Current Baseline
+## Historical Baseline On 2026-04-18
 
 The following is already implemented and must be treated as the starting point, not as planned work.
 
@@ -63,7 +74,7 @@ The following is already implemented and must be treated as the starting point, 
   - `prepare-repo-workspace`
 - The installer already treats Docker Toolkit profile apply as a reviewed planning step rather than a blind mutation path.
 
-## Remaining Backlog Relevant To Toolbox Work
+## Remaining Backlog Relevant To Toolbox Work At The Time
 
 The repo backlog still contains broader items that remain open outside the immediate toolbox slice. The toolbox change must not weaken them or hide them.
 
@@ -415,7 +426,7 @@ This slice is not responsible for:
 - making Docker Desktop state editable by hand as a supported policy authoring surface
 - turning the installer into the source of truth for toolbox policy
 
-## Implementation Notes For The Current Change
+## Implementation Notes For The Original Change
 
 If you are actively implementing the toolbox change now, the safest interpretation is:
 

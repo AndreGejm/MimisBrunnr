@@ -1,24 +1,30 @@
 # Installation
 
-This repository is a Node.js monorepo with a vendored Python runtime. Installation is mostly dependency setup plus choosing a runtime profile.
+This repository is a pnpm workspace. The repo-supported setup path is still:
+
+1. install workspace dependencies
+2. build the workspace
+3. opt into only the extra access or runtime layers you actually need
+
+This file covers the current repo state. For environment variables, see
+[`configuration.md`](./configuration.md). For the Windows-only access installer,
+see [`windows-installer.md`](./windows-installer.md).
 
 ## Prerequisites
 
-### Required
+Required:
 
 - Node `>=22.0.0`
-- `pnpm@10.7.0` (the root `package.json` declares this package manager version)
+- `pnpm@10.7.0` through Corepack
 
-### Optional, depending on what you want to run
+Optional, depending on what you need to run:
 
-- Python 3 for the vendored coding runtime (`MAB_CODING_RUNTIME_PYTHON_EXECUTABLE` defaults to `py` on Windows and `python3` elsewhere)
-- Qdrant if you want the vector index to be reachable
-- Docker Model Runner / Ollama-compatible endpoints if you want model-backed drafting, reasoning, reranking, embeddings, or coding flows
-- Docker if you want to use `docker/compose.local.yml`
+- Python 3 for the vendored coding runtime tests and the coding-domain bridge
+- Docker for `docker/compose.local.yml`
+- Docker MCP Toolkit if you are working on toolbox runtime planning or client handoff
+- Qdrant if you want vector retrieval available instead of degraded-mode fallback
 
-The repo does not include a tracked Python lockfile or packaging manifest. The vendored runtime README lists `fastmcp`, `httpx`, and `pytest` as suggested dependencies.
-
-## Install workspace dependencies
+## Canonical repo setup
 
 ```bash
 corepack enable
@@ -26,209 +32,116 @@ corepack pnpm install
 corepack pnpm build
 ```
 
-There is no cross-platform one-shot bootstrap script yet; the root package
-scripts remain the supported installation/build entrypoints. The tracked
-`scripts/` helpers install launcher aliases, configure Codex MCP access, run
-diagnostics, and provide review/cleanup wrappers.
-
-On Windows, the canonical installer path now lives under
-`scripts/installers/windows/`. That headless backend provisions both:
-
-- Mimir access
-- vendored Codex/VoltAgent client access
-
-The combined installer path installs native Codex skills from the vendored
-client subtree, bootstraps the home-global VoltAgent config at
-`~/.codex/voltagent/client-config.json`, and runs a post-install doctor for the
-selected workspace. Docker Desktop, Docker MCP Toolkit work, and toolbox apply
-remain optional. See [`windows-installer.md`](./windows-installer.md).
-
-If `corepack enable` cannot install a global `pnpm` shim, run every workspace
-command as `corepack pnpm ...` directly.
-
-## Windows installer backend
-
-Current Windows-only backend commands:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
-  -Operation detect-environment `
-  -Json
-
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
-  -Operation audit-install-surface `
-  -Json
-
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
-  -Operation prepare-repo-workspace `
-  -Json
-
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
-  -Operation audit-toolbox-assets `
-  -Json
-
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
-  -Operation prepare-toolbox-runtime `
-  -Json
-
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
-  -Operation audit-toolbox-rollout-readiness `
-  -Json
-
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
-  -Operation audit-docker-mcp-toolkit `
-  -Json
-
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
-  -Operation plan-docker-mcp-toolkit-apply `
-  -Json
-
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
-  -Operation plan-client-access `
-  -Json
-
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
-  -Operation apply-client-access `
-  -Json
-
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/installers/windows/cli.ps1 `
-  -Operation show-state `
-  -Json
-```
-
-What this backend does today:
-
-- reports machine/runtime prerequisites in a stable format
-- prepares a clean local repo checkout through guarded `corepack pnpm install --frozen-lockfile` and `corepack pnpm build`
-- builds the vendored Codex/VoltAgent client as part of installer-owned repo preparation
-- normalizes `doctor-default-access.mjs` into a stable result envelope
-- validates tracked `docker/mcp` toolbox assets through the real compiler and
-  Docker runtime-plan path
-- writes a compiled toolbox runtime artifact for later Docker apply work
-- aggregates rollout-readiness blockers across toolbox discovery, active
-  session, reconnect handoff, Docker governance drift, and Docker apply-plan
-  compatibility
-- inspects the live Docker MCP Toolkit state through `docker mcp`
-- prepares a reviewed Docker Toolkit apply plan and blocks honestly when the
-  installed Toolkit surface is incompatible with the compiled commands
-- exposes a dry-run write plan for launcher, client-config, install-manifest,
-  native Codex skill, and vendored home-global config mutations
-- executes the tracked client-access installer path for both default Mimir
-  access and vendored Codex/VoltAgent access, then reports combined health plus
-  created backups
-- resolves client configuration through a generic client definition layer
-- persists installer state under `%LOCALAPPDATA%\Mimir\installer` by default
-- exposes Docker tool registry and `compose.tools.yml` status through the same report
-
-What it does not do yet:
-
-- clone or update the repo
-- prepare dirty repos automatically
-- apply Docker/runtime assets
-- mutate Docker Toolkit state
-- provide a GUI flow
-
-Current client support is still limited to Codex, but the backend contract no
-longer hard-codes Codex-specific configuration logic in the entrypoint itself.
-
-## Choose a configuration profile
-
-## Minimal repo-local profile
-
-If you want the runtime state to stay inside the repository and you do not want model-backed providers yet, set these environment variables before starting a process:
-
-```dotenv
-MAB_NODE_ENV=development
-MAB_VAULT_ROOT=./vault/canonical
-MAB_STAGING_ROOT=./vault/staging
-MAB_SQLITE_PATH=./state/mimisbrunnr.sqlite
-MAB_QDRANT_URL=http://127.0.0.1:6333
-MAB_QDRANT_COLLECTION=mimisbrunnr_chunks
-MAB_EMBEDDING_PROVIDER=hash
-MAB_REASONING_PROVIDER=heuristic
-MAB_DRAFTING_PROVIDER=disabled
-MAB_RERANKER_PROVIDER=local
-MAB_API_HOST=127.0.0.1
-MAB_API_PORT=8080
-MAB_LOG_LEVEL=info
-```
-
-Why this works:
-
-- `packages/application/src/services/staging-draft-service.ts` falls back to a deterministic draft body when no drafting provider is configured
-- `packages/infrastructure/src/vector/qdrant-vector-index.ts` uses `softFail: true` by default, so missing Qdrant degrades vector search instead of crashing the service
-- the end-to-end tests repeatedly use the `hash` / `heuristic` / `disabled` / `local` provider profile
-
-Important:
-
-- `.env.example` is reference material only; the Node applications do not load `.env` files automatically
-- if `MAB_DATA_ROOT` is unset, host state defaults under `%USERPROFILE%\.mimir` on Windows or `$HOME/.mimir` elsewhere
-- override `MAB_VAULT_ROOT`, `MAB_STAGING_ROOT`, and `MAB_SQLITE_PATH` for repo-local or test-only state
-
-## Containerized model-backed profile
-
-The tracked container profile lives in `docker/compose.local.yml`:
-
-```bash
-docker compose -f docker/compose.local.yml up --build
-```
-
-That profile:
-
-- builds the monorepo using `docker/mimir-api.Dockerfile`
-- runs the HTTP adapter
-- starts Qdrant
-- points the app at `http://model-runner.docker.internal:12434`
-- sets embedding, reasoning, drafting, and reranking providers to the Docker/Ollama-compatible stack
-
-This compose profile is a deliberate runtime profile, not a restatement of the generic defaults in `packages/infrastructure/src/config/env.ts`.
-
-## Global launcher aliases
-
-The canonical launcher is `mimir`. The installer also creates compatibility launchers for old and shorthand names: `mimir-cli`, `mimis`, `mimis-cli`, `mimisbrunnr`, `mimisbrunnr-cli`, `mimirbrunnr`, `mimirbrunnr-cli`, `mimirsbrunnr`, `mimirsbrunnr-cli`, `brain`, `brain-cli`, `brain.CLI`, `multiagentbrain`, `multiagentbrain-cli`, `multiagent-brain`, `multi-agent-brain`, `multi-agent-brain-cli`, and `mab`.
-
-Use `mimir` in new documentation and scripts. Keep the aliases only for backwards compatibility with existing habits, shell snippets, and agent skills.
-## Verify the installation
-
-After setting environment variables, run one or more of:
+That gives you the built workspace entrypoints and the root scripts declared in
+[`package.json`](../../package.json). The normal repo-local run forms are:
 
 ```bash
 corepack pnpm cli -- version
 corepack pnpm api
 corepack pnpm mcp
+corepack pnpm mcp:control
+```
+
+The repo build path is the primary setup path on every platform. The Windows
+installer is an additional Windows-only access and audit surface; it is not the
+only supported way to get the repo working.
+
+## Optional access setup
+
+Nothing in the base install writes global launchers or client MCP config.
+
+If you want machine-level convenience access after the repo builds, use one of
+these paths:
+
+- `node scripts/install-mimir-launchers.mjs`
+- `node scripts/install-default-codex-mcp.mjs`
+- `node scripts/install-default-access.mjs`
+- the Windows-only `apply-client-access` backend described in
+  [`windows-installer.md`](./windows-installer.md)
+
+Current access behavior to keep straight:
+
+- the convenience CLI launcher is `mimir`
+- the installer also writes backwards-compatible CLI aliases such as `mimis`,
+  `brain`, and `multiagentbrain`
+- Codex MCP access points at the built MCP wrapper under
+  `scripts/launch-mimir-mcp.mjs`
+- there is no separate tracked global `mimir-mcp` launcher contract in this repo
+
+## Optional Windows installer path
+
+The Windows installer backend under `scripts/installers/windows/` is useful
+when you want:
+
+- environment detection
+- repo preparation on a clean checkout
+- client-access planning or apply
+- toolbox audit and rollout-readiness reports
+
+It is still a headless backend. It does not clone the repo, repair a dirty
+worktree, or provide a GUI flow. Docker/toolbox apply also remains optional and
+may still be blocked by the local Docker MCP Toolkit contract or by
+descriptor-only peer policies. See [`windows-installer.md`](./windows-installer.md)
+and [`../operations/docker-toolbox-v1.md`](../operations/docker-toolbox-v1.md).
+
+## Optional runtime profiles
+
+### Repo-local development profile
+
+The Node apps read `process.env` directly. They do not auto-load `.env` files.
+
+If you want repo-local state instead of the home-global defaults, set the
+storage paths explicitly before starting the app. The current defaults otherwise
+land under `%USERPROFILE%\\.mimir` on Windows or `$HOME/.mimir` elsewhere when
+`MAB_DATA_ROOT` and the explicit storage-path variables are unset.
+
+The verified source of truth for runtime defaults is
+`packages/infrastructure/src/config/env.ts`, not this file.
+
+### Docker runtime profile
+
+The tracked container profile is:
+
+```bash
+corepack pnpm docker:up
+```
+
+That profile builds the repo image, starts the HTTP adapter, starts Qdrant, and
+points the model-facing roles at the configured Docker/Ollama-compatible stack.
+It is an optional runtime profile, not a prerequisite for local development.
+
+## Verification
+
+Common verification commands:
+
+```bash
+corepack pnpm build
+corepack pnpm typecheck
 corepack pnpm test:transport
 corepack pnpm test
 ```
 
-For Python runtime checks:
+If you change the vendored coding runtime, also run:
 
 ```bash
-py -3 -m pytest runtimes/local_experts/tests/test_safety_gate.py -v   # Windows
-python3 -m pytest runtimes/local_experts/tests/test_safety_gate.py -v # macOS/Linux
+python -m pytest runtimes/local_experts/tests/test_safety_gate.py -v
 ```
 
-## What is not installed by default
+## What the base install does not do
 
-- no `.env` loader
-- no global launcher aliases unless you explicitly run `node scripts/install-mimir-launchers.mjs` or `node scripts/install-default-access.mjs`
-- no tracked migration runner
-- no one-shot local dev bootstrap script outside the Windows installer path;
-  tracked `scripts/` helpers and the current Windows installer backend are
-  scoped operator utilities rather than a full cross-platform bootstrap system
+- it does not auto-load `.env`
+- it does not write global launchers unless you run an access installer
+- it does not write Codex MCP config unless you run an access installer
+- it does not clone or update the repo for you
+- it does not apply Docker MCP profiles for you
+- it does not provide a cross-platform one-shot bootstrap script
+- it does not ship a tracked Python lockfile or Python packaging manifest for
+  the vendored runtime
 
-## Evidence status
+## Canonical docs
 
-### Verified facts
-
-- Prerequisites and scripts come from `package.json`, app `package.json` files, `docker/mimir-api.Dockerfile`, and `runtimes/local_experts/README.md`
-- Runtime defaults come from `packages/infrastructure/src/config/env.ts`
-- Provider fallback behavior comes from `packages/application/src/services/staging-draft-service.ts` and `packages/infrastructure/src/vector/qdrant-vector-index.ts`
-
-### Assumptions
-
-- None
-
-### Documentation maintenance note
-
-- If the repo gains a tracked `.env` loader or Python packaging metadata,
-  update this file immediately
+- [`configuration.md`](./configuration.md)
+- [`development-workflow.md`](./development-workflow.md)
+- [`../apps/mimir-cli.md`](../apps/mimir-cli.md)
+- [`../reference/interfaces.md`](../reference/interfaces.md)
+- [`../operations/docker-toolbox-v1.md`](../operations/docker-toolbox-v1.md)

@@ -1,5 +1,16 @@
 # Guided Toolbox Authoring And Workflow Composition Implementation Plan
 
+> **Status note (2026-04-27):** This plan is now partially historical. The repo
+> has already landed authored workflows, guided scaffolding, preview,
+> `list-toolbox-servers`, `sync-toolbox-runtime`, role-aware narrow selection,
+> and dynamic broker integration. Use it to understand the phase intent, but
+> use `documentation/operations/docker-toolbox-v1.md`,
+> `documentation/reference/interfaces.md`, and
+> `documentation/planning/current-implementation.md` and
+> `documentation/planning/backlog.md` for the live state. Unchecked tasks below
+> should not be treated as the current execution queue without reconciling them
+> against those canonical docs.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add one operator-friendly toolbox authoring flow that can create reusable toolboxes and repeated multi-band workflows, while keeping runtime activation restricted to compiled compatibility profiles and keeping the default MCP surface narrow.
@@ -10,7 +21,7 @@
 
 ---
 
-## File Boundary Map
+## Historical File Boundary Map For This Slice
 
 **Policy contracts and compiler**
 - Modify: `F:\Dev\scripts\Mimir\mimir\packages\contracts\src\toolbox\policy.contract.ts`

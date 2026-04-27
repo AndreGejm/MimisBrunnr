@@ -1,6 +1,19 @@
 # mimir Complete Operator Manual
 
-This manual is the practical operating guide for the current mimir repository.
+> **Status note (2026-04-27):** This manual still covers the governed memory
+> model and the core transport/runtime surfaces, but parts of the MCP/toolbox
+> story have evolved since it was first assembled. For the live toolbox model,
+> prefer [`../operations/docker-toolbox-v1.md`](../operations/docker-toolbox-v1.md),
+> [`../architecture/session-semantics.md`](../architecture/session-semantics.md),
+> [`../reference/interfaces.md`](../reference/interfaces.md),
+> [`../planning/current-implementation.md`](../planning/current-implementation.md),
+> and [`../reference/external-client-boundary.md`](../reference/external-client-boundary.md).
+> Treat this manual as a broad operator guide, not the sole source of truth for
+> the dynamic broker, guided toolbox authoring flow, or external-client wiring.
+
+This manual is a broad operating guide for mimir as of the 2026-04-27 repo
+state. The canonical current-state surface inventory and rollout status live in
+the docs referenced in the status note above.
 mimir is the app and orchestrator. mimisbrunnr is the AI context well inside it:
 the governed memory well where information is staged, validated, promoted,
 persisted, retrieved, and assembled for agents. This manual explains how to run
@@ -771,6 +784,13 @@ docker compose -f docker/compose.local.yml logs qdrant
 
 ## 7. Docker MCP Session Container
 
+> **Current-state note:** This section documents the thin core `mimir-mcp`
+> session container. It does not cover `mimir-control` or the dynamic
+> `mimir-toolbox-mcp` broker; use
+> [`../operations/docker-toolbox-v1.md`](../operations/docker-toolbox-v1.md)
+> and [`../reference/interfaces.md`](../reference/interfaces.md) for those
+> surfaces.
+
 The Docker MCP session profile is documented in
 `documentation/operations/docker-mcp-session.md` and configured through:
 
@@ -903,7 +923,13 @@ validated, bounded tool session.
 
 ## 8. Entrypoints
 
-The three user-facing entrypoints share the same service container:
+> **Current-state note:** This section focuses on the three core
+> memory/runtime entrypoints. The repo also ships `mimir-control-mcp` and
+> `mimir-toolbox-mcp`; for the live MCP surface list and session modes, prefer
+> [`../reference/interfaces.md`](../reference/interfaces.md) and
+> [`../operations/docker-toolbox-v1.md`](../operations/docker-toolbox-v1.md).
+
+The three core memory/runtime entrypoints share the same service container:
 
 - CLI: `apps/mimir-cli/src/main.ts`.
 - HTTP: `apps/mimir-api/src/server.ts`.
@@ -1668,8 +1694,9 @@ operator-visible risk.
 
 ## 14. Reviewing Drafts
 
-There is no tracked review GUI. Review is currently operator-driven through
-files, CLI, HTTP, MCP, and history queries.
+This section documents the operator-driven review path through files, CLI, HTTP,
+MCP, and history queries. For the live surfaced review inventory, prefer
+`documentation/reference/interfaces.md`.
 
 Recommended review checklist:
 
@@ -2811,9 +2838,15 @@ revoked.
 
 ## 37. Reference Map
 
+When this manual and the canonical current-state docs disagree, treat the
+canonical docs as authoritative.
+
 Use these files when you need source details:
 
 - `README.md`: current repository overview.
+- `documentation/planning/current-implementation.md`: current shipped runtime
+  summary.
+- `documentation/planning/backlog.md`: remaining planned work and partial areas.
 - `documentation/setup/installation.md`: installation paths.
 - `documentation/setup/configuration.md`: configuration guidance.
 - `documentation/setup/development-workflow.md`: development workflow.
@@ -2821,11 +2854,15 @@ Use these files when you need source details:
 - `documentation/reference/env-vars.md`: environment variables.
 - `documentation/reference/glossary.md`: terminology.
 - `documentation/reference/repo-map.md`: repository map.
+- `documentation/reference/external-client-boundary.md`: Codex/Claude versus
+  Mimir ownership boundary.
 - `documentation/architecture/overview.md`: package-level architecture.
 - `documentation/architecture/runtime-flow.md`: request and promotion flows.
 - `documentation/architecture/invariants-and-boundaries.md`: safety boundaries.
 - `documentation/operations/running.md`: running commands.
 - `documentation/operations/troubleshooting.md`: troubleshooting.
+- `documentation/operations/docker-toolbox-v1.md`: live toolbox control-plane
+  and broker model.
 - `documentation/operations/docker-mcp-session.md`: containerized MCP session.
 - `documentation/local-agent-context.md`: local-agent context assembly.
 - `documentation/qwen3-coder-local-profile.md`: qwen3-coder local role profile.

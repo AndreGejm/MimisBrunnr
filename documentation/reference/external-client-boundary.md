@@ -1,37 +1,44 @@
 # External client boundary
 
-This document defines the supported boundary for external agent clients such as
-Codex or Claude when they use Mimir together with VoltAgent.
+This document defines the current supported boundary between Mimir and external
+clients such as Codex or Claude.
 
-## Ownership
+## Ownership split
 
 ### Mimir owns
 
 - durable memory in mimisbrunnr
 - retrieval and context assembly
-- local-model execution
-- local-agent execution
-- governed memory writes and review flows
-- bounded paid helper roles implemented inside this repo
+- governed note mutation and review
+- local execution
+- toolbox policy, activation, and client overlays
+- bounded paid helper roles implemented in this repo
 
 ### External clients own
 
 - skills
 - subagents
 - workspace skill roots
-- expert-skill bundles
+- client-local expert bundles
 - client-local paid-agent orchestration quality
 
-External clients may use VoltAgent directly for those concerns. They should not
-route them through Mimir.
+That split is current code and packaging structure, not just guidance.
 
-## What to call Mimir for
+## Current supported entrypoints
 
-The runtime command catalog currently exposes these relevant surfaces.
+Use Mimir through one of these surfaces:
+
+- direct MCP when the client wants the stable Mimir command catalog
+- control MCP when the client needs toolbox discovery or reconnect handoff
+- toolbox broker MCP when the client wants one stable constrained session that
+  can expand or contract
+- CLI or HTTP for operator and process-local workflows
+
+## What belongs in Mimir
+
+Use Mimir for these current categories of work:
 
 ### Retrieval and context
-
-Use Mimir for bounded retrieval and context packet assembly:
 
 - `search_context`
 - `search_session_archives`
@@ -43,27 +50,7 @@ Use Mimir for bounded retrieval and context packet assembly:
 - `query_history`
 - `create_session_archive`
 
-These are the right fit when a client needs durable memory recall, canonical
-context packets, or bounded non-authoritative session recall.
-
-### Local coding and tool execution
-
-Use Mimir for local coding-domain execution and governed local tool surfaces:
-
-- `execute_coding_task`
-- `list_agent_traces`
-- `show_tool_output`
-- `list_ai_tools`
-- `check_ai_tools`
-- `tools_package_plan`
-
-These are the right fit when a client wants Mimir to run local models, local
-agents, or governed Docker AI tool packaging logic.
-
-### Governed memory updates
-
-Use Mimir for durable note and review workflows only when the client explicitly
-wants governed memory mutation:
+### Governed memory mutation
 
 - `draft_note`
 - `list_review_queue`
@@ -76,51 +63,66 @@ wants governed memory mutation:
 - `promote_note`
 - `import_resource`
 
-These flows are for durable memory management, not for ephemeral agent-skill
-behavior.
+### Local execution
 
-## What not to route through Mimir
+- `execute_coding_task`
+- `list_agent_traces`
+- `show_tool_output`
+- `list_ai_tools`
+- `check_ai_tools`
+- `tools_package_plan`
 
-Do not use Mimir for:
+### Toolbox control
+
+- `list_toolboxes`
+- `describe_toolbox`
+- `request_toolbox_activation`
+- `list_active_toolbox`
+- `list_active_tools`
+- `deactivate_toolbox`
+
+## What does not belong in Mimir
+
+Do not route these through Mimir:
 
 - VoltAgent `Workspace`
 - `workspace_*` skill tools
-- skill activation, search, or prompt injection
-- VoltAgent expert-skill bundles
+- skill search, activation, or prompt injection
 - client-side subagent orchestration
-- general paid-agent quality logic that is not one of Mimir's bounded helper
-  roles
+- generic client UX policy or prompt policy
+- expert-skill bundle management
 
-If a Codex or Claude integration needs those, implement them directly on the
-client side.
+Those remain the external client's responsibility.
 
-## Bounded paid helper roles that may stay inside Mimir
+## Current VoltAgent-specific boundary
 
-The current allowed Mimir-owned paid roles are:
+The current repo exposes `voltagent-docs` as an optional local-stdio docs peer.
+
+What it is:
+
+- a development-time docs lookup server
+- materialized for Codex through `.mimir/toolbox/codex.mcp.json`
+
+What it is not:
+
+- a general VoltAgent Workspace bridge
+- a skill runtime
+- a subagent host
+
+The only Mimir-owned paid VoltAgent roles today are:
 
 - `paid_escalation`
 - `coding_advisory`
 
-These roles are internal helper paths. They do not make Mimir the owner of
-client skills or subagents.
+## Decision rule for new client-facing work
 
-## Preferred transport
+A new client-facing feature belongs in Mimir only if all of these stay true:
 
-For interactive client integrations, prefer the MCP surface backed by the same
-runtime command catalog. The MCP tool definitions mirror the commands above and
-keep the actor-role defaults explicit.
+1. Mimir remains the authority for memory, retrieval, or governed local
+   execution.
+2. The feature does not make Mimir the owner of client skills or subagents.
+3. The contract remains provider-agnostic at the Mimir boundary.
+4. The feature fits either the stable command catalog or the toolbox policy
+   model already present in this repo.
 
-Use CLI or HTTP only when the integration is operational or process-local and
-MCP is not the right transport.
-
-## Acceptance rule for future additions
-
-A new VoltAgent-related feature belongs in Mimir only if all of these are true:
-
-1. it serves a bounded Mimir-owned role
-2. it does not require Mimir to own client skills or subagents
-3. it keeps Mimir contracts provider-agnostic
-4. it preserves Mimir as the authority for memory and local execution
-
-If any of those fail, the feature belongs in the external client integration
-instead.
+If those fail, the feature belongs in the external client integration instead.

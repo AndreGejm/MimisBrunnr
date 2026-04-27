@@ -1,5 +1,16 @@
 # Contributor Beta Readiness
 
+> **Status note (2026-04-27):** This document still describes the broader
+> contributor-beta stance correctly, but the current MCP story now includes
+> `mimir-control` and the dynamic `mimir-toolbox-mcp` broker in addition to the
+> thin core MCP adapter. Use
+> [`../operations/docker-toolbox-v1.md`](../operations/docker-toolbox-v1.md) and
+> [`../reference/interfaces.md`](../reference/interfaces.md),
+> [`../planning/current-implementation.md`](../planning/current-implementation.md),
+> and [`../planning/backlog.md`](../planning/backlog.md) for the live surface
+> inventory and toolbox rollout details. Treat the matrix below as beta framing,
+> not the authoritative command/tool list.
+
 This document defines the recommended beta bar when mimir is being shared with
 programmer contributors rather than end users.
 
@@ -43,13 +54,15 @@ The strict center remains:
 
 Contributors may extend around that center. They should not bypass it.
 
-## Current open surfaces
+## Open Surfaces At This Beta Checkpoint
 
 The current repository already exposes multiple connection paths:
 
 - CLI through `apps/mimir-cli`
 - HTTP through `apps/mimir-api`
 - stdio MCP through `apps/mimir-mcp`
+- toolbox control MCP through `apps/mimir-control-mcp`
+- dynamic toolbox broker MCP through `apps/mimir-toolbox-mcp`
 - Docker MCP session through `docker/mimir-mcp.Dockerfile` and `docker/compose.mcp-session.yml`
 - launcher installation and doctor helpers through `scripts/*`
 - Docker AI tool discovery and validation through `docker/tool-registry/*.json`
@@ -65,7 +78,7 @@ This matrix is the minimum contributor-facing truth to publish before beta.
 | Surface | CLI | HTTP | MCP | Notes |
 | --- | --- | --- | --- | --- |
 | Search/context read | yes | yes | yes | `search-context`, `assemble-agent-context`, tree/node/packet/decision-summary |
-| Session archive create/search | yes | yes | partial | creation exists in all three; session-archive search is CLI and HTTP today |
+| Session archive create/search | yes | yes | yes | creation and search now exist in CLI, HTTP, and MCP; use `documentation/reference/interfaces.md` for exact route/tool names |
 | Draft creation | yes | yes | yes | governed durable write proposal |
 | Refresh draft creation | yes | yes | yes | single and batch flows |
 | Validate/promote | yes | yes | yes | governed write path remains centralized |
@@ -78,6 +91,8 @@ This matrix is the minimum contributor-facing truth to publish before beta.
 Do not describe transport parity as broader than it is. Review operations now
 have CLI, HTTP, and MCP parity, but they still remain thin frontends over the
 same governed staging and promotion flow.
+
+If this summary drifts, `documentation/reference/interfaces.md` wins.
 
 ## Extension tiers
 

@@ -1,141 +1,153 @@
 # Architecture Overview
 
-mimir is the application and orchestrator. mimisbrunnr is the AI context well inside mimir: the governed memory, retrieval, and context assembly layer. The code paths show a clear dependency direction and a shared runtime container, even though some older planning docs still describe parts of that runtime as future work.
+mimir is a local-first TypeScript monorepo with one shared runtime and several
+thin adapters. mimisbrunnr is the governed memory layer inside that runtime,
+not a separate deployable in this workspace.
 
-See `documentation/reference/terminology.md` before renaming product or memory surfaces.
+## Main runtime surfaces
 
-## Layered package map
+- `apps/mimir-api`: HTTP adapter over the runtime command catalog
+- `apps/mimir-cli`: JSON CLI over the same command catalog
+- `apps/mimir-mcp`: direct MCP adapter for the stable command catalog
+- `apps/mimir-control-mcp`: toolbox discovery, approval, lease, and reconnect
+  surface
+- `apps/mimir-toolbox-mcp`: dynamic toolbox broker that changes visible tools
+  inside one session
+
+The direct MCP adapter and the toolbox adapters are different products:
+
+- `mimir-mcp` exposes the broad stable command catalog
+- the toolbox surfaces expose a curated policy-driven subset built from
+  `docker/mcp`
+
+## Layered codebase
 
 ```text
 packages/domain
-  foundational types and invariants
+  shared domain types and invariants
 
 packages/contracts
-  transport and service request/response shapes
+  runtime command contracts, transport request shapes, toolbox policy types
 
 packages/application
-  business services and port interfaces
+  retrieval, drafting, validation, promotion, history, namespace, and packet services
 
 packages/orchestration
-  mimir orchestration, mimisbrunnr domain controllers, auth policy, model-role resolution
+  root orchestration, auth policy, coding domain, mimisbrunnr controllers
 
 packages/infrastructure
-  env loading, storage adapters, providers, runtime container, health, transport validation
+  environment loading, storage adapters, providers, transport validation,
+  toolbox control surface, runtime bootstrap
 
-apps/mimir-api
-apps/mimir-cli
-apps/mimir-mcp
-  thin transport entrypoints over the shared mimir runtime
+apps/*
+  thin transport adapters and toolbox broker endpoints
+
+docker/mcp
+  checked-in toolbox policy source of truth
+
+vendor/codex-claude-voltagent-client
+  installer-managed external client subtree kept separate from Mimir orchestration
 
 runtimes/local_experts
   vendored Python coding runtime invoked through a subprocess bridge
 ```
 
-## Dependency direction
+Dependency direction is still one way through the packages:
 
-The tracked `package.json` files implement this dependency direction:
+`domain -> contracts -> application -> orchestration -> infrastructure -> apps`
 
-```text
-domain
-  ^
-contracts
-  ^
-application
-  ^
-orchestration
-  ^
-infrastructure
-  ^
-apps/*
-```
+## Shared runtime container
 
-`apps/*` depend on `@mimir/contracts` and `@mimir/infrastructure`, then enter the runtime through `buildServiceContainer()`.
+`packages/infrastructure/src/bootstrap/build-service-container.ts` is the main
+assembly point.
 
-## Runtime composition
+It wires:
 
-The main runtime wiring lives in `packages/infrastructure/src/bootstrap/build-service-container.ts`.
-
-It constructs:
-
-- repositories for canonical and staging note files
-- SQLite-backed stores for metadata, audit, imports, session archives, issued tokens, revocations, namespace nodes, and context representations
-- SQLite FTS lexical index
-- Qdrant vector index
-- local/pseudo-local model providers
-- auth policy
+- filesystem-backed canonical and staging note repositories
+- SQLite-backed metadata, audit, token, revocation, import, session-archive,
+  context-namespace, context-representation, local-agent-trace, and tool-output
+  stores
+- SQLite FTS lexical retrieval
+- Qdrant vector retrieval
+- local and paid provider adapters
+- auth policy and runtime command dispatch
 - application services
-- mimisbrunnr domain controllers
-- the root MimirOrchestrator
+- mimisbrunnr and coding domain controllers
+- the root orchestrator
 
-## Major subsystems
+## Current toolbox architecture
 
-### mimisbrunnr Memory and Authority
+The toolbox runtime is policy-driven. The checked-in source of truth is
+`docker/mcp`, not the live Docker toolkit state.
 
-- canonical filesystem repository: `packages/infrastructure/src/vault/file-system-canonical-note-repository.ts`
-- staging filesystem repository: `packages/infrastructure/src/vault/file-system-staging-note-repository.ts`
-- canonical note service: `packages/application/src/services/canonical-note-service.ts`
-- staging draft service: `packages/application/src/services/staging-draft-service.ts`
-- promotion orchestrator: `packages/application/src/services/promotion-orchestrator-service.ts`
-- temporal refresh: `packages/application/src/services/temporal-refresh-service.ts`
+Authoring layers:
 
-### mimisbrunnr Retrieval and Context Assembly
+- `bands/*.yaml`: reusable capability slices
+- `workflows/*.yaml`: repeated multi-band compositions
+- `profiles/*.yaml`: checked-in base profiles
+- `intents.yaml`: user-facing toolbox choices
+- `clients/*.yaml`: client overlays and reconnect strategy
+- `servers/*.yaml`: owned and peer server descriptors
 
-- retrieve context: `packages/application/src/services/retrieve-context-service.ts`
-- hierarchical retrieval: `packages/application/src/services/hierarchical-retrieval-service.ts`
-- packet assembly: `packages/application/src/services/context-packet-service.ts`
-- decision summary: `packages/application/src/services/decision-summary-service.ts`
-- namespace browse/read: `packages/application/src/services/context-namespace-service.ts`
-- derived L0/L1 representations: `packages/application/src/services/context-representation-service.ts`
+Compiled runtime behavior:
 
-### Auth and governance
-
-- policy: `packages/orchestration/src/root/actor-authorization-policy.ts`
-- issued token creation/verification: `packages/orchestration/src/root/issued-actor-token.ts`
-- transport-level auth request validation: `packages/infrastructure/src/transport/auth-control-validation.ts`
-
-### Coding domain
-
-- orchestrator/controller entry: `packages/orchestration/src/coding/coding-domain-controller.ts`
-- Node bridge: `packages/infrastructure/src/coding/python-coding-controller-bridge.ts`
-- vendored runtime: `runtimes/local_experts/bridge.py` and related modules
+- workflow files compile into additional profile ids such as
+  `core-dev+docs-research` and `core-dev+voltagent-docs`
+- `packages/infrastructure/src/toolbox/control-surface.ts` resolves toolbox
+  requests, issues leases, and returns reconnect handoffs
+- `apps/mimir-toolbox-mcp/src/session-state.ts` tracks active bands, lease
+  expiry, idle timeout, and activation cause for brokered sessions
+- `packages/infrastructure/src/toolbox/client-materialization.ts` only
+  materializes local-stdio peers marked `configTarget: codex-mcp-json`; the
+  current live example is `voltagent-docs`
 
 ## Persistence model
 
-The repository uses multiple persistence surfaces:
+Current persistence surfaces are:
 
-- filesystem for canonical and staging note bodies
-- SQLite for metadata, audit, issued tokens, revocations, session archives, import jobs, namespace projections, and derived representations
+- Markdown note bodies on disk
+- SQLite for metadata, audit, token lifecycle, imports, session archives,
+  namespace nodes, derived representations, local-agent traces, and tool-output
+  metadata
 - SQLite FTS for lexical retrieval
-- Qdrant for vector search
+- Qdrant for vector retrieval
 
-There is no tracked standalone migration system. Table creation happens inside adapter code with `CREATE TABLE IF NOT EXISTS` and selective `ALTER TABLE` logic.
+There is still no tracked migration directory. Schema creation and upgrades live
+inside the adapters.
 
-## Operational profile
+## External client boundary
 
-The repository currently provides:
+The repo also vendors `vendor/codex-claude-voltagent-client`, but that subtree
+stays logically separate from Mimir runtime ownership.
 
-- a direct-process CLI
-- an HTTP server
-- a stdio MCP server
-- a Docker compose profile for the HTTP server plus Qdrant
+Mimir owns:
 
-The repository does not currently contain:
+- durable memory
+- retrieval and context assembly
+- governed review and promotion
+- local execution
+- bounded paid helper roles
 
-- a standalone worker
-- a tracked background scheduler
-- tracked queue infrastructure
-- tracked CI/CD configuration
+External clients still own:
 
-## Evidence status
+- skills
+- subagents
+- workspace skill roots
+- client-local paid-agent quality
 
-### Verified facts
+See `documentation/reference/external-client-boundary.md` for the current
+boundary contract.
 
-- This overview is based on tracked workspace manifests and the runtime container wiring in `packages/infrastructure/src/bootstrap/build-service-container.ts`
+## Current constraints
 
-### Assumptions
+These constraints are active in the current repo state:
 
-- None
-
-### TODO gaps
-
-- If the repository adds background workers, deployment descriptors, or new transport adapters, extend this document and `documentation/reference/repo-map.md`
+- the Docker MCP toolkit on this machine does not expose `docker mcp profile`
+- Docker gateway help does not expose `--profile`
+- several peer servers remain descriptor-only wrappers because the live catalog
+  surfaces are broader than the governed policy contract
+- the broker can route owned tools and local-stdio peers today, while
+  docker-catalog peer routing remains opt-in and still depends on gateway
+  configuration
+- the repo includes targeted GitHub Actions for VoltAgent contract and canary
+  coverage, but no broader tracked release or deployment pipeline

@@ -1,108 +1,89 @@
-# Module map
+# Module Map
 
-This is the current package/module map based on tracked manifests and imports.
+This map is the current repo shape, not a historical plan.
 
 ## Core modules
 
-| Module | Purpose | Key files | Inbound dependencies | Outbound dependencies | Runtime criticality |
-| --- | --- | --- | --- | --- | --- |
-| `packages/domain` | Shared domain vocabulary and invariants | `packages/domain/src/index.ts` | all higher layers | none | foundational |
-| `packages/contracts` | Request/response contracts and MCP tool schemas | `packages/contracts/src/index.ts` | application, orchestration, infrastructure, apps | `packages/domain` | foundational |
-| `packages/application` | Business services and port interfaces | `packages/application/src/index.ts` | orchestration, infrastructure | `packages/contracts`, `packages/domain` | high |
-| `packages/orchestration` | Command routing, auth, controllers, model-role resolution | `packages/orchestration/src/index.ts` | infrastructure | `packages/application`, `packages/contracts`, `packages/domain` | high |
-| `packages/infrastructure` | Runtime bootstrapping, adapters, providers, health, env loading | `packages/infrastructure/src/index.ts` | apps | `packages/application`, `packages/contracts`, `packages/domain`, `packages/orchestration` | high |
-| `apps/mimir-api` | HTTP adapter | `apps/mimir-api/src/server.ts` | users, operators, tests | `@mimir/contracts`, `@mimir/infrastructure` | high |
-| `apps/mimir-cli` | CLI adapter | `apps/mimir-cli/src/main.ts` | developers, operators, tests | `@mimir/contracts`, `@mimir/infrastructure` | high |
-| `apps/mimir-mcp` | stdio MCP adapter | `apps/mimir-mcp/src/main.ts`, `apps/mimir-mcp/src/tool-definitions.ts` | MCP clients, tests | `@mimir/contracts`, `@mimir/infrastructure` | high |
-| `runtimes/local_experts` | Vendored Python coding worker | `runtimes/local_experts/bridge.py` | `PythonCodingControllerBridge` | Python-local modules and allowed tool functions | high for coding path only |
+| Area | Role | Key files |
+| --- | --- | --- |
+| `packages/domain` | Shared domain vocabulary, note lifecycle types, context packet primitives, audit types | `packages/domain/src/index.ts` |
+| `packages/contracts` | Runtime command catalog, transport request and response contracts, toolbox policy types | `packages/contracts/src/index.ts` |
+| `packages/application` | Retrieval, packet assembly, drafting, validation, promotion, history, namespace, and refresh services | `packages/application/src/index.ts` |
+| `packages/orchestration` | Root orchestrator, auth policy, token inspection, coding domain, mimisbrunnr controllers | `packages/orchestration/src/index.ts` |
+| `packages/infrastructure` | Runtime bootstrap, storage adapters, providers, transport validation, toolbox control surface, client materialization | `packages/infrastructure/src/index.ts` |
+| `apps/mimir-api` | HTTP adapter for the runtime command catalog | `apps/mimir-api/src/server.ts` |
+| `apps/mimir-cli` | CLI adapter for the runtime command catalog and toolbox authoring commands | `apps/mimir-cli/src/main.ts` |
+| `apps/mimir-mcp` | Direct MCP adapter for the stable command catalog | `apps/mimir-mcp/src/main.ts`, `apps/mimir-mcp/src/tool-definitions.ts` |
+| `apps/mimir-control-mcp` | Toolbox discovery, approval, lease, and reconnect surface | `apps/mimir-control-mcp/src/main.ts`, `apps/mimir-control-mcp/src/tool-definitions.ts` |
+| `apps/mimir-toolbox-mcp` | Dynamic broker that changes visible tools inside one session | `apps/mimir-toolbox-mcp/src/main.ts`, `apps/mimir-toolbox-mcp/src/session-state.ts`, `apps/mimir-toolbox-mcp/src/adapters/*` |
+| `docker/mcp` | Checked-in toolbox policy source of truth: servers, bands, workflows, base profiles, intents, clients | `docker/mcp/**` |
+| `vendor/codex-claude-voltagent-client` | Installer-managed external client subtree kept outside Mimir runtime ownership | `vendor/codex-claude-voltagent-client/**` |
+| `runtimes/local_experts` | Vendored Python coding runtime launched through the infrastructure bridge | `runtimes/local_experts/bridge.py` |
+| `scripts` | Launchers, diagnostics, Docker audit helpers, installer backend, review GUI | `scripts/**` |
 
-## Shared runtime container
+## Runtime files to read first
 
-`packages/infrastructure/src/bootstrap/build-service-container.ts` is the main assembly point and is the best single file for understanding how the system is actually wired.
+If you need to understand live behavior quickly, start here:
 
-It connects:
+1. `packages/infrastructure/src/bootstrap/build-service-container.ts`
+2. `packages/infrastructure/src/transport/runtime-command-dispatcher.ts`
+3. `packages/infrastructure/src/toolbox/control-surface.ts`
+4. `apps/mimir-toolbox-mcp/src/main.ts`
+5. `apps/mimir-toolbox-mcp/src/session-state.ts`
+6. `docker/mcp/bands/*.yaml`
+7. `docker/mcp/workflows/*.yaml`
 
-- filesystem note repositories
-- SQLite stores
-- FTS index
-- vector index
-- provider implementations
-- auth policy
-- application services
-- domain controllers
-- root orchestrator
+## Toolbox-specific module split
 
-## Candidate subsystem clusters
+The toolbox runtime is spread across four layers:
 
-### Retrieval cluster
+- policy types in `packages/contracts/src/toolbox/policy.contract.ts`
+- compilation and control logic in `packages/infrastructure/src/toolbox/*`
+- compatibility control transport in `apps/mimir-control-mcp`
+- dynamic broker transport in `apps/mimir-toolbox-mcp`
 
-- `packages/application/src/services/retrieve-context-service.ts`
-- `packages/application/src/services/hierarchical-retrieval-service.ts`
-- `packages/application/src/services/context-packet-service.ts`
-- `packages/application/src/services/decision-summary-service.ts`
-- `packages/infrastructure/src/fts/sqlite-fts-index.ts`
-- `packages/infrastructure/src/vector/qdrant-vector-index.ts`
+The checked-in `profiles/*.yaml` files are only the base profiles. Workflow
+compositions under `workflows/*.yaml` compile into additional profile ids such
+as `core-dev+docs-research` and `core-dev+voltagent-docs`.
 
-Documentation sufficiency before this overhaul: not sufficient. Old docs did not map all current retrieval entrypoints or warn clearly about degraded vector behavior.
+## Current peer runtime classes
 
-### Memory and promotion cluster
+The compiled toolbox policy currently produces four practical server classes:
 
-- `packages/application/src/services/staging-draft-service.ts`
-- `packages/application/src/services/note-validation-service.ts`
-- `packages/application/src/services/promotion-orchestrator-service.ts`
-- `packages/application/src/services/temporal-refresh-service.ts`
-- `packages/infrastructure/src/vault/*.ts`
-- `packages/infrastructure/src/sqlite/sqlite-metadata-control-store.ts`
+- owned in-process servers: `mimir-control`, `mimir-core`
+- docker-catalog peers: `brave-search`, `deepwiki-read`, `docker-docs`,
+  `microsoft-learn`, `semgrep-audit`
+- descriptor-only peers: `docker-admin`, `docker-read`, `dockerhub-read`,
+  `github-read`, `github-write`, `grafana-observe`, `kubernetes-read`
+- local-stdio client-materialized peer: `voltagent-docs`
 
-Documentation sufficiency before this overhaul: partial and stale. The previous docs did not explain promotion outbox replay, snapshot creation, or refresh-draft reuse accurately enough.
+Descriptor-only peers stay in policy and diagnostics, but they do not become
+safe Docker profile references until read-filtered or audited catalog entries
+exist.
 
-### Auth and governance cluster
+## Current hot spots
 
-- `packages/orchestration/src/root/actor-authorization-policy.ts`
-- `packages/orchestration/src/root/issued-actor-token.ts`
-- `packages/infrastructure/src/transport/auth-control-validation.ts`
-- `packages/infrastructure/src/sqlite/sqlite-issued-token-store.ts`
-- `packages/infrastructure/src/sqlite/sqlite-revocation-store.ts`
+These files or directories carry the most current architecture-specific weight:
 
-Documentation sufficiency before this overhaul: partial. Some auth-control surfaces were documented, but not consistently across transports.
+- `packages/infrastructure/src/bootstrap/build-service-container.ts`
+- `packages/infrastructure/src/toolbox/control-surface.ts`
+- `packages/infrastructure/src/toolbox/client-materialization.ts`
+- `apps/mimir-toolbox-mcp/src/main.ts`
+- `apps/mimir-toolbox-mcp/src/adapters/docker-gateway-adapter.ts`
+- `apps/mimir-toolbox-mcp/src/adapters/local-stdio-adapter.ts`
+- `docker/mcp/servers/*.yaml`
+- `docker/mcp/bands/*.yaml`
+- `docker/mcp/workflows/*.yaml`
 
-### Namespace and derived context cluster
+## Test surfaces that exercise this map
 
-- `packages/application/src/services/context-namespace-service.ts`
-- `packages/application/src/services/context-representation-service.ts`
-- `packages/infrastructure/src/sqlite/sqlite-context-namespace-store.ts`
-- `packages/infrastructure/src/sqlite/sqlite-context-representation-store.ts`
+The most relevant current tests for the module split above are:
 
-Documentation sufficiency before this overhaul: not sufficient. These surfaces were under-documented and missing from multiple adapter READMEs.
-
-### Import and session-archive cluster
-
-- `packages/application/src/services/import-orchestration-service.ts`
-- `packages/application/src/services/session-archive-service.ts`
-- `packages/infrastructure/src/sqlite/sqlite-import-job-store.ts`
-- `packages/infrastructure/src/sqlite/sqlite-session-archive-store.ts`
-
-Documentation sufficiency before this overhaul: not sufficient. The prior docs either omitted these surfaces or described them as future work.
-
-### Coding cluster
-
-- `packages/orchestration/src/coding/coding-domain-controller.ts`
-- `packages/infrastructure/src/coding/python-coding-controller-bridge.ts`
-- `runtimes/local_experts/**`
-
-Documentation sufficiency before this overhaul: partial. The vendored runtime was described, but the actual bridge path and runtime prerequisites were not documented clearly enough.
-
-## Evidence status
-
-### Verified facts
-
-- Package names and dependencies come from tracked `package.json` files
-- Runtime assembly claims come from `packages/infrastructure/src/bootstrap/build-service-container.ts`
-
-### Assumptions
-
-- None
-
-### TODO gaps
-
-- If the workspace adds new top-level packages or apps, update this table and `documentation/reference/repo-map.md`
+- `tests/e2e/toolbox-manifest-contracts.test.mjs`
+- `tests/e2e/mimir-control-mcp.test.mjs`
+- `tests/e2e/toolbox-session-lease.test.mjs`
+- `tests/e2e/toolbox-cli.test.mjs`
+- `tests/e2e/docker-toolbox-sync.test.mjs`
+- `tests/e2e/mimir-toolbox-mcp-local-stdio.test.mjs`
+- `tests/e2e/mimir-toolbox-mcp-docker-catalog.test.mjs`
+- `tests/e2e/mimir-toolbox-mcp-peer-diagnostics.test.mjs`

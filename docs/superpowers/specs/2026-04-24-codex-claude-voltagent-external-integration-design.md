@@ -1,5 +1,15 @@
 # Codex And Claude VoltAgent External Integration Design
 
+> **Status note (2026-04-27):** This remains the governing ownership split for
+> external clients: VoltAgent, skills, workspace behavior, and subagents stay
+> client-side; Mimir stays the memory, retrieval, and governed-runtime system.
+> The repo now also includes a dynamic toolbox broker and guided toolbox
+> authoring, but those do not change this ownership boundary. For the live
+> Mimir-side contract, prefer `documentation/reference/external-client-boundary.md`,
+> `documentation/reference/interfaces.md`, and
+> `documentation/operations/docker-toolbox-v1.md`. The rollout phases below are
+> design history, not a live implementation tracker.
+
 ## Goal
 
 Define the supported architecture for making VoltAgent the default orchestration
@@ -16,7 +26,7 @@ usability and stability.
 
 ## Problem statement
 
-The current Mimir branch has a strong internal VoltAgent integration for
+The 2026-04-24 Mimir branch already had a strong internal VoltAgent integration for
 bounded helper roles:
 
 - `paid_escalation`
@@ -641,6 +651,10 @@ Do not merge these into one pseudo-authoritative stream. Cross-link them if
 needed, but keep ownership explicit.
 
 ## Rollout plan
+
+> **Historical sequencing note:** The phases below capture the intended rollout
+> order on 2026-04-24. Confirm current shipped state in the canonical docs
+> above before treating any phase as pending work.
 
 ### Phase 0: Verify Codex bootstrap surface
 

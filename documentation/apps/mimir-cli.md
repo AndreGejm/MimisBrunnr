@@ -1,73 +1,153 @@
 # mimir-cli
 
-CLI adapter over the shared runtime container.
+`apps/mimir-cli` is the thin JSON CLI transport over the shared runtime and the
+repo-governed toolbox control surface.
 
-## Entrypoint
+Source of truth for the command catalog is `apps/mimir-cli/src/main.ts`. Source
+of truth for the external interface inventory is
+[`../reference/interfaces.md`](../reference/interfaces.md).
 
-- `apps/mimir-cli/src/main.ts`
+## How to run it
 
-## Commands
+From the workspace root:
+
+```bash
+corepack pnpm cli -- version
+```
+
+The optional global `mimir` launcher is a convenience install surface. It is
+not required for contributor or CI-style repo-local usage.
+
+## Command families
+
+### Runtime and auth
 
 - `version`
+- `auth-issuers`
 - `auth-status`
 - `auth-issued-tokens`
 - `auth-introspect-token`
-- `freshness-status`
 - `issue-auth-token`
 - `revoke-auth-token`
-- `execute-coding-task`
+- `revoke-auth-tokens`
+- `set-auth-issuer-state`
+- `freshness-status`
+- `query-history`
+
+### Retrieval and context
+
 - `search-context`
+- `search-session-archives`
+- `assemble-agent-context`
 - `list-context-tree`
 - `read-context-node`
 - `get-context-packet`
 - `fetch-decision-summary`
+
+### Drafting, review, and history
+
 - `draft-note`
+- `list-review-queue`
+- `read-review-note`
+- `accept-note`
+- `reject-note`
 - `create-refresh-draft`
 - `create-refresh-drafts`
 - `validate-note`
 - `promote-note`
 - `import-resource`
-- `query-history`
 - `create-session-archive`
 
-## Input behavior
+### Coding and AI tool registry
 
-- payload-bearing commands accept exactly one of `--stdin`, `--input <path>`, or `--json <payload>`
-- `version` does not require a payload
-- `auth-status` has no required payload, but enforced auth mode still requires operator or system actor context in the JSON body
-- `auth-issued-tokens`, `freshness-status`, and `create-refresh-drafts` accept optional payloads
-- `auth-issued-tokens`, `auth-introspect-token`, `issue-auth-token`, and `revoke-auth-token` should carry an `actor` object when `MAB_AUTH_MODE=enforced`
-- `auth-issued-tokens` accepts `actorId`, `issuedByActorId`, `revokedByActorId`, `lifecycleStatus`, `asOf`, `includeRevoked`, and `limit`; the returned summary applies the same filters except for `limit`
-- lifecycle entries returned by `auth-issued-tokens` include `issuedByActorId`, `issuedByActorRole`, `issuedBySource`, and `issuedByTransport` when the token was minted through the protected issue flow, plus `revokedByActorId`, `revokedByActorRole`, `revokedBySource`, and `revokedByTransport` after revocation
-- `issue-auth-token` and `revoke-auth-token` also write `issue_auth_token` and `revoke_auth_token` audit events into `query-history`; the audit detail records token ids, actor targets, policy-shape booleans, and revocation reasons, but never the raw issued token
-- `query-history` accepts `actorId`, `actionType`, `source`, `noteId`, `since`, `until`, and `limit`; filtering happens before the bounded result window is applied
+- `execute-coding-task`
+- `list-agent-traces`
+- `show-tool-output`
+- `list-ai-tools`
+- `check-ai-tools`
+- `tools-package-plan`
+
+### Toolbox authoring and control
+
+- `check-mcp-profiles`
+- `list-toolbox-servers`
+- `scaffold-toolbox`
+- `scaffold-toolbox-band`
+- `preview-toolbox`
+- `sync-mcp-profiles`
+- `sync-toolbox-runtime`
+- `sync-toolbox-client`
+- `list-toolboxes`
+- `describe-toolbox`
+- `request-toolbox-activation`
+- `list-active-toolbox`
+- `list-active-tools`
+- `deactivate-toolbox`
+
+## CLI behavior
+
 - output is always JSON
+- payload-bearing commands accept exactly one of:
+  - `--stdin`
+  - `--input <path>`
+  - `--json <payload>`
+- `version` and `--version` do not require a payload
+- `--apply` is only supported by:
+  - `sync-mcp-profiles`
+  - `sync-toolbox-runtime`
+  - `sync-toolbox-client`
+- `scaffold-toolbox --wizard` is the only wizard mode and must not be combined
+  with `--stdin`, `--input`, or `--json`
 
-## Run
+In enforced auth mode, the auth-control commands require operator or system
+actor context in the payload. The current auth-control set is:
+
+- `auth-issuers`
+- `auth-status`
+- `auth-issued-tokens`
+- `auth-introspect-token`
+- `issue-auth-token`
+- `revoke-auth-token`
+- `revoke-auth-tokens`
+- `set-auth-issuer-state`
+
+## Important boundaries
+
+### Repo-local first
+
+The verified repo-local form is `corepack pnpm cli -- <command>`. Public docs
+or examples should not assume a separate `mimir-mcp` launcher exists.
+
+### Toolbox apply is still split
+
+- `sync-toolbox-runtime --apply` writes the client artifact only
+- `sync-mcp-profiles --apply` is the Docker-facing apply surface
+
+Those are deliberately separate. Docker apply can still be blocked by the local
+Docker MCP Toolkit contract or by descriptor-only peers with no safe raw
+catalog target.
+
+### Command inventory lives elsewhere
+
+This file is orientation, not the canonical full interface listing. When the
+catalog changes, update `documentation/reference/interfaces.md` in the same
+change.
+
+## Examples
 
 ```bash
-pnpm cli -- version
-pnpm cli -- auth-status --json "{\"actor\":{\"actorId\":\"operator-cli\",\"actorRole\":\"operator\",\"source\":\"mimir-cli-admin\",\"authToken\":\"<token>\"}}"
-pnpm cli -- auth-issued-tokens --json "{\"actor\":{\"actorId\":\"operator-cli\",\"actorRole\":\"operator\",\"source\":\"mimir-cli-admin\",\"authToken\":\"<token>\"},\"issuedByActorId\":\"security-cli\",\"lifecycleStatus\":\"future\",\"includeRevoked\":true}"
-pnpm cli -- query-history --json "{\"actor\":{\"actorId\":\"operator-cli\",\"actorRole\":\"operator\",\"source\":\"mimir-cli-admin\",\"authToken\":\"<token>\"},\"actorId\":\"operator-cli\",\"actionType\":\"issue_auth_token\",\"limit\":20}"
-pnpm cli -- list-context-tree --json "{\"ownerScope\":\"mimisbrunnr\",\"authorityStates\":[\"canonical\",\"staging\"]}"
+corepack pnpm cli -- version
+
+corepack pnpm cli -- search-context --json "{\"query\":\"toolbox rollout readiness\",\"budget\":{\"maxTokens\":1200,\"maxSources\":4,\"maxRawExcerpts\":1,\"maxSummarySentences\":4},\"corpusIds\":[\"general_notes\",\"mimisbrunnr\"]}"
+
+corepack pnpm cli -- list-toolboxes --json "{}"
+
+corepack pnpm cli -- sync-toolbox-runtime --json "{}"
 ```
 
 ## Canonical docs
 
-- `documentation/reference/interfaces.md`
-- `documentation/setup/development-workflow.md`
-
-## Evidence status
-
-### Verified facts
-
-- This README is based on `apps/mimir-cli/src/main.ts`
-
-### Assumptions
-
-- None
-
-### TODO gaps
-
-- If commands change, update this file and `documentation/reference/interfaces.md` together
+- [`../reference/interfaces.md`](../reference/interfaces.md)
+- [`../setup/development-workflow.md`](../setup/development-workflow.md)
+- [`../operations/docker-toolbox-v1.md`](../operations/docker-toolbox-v1.md)
+- [`../planning/current-implementation.md`](../planning/current-implementation.md)
