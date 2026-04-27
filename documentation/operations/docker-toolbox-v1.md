@@ -3,6 +3,10 @@
 This document describes the current toolbox runtime. It is not a future-state
 spec.
 
+For the practical operator workflow for adding MCPs, bands, workflows, and
+toolbox targets, use
+[`toolbox-operator-guide.md`](./toolbox-operator-guide.md).
+
 ## Source of truth
 
 The toolbox policy source of truth is the checked-in manifest tree under

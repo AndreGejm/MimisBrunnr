@@ -150,4 +150,5 @@ corepack pnpm cli -- sync-toolbox-runtime --json "{}"
 - [`../reference/interfaces.md`](../reference/interfaces.md)
 - [`../setup/development-workflow.md`](../setup/development-workflow.md)
 - [`../operations/docker-toolbox-v1.md`](../operations/docker-toolbox-v1.md)
+- [`../operations/toolbox-operator-guide.md`](../operations/toolbox-operator-guide.md)
 - [`../planning/current-implementation.md`](../planning/current-implementation.md)

@@ -169,6 +169,10 @@ Current `toolboxRolloutReadiness` output includes:
 - human-facing doctor lines for `toolboxKeep`, `toolboxDisable`, and
   `toolboxReplace`
 
+For the operator workflow that connects these interfaces to real toolbox
+authoring, use
+[`../operations/toolbox-operator-guide.md`](../operations/toolbox-operator-guide.md).
+
 ## MCP
 
 ### Direct Mimir MCP adapter
