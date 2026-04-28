@@ -185,7 +185,9 @@ Source of truth:
 Current transport behavior:
 
 - stdio
-- newline-delimited JSON messages
+- `Content-Length` framed JSON-RPC responses
+- request input accepts `Content-Length` framed JSON-RPC and newline-delimited
+  JSON request lines for compatibility
 - `tools.listChanged = false`
 
 Current implemented JSON-RPC methods:

@@ -293,7 +293,9 @@ corepack pnpm mcp
 
 Behavior:
 
-- JSON-RPC over stdio with Content-Length framing
+- JSON-RPC over stdio with `Content-Length` framed responses; request input
+  accepts both `Content-Length` framing and newline-delimited JSON request lines
+  for compatibility
 - shared transport validation
 - optional fixed session actor defaults through `MAB_MCP_DEFAULT_*`
 - delegation into the same shared runtime used by the HTTP and CLI adapters

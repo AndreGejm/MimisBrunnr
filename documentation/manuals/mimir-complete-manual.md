@@ -1,59 +1,85 @@
-# mimir Complete Operator Manual
+# mimir Complete Operator and Developer Manual
 
-> **Status note (2026-04-27):** This manual still covers the governed memory
-> model and the core transport/runtime surfaces, but parts of the MCP/toolbox
-> story have evolved since it was first assembled. For the live toolbox model,
-> prefer [`../operations/docker-toolbox-v1.md`](../operations/docker-toolbox-v1.md),
-> [`../architecture/session-semantics.md`](../architecture/session-semantics.md),
-> [`../reference/interfaces.md`](../reference/interfaces.md),
-> [`../planning/current-implementation.md`](../planning/current-implementation.md),
-> and [`../reference/external-client-boundary.md`](../reference/external-client-boundary.md).
-> Treat this manual as a broad operator guide, not the sole source of truth for
-> the dynamic broker, guided toolbox authoring flow, or external-client wiring.
+Source-reviewed: 2026-04-28.
 
-This manual is a broad operating guide for mimir as of the 2026-04-27 repo
-state. The canonical current-state surface inventory and rollout status live in
-the docs referenced in the status note above.
-mimir is the app and orchestrator. mimisbrunnr is the AI context well inside it:
-the governed memory well where information is staged, validated, promoted,
-persisted, retrieved, and assembled for agents. This manual explains how to run
-mimir, how to store and retrieve information in mimisbrunnr, how to validate and
-review notes, how the orchestrator routes work, how Docker
-Desktop and Docker Model Runner fit in, and how the Hermes-inspired local-agent
-features should be used without weakening the governed memory model.
+This manual is the refactored dual-audience manual for `mimir`. It is written
+for operators who need to run the system safely and for developers who need to
+trace how the system works internally.
 
-The manual documents implemented behavior in this repository. When a feature is
-only a policy, a local Codex workflow, or a planned direction, that is called
-out explicitly.
+Evidence used for this rewrite:
 
-## Start Here If You Are New
+- `README.md`
+- `package.json`
+- `apps/mimir-api/src/server.ts`
+- `apps/mimir-cli/src/main.ts`
+- `apps/mimir-mcp/src/main.ts`
+- `apps/mimir-control-mcp/src/main.ts`
+- `apps/mimir-toolbox-mcp/src/main.ts`
+- `documentation/setup/installation.md`
+- `documentation/setup/configuration.md`
+- `documentation/operations/running.md`
+- `documentation/operations/docker-mcp-session.md`
+- `documentation/operations/docker-toolbox-v1.md`
+- `documentation/operations/toolbox-operator-guide.md`
+- `documentation/architecture/overview.md`
+- `documentation/architecture/runtime-flow.md`
+- `documentation/architecture/invariants-and-boundaries.md`
+- `documentation/reference/interfaces.md`
+- `documentation/reference/env-vars.md`
+- `documentation/testing/README.md`
 
-If this is your first time using mimir, read the manual in this order:
+The original manual had 38 main sections plus nested subsections. This rewrite
+treats those 38 `##` sections as the section units and folds the nested
+subsections into their parent section. No major original topic was intentionally
+dropped.
 
-1. Read this start section.
-2. Follow section 5 to install and build the workspace.
-3. Follow the "first-time safe tour" in section 5.4.
-4. Read section 8 so you understand CLI, HTTP, and MCP entrypoints.
-5. Read sections 12 through 16 before storing or promoting information.
-6. Read sections 17 through 22 before wiring memory into local agents.
-7. Read sections 23 through 27 before using Hermes-inspired local-agent flows
-   or qwen3-coder.
+## Terminology and Evidence Contract
 
-Do not start by promoting notes. Promotion is the durable write path. A first
-run should begin with version checks, auth-status checks, session archive
-creation, session archive search, and maybe a staging draft. Only promote after
-you understand validation and review.
+Use these terms consistently throughout the manual:
 
-### What You Need To Know First
+| Term | Meaning |
+| --- | --- |
+| `mimir` | The app and orchestrator in this repository. |
+| `mimisbrunnr` | The governed memory and context layer inside `mimir`. |
+| Operator | A person running, configuring, or reviewing the system. |
+| Developer | A person changing code, tests, scripts, or tracked docs. |
+| Transport | A way to call the shared runtime: CLI, HTTP, direct MCP, control MCP, or toolbox broker MCP. |
+| MCP | Model Context Protocol, a JSON-RPC tool protocol used by agent clients. |
+| Actor | The identity attached to a request, including role, source, transport, and token where required. |
+| Canonical memory | Promoted durable Markdown note state used as authority. |
+| Staging draft | A proposed note that must be reviewed before it becomes canonical memory. |
+| Session archive | Immutable, searchable conversation continuity that is not authoritative. |
+| Import job | A recorded source-file digest and preview; it is not memory by itself. |
+| Context packet | A bounded read product assembled from retrieval candidates and budgets. |
+| Qdrant | Optional vector database used for vector retrieval. |
+| SQLite FTS | SQLite full-text search used for lexical retrieval. |
+| Toolbox | A governed set of tools exposed to agents through policy and session state. |
 
-mimisbrunnr has two different ideas that are easy to confuse:
+Source-of-truth rule:
 
-- Remembering a session: store a transcript archive for continuity. This is
-  useful, searchable, and non-authoritative.
-- Creating memory: create a draft, validate it, review it, then promote it.
-  This is how durable canonical memory is created.
+- Code and generated tests define runtime behavior.
+- `documentation/reference/interfaces.md` defines the tracked public interface
+  inventory.
+- Local `.codesight` files are generated helpers and must not be manually
+  treated as authority.
+- This manual explains operation and developer tracing; it does not replace
+  tests or source code.
 
-The safe first-time rule:
+## Section: Start Here If You Are New
+
+### 1. Purpose (Rewritten)
+
+This section prevents first-time users from accidentally creating durable
+memory before they understand the authority model. It is for both operators and
+developers.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+Think of `mimir` as a guarded notebook for agents. A chat transcript can be
+saved for later recall, but it is not automatically trusted as fact. A durable
+fact must be written as a draft, checked, reviewed, and promoted.
+
+Minimal mental model:
 
 ```text
 session archive = safe continuity
@@ -61,2872 +87,2715 @@ staging draft = reviewable proposal
 canonical memory = promoted durable authority
 ```
 
-If you are unsure which one to use, create a session archive or staging draft.
-Do not write directly to canonical memory.
+### 3. System-Level Explanation (Engineering Layer)
 
-### Command Prefixes Used In This Manual
+All entrypoints build the same service container. Read paths retrieve bounded
+context. Write paths create one of several state types: session archives,
+staging drafts, import jobs, audit records, traces, tool-output spillovers, or
+canonical notes after promotion.
 
-The verified workspace invocation is:
+### 4. Implementation Details
 
-```powershell
-corepack pnpm cli -- <command>
-```
+Primary files:
 
-If `pnpm` is already active in your shell, this shorter form is equivalent:
+- `packages/infrastructure/src/bootstrap/build-service-container.ts`
+- `packages/orchestration/src/root/mimir-orchestrator.ts`
+- `packages/application/src/services/session-archive-service.ts`
+- `packages/application/src/services/staging-draft-service.ts`
+- `packages/application/src/services/promotion-orchestrator-service.ts`
 
-```powershell
-pnpm cli -- <command>
-```
+Commands to learn first:
 
-Examples:
+- `version`
+- `auth-status`
+- `create-session-archive`
+- `search-session-archives`
+- `draft-note`
 
-```powershell
-corepack pnpm cli -- version
-corepack pnpm cli -- auth-status
-corepack pnpm cli -- search-context --json '{ "query": "example", "corpusIds": ["mimisbrunnr"], "budget": { "maxTokens": 1000, "maxSources": 3, "maxRawExcerpts": 1, "maxSummarySentences": 3 } }'
-```
+### 5. Step-by-Step Usage
 
-In enforced auth mode, the CLI auth-control commands are still JSON commands even
-when they have no required business payload. Pass operator or system actor
-context explicitly, for example:
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Built workspace | Run `corepack pnpm cli -- version` | JSON with release metadata | Command exits with code 0 and contains `ok` or version fields |
+| Minimal | None or operator actor payload | Run `corepack pnpm cli -- auth-status --json "{}"` in permissive mode | Auth summary | Output names auth mode and registry summary |
+| Full | Session messages | Run `create-session-archive` | Archive ID or stored record | Search the same session with `search-session-archives` |
+| Full | Durable fact candidate | Run `draft-note` | Draft ID and staging path | Confirm the draft is under the staging root, not canonical root |
 
-```powershell
-corepack pnpm cli -- auth-status --json '{
-  "actor": {
-    "actorId": "operator-cli",
-    "actorRole": "operator",
-    "source": "mimir-cli-admin",
-    "authToken": "<token>"
-  }
-}'
-```
+### 6. Failure Modes and Diagnostics
 
-The package exposes `mimir-cli` as the package bin name after package linking,
-but a fresh clone does not provide a tracked global `mimir` command. This manual uses
-`corepack pnpm cli --` so first-time users can run the examples directly from
-the workspace root.
+| Step | What can fail | Root cause | Observable symptom | Verify | Recover |
+| --- | --- | --- | --- | --- | --- |
+| Version | Command not found | Dependencies not installed or wrong directory | Shell error | Check current directory and run build | Run install/build from repo root |
+| Auth status | Forbidden | Enforced auth without actor context | JSON error `forbidden` | Inspect `MAB_AUTH_MODE` | Provide operator/system actor payload |
+| Archive | Validation failure | Empty session ID or messages | JSON error `validation_failed` | Re-read payload fields | Add `sessionId` and non-empty messages |
+| Draft | Validation failure | Missing required draft fields | JSON error with details | Check response details | Add `targetCorpus`, `noteType`, `title`, sources, and hints |
 
-### PowerShell JSON Pattern
+### 7. Assumptions and Hidden Constraints
 
-Small JSON payloads can be passed directly with `--json`, but larger payloads
-are easier to read as a PowerShell here-string:
+- The repository has already been cloned.
+- Commands run from the active repo root: `F:\Dev\scripts\Mimir\mimir` in this
+  workspace.
+- The Node apps do not auto-load `.env`.
+- Session archives can be searched, but they are not promoted facts.
 
-```powershell
-$payload = @'
-{
-  "query": "How should agents store durable memory?",
-  "corpusIds": ["mimisbrunnr", "general_notes"],
-  "budget": {
-    "maxTokens": 4000,
-    "maxSources": 6,
-    "maxRawExcerpts": 3,
-    "maxSummarySentences": 6
-  }
-}
-'@
+### 8. Terminology Clarification
 
-corepack pnpm cli -- search-context --json $payload
-```
+`remembering a session` means storing continuity. `creating memory` means
+creating canonical authority through draft, validation, review, and promotion.
 
-For repeatable workflows, put the JSON in a file and use `--input`:
+### 9. Gaps / Issues in Original Manual
 
-```powershell
-corepack pnpm cli -- search-context --input .\request.json
-```
+- It warned users not to promote too early, but it mixed the safe-tour details
+  with later transport details.
+- It did not explicitly state that every entrypoint shares one runtime
+  container.
+- It did not consistently identify verification after each beginner step.
 
-### What Creates Memory Or Domain State
+### 10. Refactored Section (Final Version)
 
-Some commands only read domain data. Some commands write memory or operational
-records. Know the difference. Even a read-oriented command may initialize the
-local SQLite database file and tables when the service container starts; the
-table below is about meaningful memory/domain writes, not low-level runtime
-initialization.
+Start by proving the system runs, then store only non-authoritative continuity.
+Run `version`, inspect auth, create a session archive, search that archive, and
+only then create a staging draft. Do not promote a draft until you understand
+validation, review, and promotion. Canonical memory is the durable authority
+surface; session archives and drafts are safer learning surfaces.
 
-| Command | Writes memory/domain state? | What it changes |
-| --- | --- | --- |
-| `version` | No | Prints release metadata |
-| `auth-status` | No required business payload | Prints auth summary; enforced auth mode still requires operator or system actor context |
-| `search-context` | Audit only | Reads memory and may record retrieval history |
-| `assemble-agent-context` | Audit only | Reads memory/session recall and may record retrieval history |
-| `create-session-archive` | Yes | Writes non-authoritative session archive records |
-| `draft-note` | Yes | Writes a staging draft and metadata |
-| `validate-note` | No | Validates supplied note content |
-| `promote-note` | Yes | Writes canonical memory, metadata, indexes, supersession, and audit |
-| `execute-coding-task` | Yes | Writes traces, audit, and possibly tool-output spillovers |
-| `show-tool-output` | No | Reads stored spillover output |
+## Section: 1. Mental Model
 
-If you want a no-risk tour, use `version`, `auth-status`, and then create/search
-a session archive. A session archive is not canonical memory.
+### 1. Purpose (Rewritten)
 
-## 1. Mental Model
+This section defines the smallest correct model of the system. It is for both
+operators and developers.
 
-mimir is a local-first orchestration and agent support system. Its mimisbrunnr
-subsystem keeps durable knowledge governed, searchable, bounded, and reviewable
-so local agents can use memory without silently corrupting it.
+### 2. High-Level Explanation (Non-Technical Layer)
 
-The system has three major responsibilities:
+`mimir` helps agents use memory without letting them write trusted facts
+silently. It separates remembering, proposing, reviewing, and trusting.
 
-- Governed memory writes: information enters as staging drafts or
-  non-authoritative archives before it can become canonical memory.
-- Bounded read paths: agents retrieve packets, decision summaries, namespace
-  nodes, session recall, and fenced agent-context blocks instead of receiving
-  unbounded raw storage.
-- Local-agent execution support: coding tasks can run through the vendored
-  Python local-experts runtime with memory context, qwen3-coder metadata,
-  traces, retry metadata, and bounded tool-output spillover.
+### 3. System-Level Explanation (Engineering Layer)
 
-The important authority rule is simple:
+The runtime has three main responsibilities:
 
-Canonical memory is only created through the validation and promotion path.
-Session archives, local-agent context packets, retrieval traces, Hermes notes,
-and tool outputs are useful context, but they are not durable fact authority.
+- Governed writes through draft, validation, review, and promotion.
+- Bounded reads through retrieval, packets, summaries, namespace nodes, and
+  agent-context blocks.
+- Local execution support through a Node-to-Python coding bridge with traces
+  and spillover storage.
 
-## 2. Repository Scope
+### 4. Implementation Details
 
-The implemented workspace is a TypeScript monorepo with a vendored Python
-runtime:
+Key modules:
 
-- `apps/mimir-cli`: JSON CLI entrypoint available through the root
-  `corepack pnpm cli -- <command>` script; the package bin name is
-  `mimir-cli` when linked.
-- `apps/mimir-api`: local HTTP API.
-- `apps/mimir-mcp`: stdio MCP server.
-- `packages/domain`: core domain types such as notes, chunks, context packets,
-  session archives, traces, and tool-output spillover records.
-- `packages/contracts`: transport request/response contracts and MCP tool
-  schemas.
-- `packages/application`: use-case services for memory, retrieval, packets,
-  history, imports, temporal refresh, session archives, and tool-output budgets.
-- `packages/orchestration`: actor authorization, routing, model-role registry,
-  mimisbrunnr controller, coding controller, and root orchestrator.
-- `packages/infrastructure`: filesystem, SQLite, FTS, Qdrant, model-provider,
-  auth registry, runtime health, transport validation, and Python bridge
-  adapters.
-- `runtimes/local_experts`: vendored Python coding runtime used by the Node
-  coding controller bridge.
-- `docker`: local Docker API profile and Docker MCP session profile.
-- `tests`: transport, e2e, retrieval, session archive, local model, MCP, and
-  eval coverage.
+- `packages/domain`
+- `packages/contracts`
+- `packages/application`
+- `packages/orchestration`
+- `packages/infrastructure`
+- `apps/*`
+- `runtimes/local_experts`
 
-The repository intentionally does not currently include:
+### 5. Step-by-Step Usage
 
-- a full release-publication CI/CD pipeline.
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | None | Read this model before running write commands | You can classify a command as read, draft, archive, or promote | Compare the command with `documentation/reference/interfaces.md` |
+| Full | A candidate fact | Choose archive, draft, or promotion path | Correct authority state | Inspect command response and storage location |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Why it happens | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Treating archive as fact | Continuity and authority are confused | Agent repeats unreviewed transcript as truth | Search result labels session recall as non-authoritative | Create a sourced draft instead |
+| Treating draft as fact | Staging and canonical states are confused | Draft exists but retrieval may not show it as canonical evidence | Check staging root and metadata | Validate, review, then promote |
+
+### 7. Assumptions and Hidden Constraints
+
+- Authority is a state transition, not a filename convention.
+- Retrieval is bounded by budgets; it is not a raw dump of all notes.
+- Local-agent outputs are evidence or proposals, not automatic memory.
+
+### 8. Terminology Clarification
+
+`authority` means the system is allowed to treat a note as durable truth for
+retrieval. `bounded` means output is limited by explicit source, excerpt,
+summary, and token budgets.
+
+### 9. Gaps / Issues in Original Manual
+
+- It had the right high-level rule, but it did not clearly separate operator
+  and engineering views.
+- It did not name all state classes up front.
+
+### 10. Refactored Section (Final Version)
+
+Use `mimir` as a governed memory system. Store conversations as session
+archives. Store candidate durable knowledge as staging drafts. Promote only
+reviewed, validated drafts. Give agents bounded context packets, not unlimited
+vault access. Let coding tasks produce traces, proposals, and spillover output;
+then review any durable knowledge through the normal memory workflow.
+
+## Section: 2. Repository Scope
+
+### 1. Purpose (Rewritten)
+
+This section tells readers what is inside the tracked repository and what is
+not. It is for both audiences.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+The repository contains the app, its shared runtime, its command adapters, local
+Docker profiles, tests, docs, a vendored Python coding worker, and a vendored
+external client subtree. It is not a production deployment platform.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+The workspace is a pnpm TypeScript monorepo with 12 workspace projects. Node
+entrypoints call a shared infrastructure bootstrap. Python exists as a vendored
+runtime invoked by subprocess, not as the main application host.
+
+### 4. Implementation Details
+
+Main areas:
+
+- `apps/mimir-api`
+- `apps/mimir-cli`
+- `apps/mimir-mcp`
+- `apps/mimir-control-mcp`
+- `apps/mimir-toolbox-mcp`
+- `packages/domain`
+- `packages/contracts`
+- `packages/application`
+- `packages/orchestration`
+- `packages/infrastructure`
+- `docker`
+- `tests`
+- `runtimes/local_experts`
+- `vendor/codex-claude-voltagent-client`
+
+Not included:
+
+- Full packaging and publication release pipeline.
 - Kubernetes, Helm, Terraform, or production deployment descriptors.
-- A tracked SQLite migration framework.
-- A tracked dotenv loader for Node apps.
-- An operator GUI for reviewing staged drafts.
+- Tracked SQLite migration system.
+- Tracked dotenv loader.
 
-## 3. Source-Backed Architecture
+### 5. Step-by-Step Usage
 
-The runtime is assembled by `buildServiceContainer()` in
-`packages/infrastructure/src/bootstrap/build-service-container.ts`.
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Repo root | Run `corepack pnpm build` | TypeScript build artifacts | Exit code 0 |
+| Full | Need to locate ownership | Read `documentation/reference/repo-map.md` and `documentation/architecture/overview.md` | Package and adapter map | Confirm files exist under listed directories |
 
-The container wires:
+### 6. Failure Modes and Diagnostics
 
-- Filesystem canonical note repository.
-- Filesystem staging note repository.
-- SQLite metadata, audit, issued token, revocation, session archive, import job,
-  namespace, representation, local-agent trace, and tool-output stores.
-- SQLite FTS lexical index.
-- Qdrant vector index.
-- Embedding, reasoning, drafting, and reranker providers.
-- mimisbrunnr-domain application services.
-- Python coding bridge.
+| Failure | Why it happens | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Running from parent archive | The parent `F:\Dev\scripts\Mimir` contains archive noise | Commands or maps refer to archive files | `git status` from `mimir` root is clean/current | Change into `F:\Dev\scripts\Mimir\mimir` |
+| Expecting deployment assets | Repo does not track production descriptors | Missing Helm/Terraform files | Inspect repository tree | Use Docker profiles only, or add deployment work explicitly |
+
+### 7. Assumptions and Hidden Constraints
+
+- The active git repo is the nested `mimir` directory.
+- Archive material outside the active repo is not product code.
+- Vendored subtrees should not be refactored as ordinary first-party app code.
+
+### 8. Terminology Clarification
+
+`workspace` means the pnpm workspace. `entrypoint` means a process that starts
+one app adapter. `vendored` means source kept in-tree for integration stability
+but with a separate boundary.
+
+### 9. Gaps / Issues in Original Manual
+
+- It listed the repo areas but omitted the now-live `mimir-control-mcp` and
+  `mimir-toolbox-mcp` as first-party Node entrypoints.
+- It did not emphasize the nested active repo versus parent archive risk.
+
+### 10. Refactored Section (Final Version)
+
+Treat this as a local-first TypeScript monorepo with a shared runtime, five
+Node entrypoints, local Docker profiles, a Python coding worker, and tracked
+tests/docs. Do not assume the repo includes production deployment descriptors,
+SQLite migrations, dotenv loading, or a full packaging/publication pipeline.
+When navigating, start from the nested active repo and source maps under
+`documentation/`.
+
+## Section: 3. Source-Backed Architecture
+
+### 1. Purpose (Rewritten)
+
+This section explains the real architecture from code, not from filenames or
+intent. It is mainly for developers, with operator context.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+Every way of using `mimir` reaches the same engine. The CLI, HTTP server, and
+MCP servers are different front doors. Behind them, the same services read and
+write notes, indexes, audit records, tools, and coding traces.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+Current dependency direction is practical and layered:
+
+```text
+apps -> infrastructure -> orchestration -> application -> contracts/domain
+```
+
+Startup flow:
+
+```mermaid
+flowchart TD
+  A["Entry point"] --> B["loadEnvironment"]
+  B --> C["buildServiceContainer"]
+  C --> D["Adapters: filesystem, SQLite, FTS, Qdrant, providers"]
+  C --> E["Application services"]
+  C --> F["Domain controllers"]
+  F --> G["MimirOrchestrator"]
+```
+
+### 4. Implementation Details
+
+Source anchors:
+
+- `packages/infrastructure/src/config/env.ts`
+- `packages/infrastructure/src/bootstrap/build-service-container.ts`
+- `packages/orchestration/src/root/mimir-orchestrator.ts`
+- `packages/infrastructure/src/runtime-command-dispatcher.ts`
+- `packages/contracts/src/orchestration/command-catalog.ts`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Need a command map | Read `documentation/reference/interfaces.md` | HTTP, CLI, MCP inventory | Compare with command catalog tests |
+| Full | Need execution trace | Start at adapter, then follow dispatcher/orchestrator/service/adapters | Concrete data path | Confirm each called module exists in source |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Why it happens | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Wrong source of truth | Generated docs or old manual are stale | Route or command mismatch | Run `corepack pnpm test:interface-docs` and `test:command-surface` | Regenerate/update docs from source |
+| Boundary bypass | Adapter or dispatcher calls application services directly | Auth/audit policy can drift | Inspect call chain | Route through orchestrator unless explicitly justified |
+
+### 7. Assumptions and Hidden Constraints
+
+- SQLite schema is currently code-owned in adapters.
+- Build output under `dist` is generated and should not be manually edited.
+- `.codesight` route artifacts are local generated files.
+
+### 8. Terminology Clarification
+
+`adapter` is a transport or IO boundary. `orchestrator` is the central command
+router and policy boundary. `service` is application logic operating through
+ports/adapters.
+
+### 9. Gaps / Issues in Original Manual
+
+- It under-described the toolbox entrypoints and policy tree.
+- It did not state that route documentation is now source-derived and checked
+  by tests.
+
+### 10. Refactored Section (Final Version)
+
+Use source-backed architecture maps. Entry points parse transport input and
+inject actor context. Infrastructure builds adapters and providers.
+Orchestration applies command routing and auth policy. Application services
+implement retrieval, drafts, promotion, imports, history, namespaces, sessions,
+and packets. Persistence and external IO live behind infrastructure adapters.
+
+## Section: 4. Authority And State Lifecycle
+
+### 1. Purpose (Rewritten)
+
+This section defines which stored objects are authoritative and how state moves.
+It is for both audiences.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+Not every stored thing is a fact. A transcript can be useful. A draft can be
+promising. A promoted note is trusted. The system is designed so those are not
+confused.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+State classes:
+
+```text
+external source -> import job -> optional draft -> validation -> review -> promotion -> canonical note
+conversation -> session archive -> optional retrieval/session recall
+coding task -> trace/spillover -> optional draft proposal
+```
+
+Invalid transition:
+
+- Session archive directly to canonical memory.
+- Tool output directly to canonical memory.
+- Import job directly to canonical memory.
+
+### 4. Implementation Details
+
+Primary services:
+
+- `import-orchestration-service.ts`
+- `session-archive-service.ts`
+- `staging-draft-service.ts`
+- `note-validation-service.ts`
+- `promotion-orchestrator-service.ts`
+
+Persistence:
+
+- Markdown files for staging and canonical notes.
+- SQLite for metadata, imports, sessions, audit, traces, tokens, and spillover.
+- SQLite FTS and Qdrant for retrieval indexes.
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Conversation | Create session archive | Non-authoritative archive | Search session archive |
+| Full | Durable claim | Draft, validate, review, promote | Canonical note and indexes | Search canonical context with evidence required |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Duplicate promotion | Equivalent canonical note exists | `duplicate_detected` | Search existing notes | Merge, supersede, or reject draft |
+| Revision conflict | Draft changed after review | `revision_conflict` | Compare returned revision | Re-read and revalidate |
+| Index degradation | Qdrant unavailable or embeddings fail | Retrieval warnings/degraded health | Health endpoint and retrieval trace | Restore Qdrant or accept lexical-only mode |
+
+### 7. Assumptions and Hidden Constraints
+
+- Promotion processes an outbox entry inline today.
+- Representation regeneration failure is non-blocking.
+- Namespace browsing currently projects note-backed rows, not all stored state.
+
+### 8. Terminology Clarification
+
+`canonical` means promoted and authoritative. `staging` means pending review.
+`non-authoritative` means useful context that must not be treated as truth by
+itself.
+
+### 9. Gaps / Issues in Original Manual
+
+- It stated authority rules but did not present valid and invalid transitions
+  explicitly.
+- It did not connect state classes to storage layers in one place.
+
+### 10. Refactored Section (Final Version)
+
+Preserve the authority lifecycle. External files become import jobs. Session
+text becomes session archives. Durable claims become staging drafts. Only a
+validated and reviewed staging draft can become canonical memory through
+promotion. Promotion writes canonical Markdown, metadata, chunks, retrieval
+indexes, and audit history.
+
+## Section: 5. Installation
+
+### 1. Purpose (Rewritten)
+
+This section lets a non-programmer install and verify the repository, while
+giving developers enough detail to diagnose setup failures.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+You need Node and pnpm to build `mimir`. Python, Docker, Qdrant, and local
+models are optional until you use the features that depend on them.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+The root package uses Node `>=22.0.0`, pnpm `10.7.0`, and TypeScript project
+references. `corepack pnpm build` compiles the workspace. Runtime configuration
+comes from `process.env`; `.env.example` is not auto-loaded.
+
+### 4. Implementation Details
+
+Files and scripts:
+
+- `package.json`
+- `pnpm-lock.yaml`
+- `pnpm-workspace.yaml`
+- `tsconfig.json`
+- `documentation/setup/installation.md`
+- `documentation/setup/configuration.md`
+- `packages/infrastructure/src/config/env.ts`
+
+Core commands:
+
+- `corepack enable`
+- `corepack pnpm install --frozen-lockfile`
+- `corepack pnpm build`
+- `corepack pnpm typecheck`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Fresh checkout | Run `corepack enable` | Corepack available | `corepack pnpm --version` prints `10.7.0` or compatible |
+| Minimal | Lockfile in sync | Run `corepack pnpm install --frozen-lockfile` | Dependencies installed | Exit code 0 |
+| Minimal | Installed deps | Run `corepack pnpm build` | TypeScript build succeeds | Exit code 0 |
+| Minimal | Built workspace | Run `corepack pnpm cli -- version` | Version JSON | Output contains release metadata |
+| Full | Need coding runtime | Install Python packages and run Python safety test | Python runtime test passes | `pytest` exits 0 |
+| Full | Need Docker API stack | Run `corepack pnpm docker:up` | API and Qdrant containers start | `GET /health/live` returns 200 |
+
+### 6. Failure Modes and Diagnostics
+
+| Step | What can fail | Why it fails | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- | --- |
+| Install | Frozen lockfile error | `package.json` changed without lockfile update | `ERR_PNPM_OUTDATED_LOCKFILE` | Compare package and lockfile status | Run non-frozen install only when updating deps, then commit `pnpm-lock.yaml` |
+| Build | TypeScript error | Source or generated declarations changed | `tsc -b` failure | Read first compiler error | Fix source/types, rebuild |
+| CLI | Node version too old | Runtime requires Node 22 | Engine or syntax error | `node --version` | Install Node 22+ |
+| Python | Module missing | Vendored runtime deps not installed | Import error | Run Python safety test | Install `fastmcp`, `httpx`, `pytest` |
+| Docker | Model or Qdrant unavailable | External dependency missing | Readiness failure | Check container logs and health | Start Qdrant/model endpoint or use local CLI profile |
+
+### 7. Assumptions and Hidden Constraints
+
+- CI uses frozen lockfile behavior by default.
+- Local install may update the lockfile only when dependency changes are
+  intentional.
+- Default state is under `%USERPROFILE%\.mimir` or `$HOME/.mimir` unless
+  storage env vars are set.
+- No cross-platform one-shot bootstrap script is tracked.
+
+### 8. Terminology Clarification
+
+`Corepack` is the Node tool that manages the pinned pnpm version. `Frozen
+lockfile` means the dependency lockfile must already match package manifests.
+
+### 9. Gaps / Issues in Original Manual
+
+- It did not explain the frozen lockfile failure mode.
+- It did not clearly separate required setup from optional Python, Docker,
+  Qdrant, and model setup.
+- It listed commands but did not attach verification to every step.
+
+### 10. Refactored Section (Final Version)
+
+Install in this order: enable Corepack, install with the frozen lockfile, build,
+run `version`, then add optional runtime layers only when needed. If frozen
+install fails, treat it as evidence of package/lockfile drift. Do not bypass it
+in CI. For local dependency changes, run a non-frozen install intentionally and
+commit the updated `pnpm-lock.yaml`.
+
+## Section: 6. Docker Desktop And Docker Model Runner
+
+### 1. Purpose (Rewritten)
+
+This section explains the local Docker HTTP profile and model endpoint wiring.
+It is primarily for operators.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+Docker can run the HTTP API and Qdrant together. It does not replace local
+installation, and it does not automatically provide models unless Docker Model
+Runner or another compatible endpoint is available.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+`docker/compose.local.yml` starts the API and Qdrant. The compose profile uses
+container paths under `/data`, binds provider roles to an Ollama-compatible
+endpoint, and keeps Qdrant reachable as `http://qdrant:6333` inside the stack.
+
+### 4. Implementation Details
+
+Tracked assets:
+
+- `docker/compose.local.yml`
+- `docker/mimir-api.Dockerfile`
+- root scripts `docker:up` and `docker:down`
+- `packages/infrastructure/src/config/env.ts`
+
+Expected model IDs:
+
+- `docker.io/ai/qwen3-embedding:0.6B-F16`
+- `qwen3:4B-F16`
+- `qwen3-coder`
+- `qwen3-reranker`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Docker Desktop running | Run `corepack pnpm docker:up` | API and Qdrant start | Visit `http://127.0.0.1:8080/health/live` |
+| Full | Model endpoint running | Run retrieval or draft command through API | Model-backed behavior where configured | Check readiness and response warnings |
+| Stop | Running stack | Run `corepack pnpm docker:down` | Containers stop | `docker compose ps` shows no running services for profile |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Ready fails | Qdrant or model endpoint unreachable | `/health/ready` returns 503 | Check compose logs | Start missing dependency |
+| Live passes but ready fails | Process runs but dependency degraded | `/health/live` 200, `/health/ready` 503 | Compare health endpoints | Fix external dependency or use degraded local profile |
+| Model errors | Model ID not available | Provider error or fallback warning | Query model endpoint | Pull/start required model |
+
+### 7. Assumptions and Hidden Constraints
+
+- Docker Desktop uses Linux containers.
+- Docker Model Runner endpoint is external to `mimir`.
+- Compose profile is more model-backed than generic local defaults.
+
+### 8. Terminology Clarification
+
+`Ollama-compatible` means an HTTP API shaped like Ollama's local model API.
+`Docker Model Runner` is one possible provider for that API.
+
+### 9. Gaps / Issues in Original Manual
+
+- It did not consistently distinguish generic local defaults from compose
+  provider overrides.
+- It did not pair health checks with each Docker start path.
+
+### 10. Refactored Section (Final Version)
+
+Use Docker when you want the local HTTP API plus Qdrant and model-backed
+provider wiring. Start with `corepack pnpm docker:up`, verify `live`, then
+verify `ready`. Treat readiness failures as dependency failures, not as proof
+that the API process is dead.
+
+## Section: 7. Docker MCP Session Container
+
+### 1. Purpose (Rewritten)
+
+This section explains the session-scoped container for MCP clients. It is for
+operators integrating agent clients and developers debugging startup behavior.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+This container starts `mimir` for one agent session, checks its required mounts
+and dependencies, then exits when the client session ends. It keeps important
+data on the host.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+The entrypoint `docker/mimir-mcp-session-entrypoint.mjs` validates env, mounts,
+auth registry, Qdrant, model availability, and Python readiness. If validation
+passes, it launches the direct MCP adapter.
+
+### 4. Implementation Details
+
+Tracked assets:
+
+- `docker/mimir-mcp.Dockerfile`
+- `docker/mimir-mcp-session-entrypoint.mjs`
+- `docker/mimir-mcp-session.env.example`
+- `docker/mimir-mcp-session.actor-registry.example.json`
+- `docker/compose.mcp-session.yml`
+- `apps/mimir-mcp/src/main.ts`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Built image | Run `corepack pnpm docker:mcp:build` | Image tagged locally | `docker images` shows `mimir-mcp-session:local` |
+| Full | Env file and four host mounts | Run container with `--validate-only` | Validation report succeeds | Exit code 0 |
+| Full | Same env and mounts | Launch with `docker run --rm -i ...` | MCP stdio server starts | MCP client can call `initialize` and `tools/list` |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Storage validation fails | Missing mount-backed canonical/staging/state/config path | Startup exits before MCP | Read stderr validation section | Fix mount paths |
+| Actor binding fails | Registry and fixed session actor disagree | `session_actor_binding` failure | Inspect registry JSON and `MAB_MCP_DEFAULT_*` | Align actor ID, role, token |
+| Dependency validation fails | Qdrant/model/Python not reachable | Startup exits | Read validation stderr | Start dependency or change env |
+
+### 7. Assumptions and Hidden Constraints
+
+- This profile is strict by design.
+- It does not expose HTTP health endpoints.
+- It assumes Qdrant and model endpoints are managed outside the container.
+- It launches the direct MCP adapter, not the toolbox broker.
+
+### 8. Terminology Clarification
+
+`session-scoped` means one container lifetime per client session. `Mount` means
+a host directory made visible inside the container.
+
+### 9. Gaps / Issues in Original Manual
+
+- It warned what the container is not, but it did not connect every validation
+  failure to recovery steps.
+- It did not emphasize that the profile launches direct MCP, not the toolbox
+  broker.
+
+### 10. Refactored Section (Final Version)
+
+Use the Docker MCP session container when an agent client should launch a
+validated, bounded `mimir` MCP process for one session. Build the image,
+validate with explicit host mounts and actor registry, then wire the same
+command into the MCP client. Data remains host-owned.
+
+## Section: 8. Entrypoints
+
+### 1. Purpose (Rewritten)
+
+This section explains every first-party runtime entrypoint and when to use it.
+It is for both audiences.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+There are five first-party ways to start `mimir`:
+
+- HTTP API for local service calls.
+- CLI for humans and scripts.
+- Direct MCP for broad stable agent tools.
+- Control MCP for toolbox discovery and activation.
+- Toolbox broker MCP for a constrained session whose visible tools can change.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+All entrypoints build or consume the shared runtime. Direct MCP and toolbox MCP
+are separate products. Direct MCP exposes stable command-catalog tools. Control
+MCP and broker MCP expose toolbox lifecycle and session behavior.
+
+Direct MCP implementation detail from code: `apps/mimir-mcp/src/main.ts`
+accepts `Content-Length` framed requests and also accepts newline-delimited JSON
+request lines for compatibility; responses are emitted with `Content-Length`
+framing.
+
+### 4. Implementation Details
+
+Files:
+
+- `apps/mimir-api/src/main.ts`
+- `apps/mimir-api/src/server.ts`
+- `apps/mimir-cli/src/main.ts`
+- `apps/mimir-mcp/src/main.ts`
+- `apps/mimir-control-mcp/src/main.ts`
+- `apps/mimir-toolbox-mcp/src/main.ts`
+- `documentation/reference/interfaces.md`
+
+### 5. Step-by-Step Usage
+
+| Surface | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| CLI | Command and optional JSON | `corepack pnpm cli -- version` | JSON output | Exit code 0 |
+| HTTP | HTTP request | `corepack pnpm api` then call `/v1/system/version` | JSON response | HTTP 200 |
+| Direct MCP | MCP client launch | `corepack pnpm mcp` | Tools list | Client `initialize` and `tools/list` succeed |
+| Control MCP | MCP client launch | `corepack pnpm mcp:control` | Toolbox control tools | `tools/list` includes toolbox tools |
+| Broker MCP | MCP client launch | `corepack pnpm --filter @mimir/toolbox-mcp serve` | Dynamic tools | `tools.listChanged` is true |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Wrong transport | Using CLI name as MCP tool name | Tool not found | Compare kebab-case vs snake_case | Use `search-context` for CLI, `search_context` for MCP |
+| Payload rejected | Body is not JSON object or schema mismatch | Validation error | Read error details | Fix payload shape |
+| MCP framing mismatch | Client protocol not compatible | No response or parse error | Inspect client logs | Use Content-Length framed JSON-RPC |
+
+### 7. Assumptions and Hidden Constraints
+
+- CLI output is JSON.
+- HTTP application routes mostly use POST; health/system summary routes include
+  GET endpoints.
+- Direct MCP does not expose toolbox control tools.
+- Control MCP does not expose full memory command catalog.
+
+### 8. Terminology Clarification
+
+`Direct MCP` means the stable memory/runtime command catalog. `Control MCP`
+means toolbox lifecycle. `Broker MCP` means one session whose visible tools can
+expand or contract.
+
+### 9. Gaps / Issues in Original Manual
+
+- It focused on three core entrypoints and treated live toolbox surfaces as
+  external references.
+- It stated MCP framing too narrowly for current code.
+
+### 10. Refactored Section (Final Version)
+
+Choose the smallest entrypoint that matches the job: CLI for local operation,
+HTTP for service integration and health checks, direct MCP for broad agent
+access to the stable command catalog, control MCP for toolbox activation, and
+broker MCP for governed dynamic tool visibility.
+
+## Section: 9. Feature Matrix
+
+### 1. Purpose (Rewritten)
+
+This section maps features to public surfaces. It is for both audiences.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+The same job may have different names depending on how you call it. CLI commands
+use kebab-case, MCP tools use snake_case, and HTTP uses paths.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+Runtime command identity is centralized in
+`packages/contracts/src/orchestration/command-catalog.ts`. HTTP routes are
+registered in `apps/mimir-api/src/server.ts`. Interface drift is tested.
+
+### 4. Implementation Details
+
+Canonical inventory:
+
+- `documentation/reference/interfaces.md`
+- `tests/e2e/command-catalog.test.mjs`
+- `tests/e2e/codesight-route-map.test.mjs`
+- `scripts/report-command-surface.mjs`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Need command name | Look up feature in `interfaces.md` | Surface-specific name | Run a minimal payload |
+| Full | Changed command/route | Run `corepack pnpm test:command-surface` and `test:interface-docs` | Tests pass | Exit code 0 |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Surface drift | Command added in code but not docs/tests | Failing command-surface or docs test | Run focused tests | Update code/docs together |
+| Wrong method | HTTP route called with GET instead of POST | 405 | Check route table | Use documented method |
+
+### 7. Assumptions and Hidden Constraints
+
+- The interface map is tracked and source-checked.
+- The local `.codesight/routes.md` file is generated and ignored.
+
+### 8. Terminology Clarification
+
+`Command surface` means the public set of callable commands. `Route` means HTTP
+method plus path.
+
+### 9. Gaps / Issues in Original Manual
+
+- The old feature matrix was useful but risked becoming a second source of
+  truth.
+- It did not point strongly enough to drift tests.
+
+### 10. Refactored Section (Final Version)
+
+Use `documentation/reference/interfaces.md` as the human-readable interface
+inventory and run `test:command-surface` plus `test:interface-docs` whenever a
+command or route changes. Do not hand-maintain local generated route maps.
+
+## Section: 10. Orchestrator
+
+### 1. Purpose (Rewritten)
+
+This section explains the central routing and policy boundary. It is mainly for
+developers.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+The orchestrator is the traffic controller. It receives validated requests,
+checks whether the actor is allowed, and sends the work to the right domain.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+Transport adapters validate payloads and build actor context. Runtime dispatch
+maps command names to orchestrator/controller calls. Authorization policy is
+command-aware and transport-aware.
+
+### 4. Implementation Details
+
+Files:
+
+- `packages/orchestration/src/root/mimir-orchestrator.ts`
+- `packages/orchestration/src/root/actor-authorization-policy.ts`
+- `packages/orchestration/src/root/command-authorization-matrix.ts`
+- `packages/infrastructure/src/runtime-command-dispatcher.ts`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | New command idea | Find command family in catalog | Existing family or need for new one | Run command catalog tests |
+| Full | New routed command | Add catalog, validation, dispatcher/orchestrator, docs, tests | Same command works across intended transports | Transport adapter tests pass |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Auth bypass | Dispatcher calls service directly | Unauthorized reads/writes possible | Negative auth test | Route through orchestrator/policy |
+| Missing policy | Command lacks authorization matrix entry | Test failure | `authorization-policy` tests | Add explicit roles |
+
+### 7. Assumptions and Hidden Constraints
+
+- Public command names should be preserved unless compatibility aliases are
+  planned.
+- Services may enforce domain invariants, but role decisions belong in auth
+  policy and orchestration.
+
+### 8. Terminology Clarification
+
+`Domain controller` means orchestration-owned wrapper around a domain area.
+`Authorization matrix` means the role policy table for commands/actions.
+
+### 9. Gaps / Issues in Original Manual
+
+- It described orchestration but did not identify the authorization matrix as a
+  source of truth.
+- It did not identify boundary bypass as a maintainability risk.
+
+### 10. Refactored Section (Final Version)
+
+Keep command routing and authorization centralized. New command work should
+flow from catalog to validation to orchestrator/controller to service. Add
+negative auth tests for new protected surfaces.
+
+## Section: 11. Actor Roles And Authorization
+
+### 1. Purpose (Rewritten)
+
+This section explains who can do what. It is for operators configuring auth and
+developers changing protected commands.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+An actor is the identity attached to a request. A token alone is not enough;
+the actor's role, transport, allowed command, registry state, and revocation
+state can all matter.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+Auth responsibilities are split across actor registry policy, token inspection,
+issued-token storage, revocation storage, command authorization matrix, and the
+authorization facade.
+
+### 4. Implementation Details
+
+Files:
+
+- `packages/orchestration/src/root/actor-authorization-policy.ts`
+- `packages/orchestration/src/root/actor-registry-policy.ts`
+- `packages/orchestration/src/root/actor-token-inspector.ts`
+- `packages/orchestration/src/root/command-authorization-matrix.ts`
+- `packages/infrastructure/src/auth/*`
+- `documentation/reference/env-vars.md`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Local dev | Run `auth-status` | Current auth mode | Output names `permissive` or `enforced` |
+| Full | Enforced auth | Provide actor payload or headers with token | Protected command succeeds | Audit/history shows actor context where recorded |
+| Admin | Operator actor | Issue/introspect/revoke token | Token lifecycle response | `auth-issued-tokens` shows state |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Forbidden | Actor lacks role or command permission | `forbidden` | Introspect token and registry | Grant correct role/command or use correct actor |
+| Token revoked | Revocation store includes token ID | Auth denied | `auth-introspect-token` | Issue new token |
+| Anonymous blocked | Enforced mode disallows anonymous internal actor | Auth error | Check `MAB_AUTH_ALLOW_ANONYMOUS_INTERNAL` | Provide actor context |
+
+### 7. Assumptions and Hidden Constraints
+
+- `MAB_AUTH_MODE` defaults to enforced in production and permissive otherwise.
+- `MAB_AUTH_ISSUED_TOKEN_REQUIRE_REGISTRY_MATCH` defaults to true.
+- Auth-control commands require operator/system authority in enforced mode.
+
+### 8. Terminology Clarification
+
+`Authentication` identifies the actor. `Authorization` decides whether the
+actor may perform this action. `Revocation` invalidates previously issued
+tokens.
+
+### 9. Gaps / Issues in Original Manual
+
+- It did not strongly enough reject the simplified idea that token presence
+  equals permission.
+- It did not connect CLI payloads, HTTP headers, and MCP session defaults.
+
+### 10. Refactored Section (Final Version)
+
+Treat auth as command-aware and transport-aware. Configure actors through the
+registry or issued-token flow, pass actor context through the selected
+transport, and verify protected operations with introspection, issued-token
+listing, and audit history.
+
+## Section: 12. Storing Information
+
+### 1. Purpose (Rewritten)
+
+This section helps users choose the correct storage path. It is for both
+audiences.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+Store a transcript as a session archive. Store a candidate fact as a draft.
+Store a reviewed fact by promoting the draft. Store an external file as an
+import job when you only want to record that it should be processed later.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+Storage choices map to different services and persistence layers:
+
+- `create-session-archive` writes SQLite session archive state.
+- `draft-note` writes staging Markdown and metadata.
+- `import-resource` reads a file and writes import job metadata.
+- `promote-note` writes canonical Markdown, metadata, chunks, indexes, and
+  audit.
+
+### 4. Implementation Details
+
+Services:
+
+- `session-archive-service.ts`
+- `staging-draft-service.ts`
+- `import-orchestration-service.ts`
+- `promotion-orchestrator-service.ts`
+
+Commands:
+
+- `create-session-archive`
+- `draft-note`
+- `import-resource`
+- `promote-note`
+
+### 5. Step-by-Step Usage
+
+| Need | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Conversation continuity | Session ID and messages | `create-session-archive` | Archive record | `search-session-archives` finds it |
+| Candidate durable memory | Title, type, sources, hints | `draft-note` | Draft ID/path | File under staging root |
+| External file record | Source file path | `import-resource` | Import job digest/preview | Query/import response shows size and digest |
+| Trusted memory | Reviewed draft ID | `promote-note` | Canonical note and chunks | `search-context` finds evidence |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Import denied | Allowed roots configured and source outside root | Policy error | Check `MAB_IMPORT_ALLOWED_ROOTS` | Move file under allowed root or update policy |
+| Draft weak | Missing required sections or evidence | Validation warnings/errors | Run `validate-note` | Rewrite draft |
+| Canonical write fails | Filesystem/SQLite/index failure | `write_failed` or warnings | Check storage paths and logs | Fix storage, retry/replay as appropriate |
+
+### 7. Assumptions and Hidden Constraints
+
+- By default, `import-resource` preserves legacy local-operator behavior and can
+  read any path the process can read after auth succeeds. Configure
+  `MAB_IMPORT_ALLOWED_ROOTS` for stricter operation.
+- Import jobs do not create drafts or canonical notes by themselves.
+
+### 8. Terminology Clarification
+
+`Import` means record a source file for later processing, not trust its content.
+`Promotion` means convert reviewed staging state into canonical state.
+
+### 9. Gaps / Issues in Original Manual
+
+- It explained storage choices well but did not clearly document the newer
+  import allowed-roots policy.
+- It did not tie every storage path to verification.
+
+### 10. Refactored Section (Final Version)
+
+Choose the storage path by authority level. Use session archives for continuity,
+drafts for candidate facts, import jobs for source tracking, and promotion for
+canonical memory. Verify each write through the matching read path before
+building automation on it.
+
+## Section: 13. Validating Notes
+
+### 1. Purpose (Rewritten)
+
+This section explains deterministic note validation. It is for operators
+reviewing drafts and developers maintaining schemas.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+Validation checks whether a note is shaped correctly. It does not make the note
+true, but it blocks notes that are missing required structure.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+Validation inspects caller-supplied frontmatter and body against corpus policy,
+path containment, note type, required sections, date formats, controlled tags,
+temporal validity, and supersession consistency.
+
+### 4. Implementation Details
+
+Primary areas:
+
+- note validation service under `packages/application/src/services`
+- contracts under `packages/contracts`
+- transport validation under `packages/infrastructure/src/transport`
+- tests under `tests/e2e/context-authority-contracts.test.mjs`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Candidate note JSON | `validate-note` with `validationMode: "draft"` | `valid` plus violations/warnings | Confirm `blockedFromPromotion` value |
+| Full | Promotion candidate JSON | `validate-note` with `validationMode: "promotion"` | Promotion readiness | All violations resolved |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Missing section | Body lacks required heading | Violation lists section | Compare note type section list | Add exact heading/content |
+| Wrong corpus path | Path does not match target corpus | Violation | Inspect `targetCorpus` and `notePath` | Move path or change target |
+| Unknown tag | Controlled vocabulary mismatch | Violation | Inspect allowed tags in code/tests | Use allowed tag or update policy intentionally |
+
+### 7. Assumptions and Hidden Constraints
+
+- Validation does not load the note file from `notePath`; callers provide the
+  content being validated.
+- Passing validation is necessary but not sufficient for truth.
+
+### 8. Terminology Clarification
+
+`Frontmatter` means structured metadata at the top of a Markdown note.
+`Validation mode` means the stricter or looser rule set for draft or promotion.
+
+### 9. Gaps / Issues in Original Manual
+
+- It had useful examples, but it did not emphasize that validation is
+  deterministic shape checking, not truth checking.
+
+### 10. Refactored Section (Final Version)
+
+Run validation before promotion. Treat violations as blockers and warnings as
+review prompts. Validation confirms structure, policy, and consistency; human
+review confirms truth, usefulness, provenance, and safety.
+
+## Section: 14. Reviewing Drafts
+
+### 1. Purpose (Rewritten)
+
+This section defines the human review gate before promotion. It is primarily
+for operators.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+Review is where a person decides whether a draft is actually worth trusting.
+The system can check structure; a reviewer checks meaning.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+Review commands expose queue listing, note reading, acceptance, and rejection
+through CLI, HTTP, and MCP. Acceptance is not the same as promotion; promotion
+is the durable write path.
+
+### 4. Implementation Details
+
+Surfaces:
+
+- CLI: `list-review-queue`, `read-review-note`, `accept-note`, `reject-note`
+- HTTP: `/v1/review/queue`, `/v1/review/note`, `/v1/review/accept`,
+  `/v1/review/reject`
+- MCP: `list_review_queue`, `read_review_note`, `accept_note`, `reject_note`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Draft ID/path | Read returned body or staging file | Human-readable candidate | Check required sections and sources |
+| Full | Draft ID | Run review queue/read, validate, then accept/reject | Review decision | Query queue/history or response |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Bad provenance | Draft lacks evidence | Reviewer cannot verify claim | Search sources | Rewrite or reject |
+| Secret exposure | Transcript/tool output includes private content | Sensitive data in draft | Manual review | Redact/reject; do not promote |
+| Duplicate | Existing canonical memory already covers it | Search finds same claim | `search-context` | Merge/supersede/reject |
+
+### 7. Assumptions and Hidden Constraints
+
+- Review is still a human/operator responsibility.
+- Superpowers workflows, when used locally, are guidance layers; they do not
+  replace Mimir's governed state transitions.
+
+### 8. Terminology Clarification
+
+`Accept` means review approval. `Promote` means write canonical authority.
+
+### 9. Gaps / Issues in Original Manual
+
+- It mixed local operator workflow guidance with service behavior.
+- It did not clearly distinguish accept/reject from promotion.
+
+### 10. Refactored Section (Final Version)
+
+Review every durable draft for truth, scope, provenance, duplicate status,
+secret leakage, and current-state intent. Accept only useful and sourced
+drafts. Promote only after validation and review still agree.
+
+## Section: 15. Promoting Notes
+
+### 1. Purpose (Rewritten)
+
+This section explains the canonical write path. It is for both audiences.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+Promotion is the moment a reviewed draft becomes trusted memory. It writes the
+canonical note and updates the search systems that help agents find it later.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+Promotion loads the staging draft, verifies expected revision, validates,
+checks duplicates, handles current-state supersession, enqueues an outbox
+record, writes canonical files, syncs metadata/chunks/FTS/vector index, records
+audit, marks the draft promoted, and attempts representation regeneration.
+
+### 4. Implementation Details
+
+Primary file:
+
+- `packages/application/src/services/promotion-orchestrator-service.ts`
+
+Supporting persistence:
+
+- filesystem vault repositories
+- SQLite metadata and outbox
+- SQLite FTS index
+- Qdrant vector index
+- audit log
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Reviewed draft ID | Run `promote-note` with `expectedDraftRevision` | Promoted note ID/path | Search canonical context |
+| Full | Current policy/runbook | Use `promoteAsCurrentState: true` | Superseded older current notes where applicable | Inspect `supersededNoteIds` and history |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| `revision_conflict` | Draft changed after review | Promotion denied | Compare current revision | Re-read, revalidate, retry |
+| `duplicate_detected` | Same content already canonical | Promotion denied | Search canonical memory | Merge/reject/supersede intentionally |
+| Warnings | Non-blocking index/audit/representation issue | Promotion succeeds with warnings | Read warning list | Investigate affected subsystem |
+
+### 7. Assumptions and Hidden Constraints
+
+- Use `expectedDraftRevision` for manual promotion.
+- Current-state promotion can supersede older notes.
+- Representation regeneration is currently non-blocking.
+
+### 8. Terminology Clarification
+
+`Supersession` means a newer current-state note replaces an older current-state
+note. `Outbox` means queued promotion work that can be replayed by design.
+
+### 9. Gaps / Issues in Original Manual
+
+- It listed promotion actions but did not make post-promotion verification a
+  required step.
+
+### 10. Refactored Section (Final Version)
+
+Promote only reviewed and validated drafts. Include the expected draft revision.
+After promotion, verify the note appears through retrieval, inspect warnings,
+and confirm supersession behavior when `promoteAsCurrentState` is true.
+
+## Section: 16. Freshness And Refresh Drafts
+
+### 1. Purpose (Rewritten)
+
+This section explains temporal validity and refresh proposals. It is for
+operators maintaining current memory.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+Some facts expire. Freshness commands find notes that are expired or expiring
+soon and create drafts for review instead of changing trusted memory directly.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+Freshness reads metadata validity windows and lifecycle state. Refresh commands
+create governed staging drafts; they do not mutate canonical notes in place.
+
+### 4. Implementation Details
+
+Surfaces:
+
+- CLI: `freshness-status`, `create-refresh-draft`, `create-refresh-drafts`
+- HTTP: `/v1/system/freshness`, `/v1/system/freshness/refresh-draft`,
+  `/v1/system/freshness/refresh-drafts`
+- MCP: `create_refresh_draft`, `create_refresh_drafts`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Corpus and window | Run `freshness-status` | Expired/expiring lists | Inspect counts and note IDs |
+| Full | Note ID or batch criteria | Create refresh draft(s) | Staging draft IDs | Review queue or staging files show drafts |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| No candidates | No notes match validity window | Empty report | Adjust window/corpus | Use broader criteria |
+| Draft creation fails | Target note missing or invalid | Error response | Check note ID | Search/read note metadata |
+
+### 7. Assumptions and Hidden Constraints
+
+- Refresh creates proposals only.
+- Operators still validate/review/promote refresh drafts.
+
+### 8. Terminology Clarification
+
+`Freshness` means currentness over time. `Refresh draft` means a staged proposal
+to update stale memory.
+
+### 9. Gaps / Issues in Original Manual
+
+- It did not clearly state refresh drafts are governed drafts rather than
+  direct edits in every place.
+
+### 10. Refactored Section (Final Version)
+
+Use freshness reports to find stale or expiring current-state notes. Create
+refresh drafts, review them, validate them, and promote them only when the new
+content is correct.
+
+## Section: 17. Retrieval
+
+### 1. Purpose (Rewritten)
+
+This section explains how canonical context is searched and assembled. It is
+for both audiences.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+Retrieval asks, "What trusted context should an agent see for this question?"
+It searches text, optionally searches vectors, ranks results, and returns a
+limited packet with evidence and warnings.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+`RetrieveContextService` classifies intent, runs SQLite FTS and Qdrant vector
+retrieval where available, fuses rankings, optionally reranks, assesses
+answerability, assembles a bounded packet, emits freshness/degradation warnings,
+optionally enriches uncertainty, and records audit history.
+
+### 4. Implementation Details
+
+Files:
+
+- `packages/application/src/services/retrieve-context-service.ts`
+- `packages/application/src/services/hierarchical-retrieval-service.ts`
+- `packages/infrastructure/src/fts/sqlite-fts-index.ts`
+- Qdrant vector adapter under `packages/infrastructure`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Query and corpus IDs | Run `search-context` | Context packet | Response has packet/provenance |
+| Full | Query plus budget/trace | Set `requireEvidence` and `includeTrace` | Evidence plus trace | Inspect candidate counts and health |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Degraded vector | Qdrant missing or soft-failed | `retrievalHealth.status` degraded | Health checks and trace | Start Qdrant or accept lexical-only |
+| No results | Empty canonical memory or filters too strict | Unhealthy/no candidates | Search broader corpus, check promoted notes | Promote relevant note or relax filters |
+| Reranker fallback | Model provider fails | Warning or lower-quality ranking | Inspect warnings | Fix provider or keep fallback |
+
+### 7. Assumptions and Hidden Constraints
+
+- Retrieval is bounded by budget.
+- Missing Qdrant can degrade rather than fully fail when soft-fail is enabled.
+- Hierarchical retrieval is selected explicitly by strategy.
+
+### 8. Terminology Clarification
+
+`Lexical` means text search. `Vector` means embedding similarity search.
+`Reranking` means reordering candidates after initial retrieval.
+
+### 9. Gaps / Issues in Original Manual
+
+- It described retrieval steps but did not make operator response to degraded
+  health explicit enough.
+
+### 10. Refactored Section (Final Version)
+
+Use `search-context` for canonical retrieval. Always inspect provenance,
+warnings, and retrieval health. Treat degraded vector search as reduced recall
+quality, not total failure, unless readiness policy requires Qdrant.
+
+## Section: 18. Context Packets
+
+### 1. Purpose (Rewritten)
+
+This section explains bounded context products. It is mainly for developers and
+advanced operators.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+A context packet is a compact bundle of relevant memory. It contains summaries,
+evidence, and limits so an agent receives only what it needs.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+Packet assembly consumes candidates and a budget. It constrains source count,
+raw excerpts, summary sentences, and token estimate before returning a
+transport-safe object.
+
+### 4. Implementation Details
+
+Surfaces:
+
+- CLI: `get-context-packet`
+- HTTP: `/v1/context/packet`
+- MCP: `get_context_packet`
+- service code under `packages/application/src/services`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Candidates and budget | Run `get-context-packet` | Packet object | Check source and token limits |
+| Full | Retrieval flow | Prefer `search-context` | Packet plus retrieval metadata | Compare packet to trace/provenance |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Packet too small | Budget too strict | Missing evidence | Inspect truncation/source counts | Increase budget carefully |
+| Bad candidate | Caller supplied invalid candidate | Validation failure | Read validation details | Fix candidate shape |
+
+### 7. Assumptions and Hidden Constraints
+
+- Most operators should use `search-context` or `assemble-agent-context`
+  instead of direct packet assembly.
+
+### 8. Terminology Clarification
+
+`Budget` is the limit on how much context can be included. `Candidate` is a
+possible memory item before packet assembly.
+
+### 9. Gaps / Issues in Original Manual
+
+- It did not warn strongly enough that direct packet assembly is mostly a
+  lower-level API.
+
+### 10. Refactored Section (Final Version)
+
+Use context packets as bounded read products. Developers can call
+`get-context-packet` directly for tests and adapters; operators should usually
+call retrieval or agent-context assembly.
+
+## Section: 19. Decision Summaries
+
+### 1. Purpose (Rewritten)
+
+This section explains how to retrieve prior decisions around a topic. It is for
+both audiences.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+A decision summary answers, "What did we decide about this topic?" without
+making the reader inspect every note.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+The decision-summary flow uses retrieval and packet assembly with a
+decision-focused request shape and budget.
+
+### 4. Implementation Details
+
+Surfaces:
+
+- CLI: `fetch-decision-summary`
+- HTTP: `/v1/context/decision-summary`
+- MCP: `fetch_decision_summary`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Topic string | Run `fetch-decision-summary` | Summary packet | Confirm decisions cite sources |
+| Full | Topic plus budget | Add budget constraints | Bounded summary | Check source count and evidence |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| No decision found | No promoted decision notes match | Empty/weak summary | Search broader terms | Create or promote a sourced decision note |
+| Ambiguous topic | Query too broad | Mixed decisions | Inspect sources | Narrow topic |
+
+### 7. Assumptions and Hidden Constraints
+
+- Decision summaries depend on promoted retrievable content.
+- They do not create or update memory.
+
+### 8. Terminology Clarification
+
+`Decision` means a durable note type or content category that records a choice,
+rationale, and consequences.
+
+### 9. Gaps / Issues in Original Manual
+
+- It did not state what to do when no decision is found.
+
+### 10. Refactored Section (Final Version)
+
+Use decision summaries to recover prior design or operating choices. If the
+summary is empty or weak, verify whether canonical decision notes exist before
+assuming the system failed.
+
+## Section: 20. Namespace Tree And Nodes
+
+### 1. Purpose (Rewritten)
+
+This section explains structured browsing of context nodes. It is for both
+audiences.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+Namespace browsing is like opening a table of contents for stored context. It
+is different from search: you ask for known nodes or trees instead of ranked
+results.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+Namespace services read projected context nodes from SQLite-backed metadata.
+Current namespace browsing is note-backed; imported jobs and session archives
+are stored but not currently exposed through the namespace tree.
+
+### 4. Implementation Details
+
+Surfaces:
+
+- CLI: `list-context-tree`, `read-context-node`
+- HTTP: `/v1/context/tree`, `/v1/context/node`
+- MCP: `list_context_tree`, `read_context_node`
+- service: `context-namespace-service.ts`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Owner scope | Run `list-context-tree` | Tree nodes | Response has node IDs/URIs |
+| Full | Node URI | Run `read-context-node` | Node details | URI matches returned tree node |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Node not found | URI is placeholder or missing metadata | `not_found` | List tree first | Use returned URI |
+| Missing sessions/imports | Current implementation does not project them | Tree lacks those states | Check README limitation | Use session/import commands |
+
+### 7. Assumptions and Hidden Constraints
+
+- Owner scopes include `mimisbrunnr`, `general_notes`, `imports`, `sessions`,
+  and `system`, but actual projections are currently note-backed.
+
+### 8. Terminology Clarification
+
+`Namespace` means a structured address space for context nodes. `URI` means the
+string identifier used to read a node.
+
+### 9. Gaps / Issues in Original Manual
+
+- It listed sessions/imports as scopes without making the projection limitation
+  clear enough.
+
+### 10. Refactored Section (Final Version)
+
+Use namespace commands for structured note browsing. Do not expect namespace
+tree output to be a complete view of every stored artifact until the projection
+model expands beyond note-backed rows.
+
+## Section: 21. Session Recall
+
+### 1. Purpose (Rewritten)
+
+This section explains searchable conversation continuity. It is for operators
+and agent integrators.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+Session recall lets an agent remember what happened in an earlier conversation,
+but it marks that memory as not trusted fact.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+Session archives are immutable records in SQLite. Search clamps limit and token
+budget. Agent-context assembly can include session recall under a
+non-authoritative label.
+
+### 4. Implementation Details
+
+Surfaces:
+
+- `create-session-archive`
+- `search-session-archives`
+- `assemble-agent-context` with `includeSessionArchives`
+- `packages/application/src/services/session-archive-service.ts`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Session ID and messages | Create archive | Stored archive | Search by session ID |
+| Full | Query and session ID | Include archive in agent context | Non-authoritative block | Inspect `contextBlock` labels |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Search empty | Wrong session ID or no archive | No hits | List/query known session | Use correct ID |
+| Over-trust | Agent treats recall as fact | Bad answer | Inspect context labels | Convert durable fact into draft/promotion |
+
+### 7. Assumptions and Hidden Constraints
+
+- Session archives are immutable after creation.
+- They can inform but not authorize canonical claims.
+
+### 8. Terminology Clarification
+
+`Recall` means retrieving stored continuity. `Non-authoritative` means not
+trusted as durable truth.
+
+### 9. Gaps / Issues in Original Manual
+
+- It described recall but did not present over-trust as a concrete failure
+  mode.
+
+### 10. Refactored Section (Final Version)
+
+Use session recall for continuity across agent conversations. Label it and
+treat it as non-authoritative. Promote only reviewed durable facts extracted
+from the session, never the transcript itself.
+
+## Section: 22. Agent Context Assembly
+
+### 1. Purpose (Rewritten)
+
+This section explains safe prompt context for agents. It is for both audiences.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+Agent context assembly creates a fenced block that tells an agent what memory is
+trusted, what is just session recall, and how much evidence it can use.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+The flow retrieves canonical context, optionally searches session archives,
+applies a hard context budget, emits source summaries and retrieval health, and
+returns a fenced `contextBlock`.
+
+### 4. Implementation Details
+
+Surfaces:
+
+- CLI: `assemble-agent-context`
+- HTTP: `/v1/context/agent-context`
+- MCP: `assemble_agent_context`
+- retrieval and session services under `packages/application/src/services`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Query and corpora | Run `assemble-agent-context` | Fenced context block | Check token estimate and source summary |
+| Full | Query, session ID, trace flag | Include session archives and trace | Canonical plus session recall | Inspect labels and trace |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Truncation | Budget too small | `truncated` true | Inspect token estimate | Increase budget or narrow query |
+| No canonical memory | Empty vault or filters | Context lacks canonical evidence | Search context separately | Promote relevant note |
+
+### 7. Assumptions and Hidden Constraints
+
+- Context assembly should not be used to smuggle unbounded raw vault contents
+  into prompts.
+- Session recall remains explicitly labeled.
+
+### 8. Terminology Clarification
+
+`Fenced block` means a clearly delimited prompt section. `Token estimate` means
+approximate model input size.
+
+### 9. Gaps / Issues in Original Manual
+
+- It did not include enough diagnostics for truncation and empty canonical
+  context.
+
+### 10. Refactored Section (Final Version)
+
+Use `assemble-agent-context` when an agent needs memory in a prompt-safe form.
+Inspect labels, budgets, source summaries, retrieval health, and truncation
+before trusting the assembled block.
+
+## Section: 23. Hermes-Inspired Local-Agent Improvements
+
+### 1. Purpose (Rewritten)
+
+This section explains which Hermes-like ideas were adopted and which were
+rejected. It is for both audiences.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+`mimir` borrowed useful ideas about agent continuity and local work, but it did
+not copy patterns where agents freely rewrite memory.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+Adopted: session archives, layered context assembly, local coding role metadata,
+traces, retry/error metadata, and spillover storage. Rejected: autonomous
+canonical writes, unreviewed memory files as authority, broad provider sprawl,
+and client skill ownership inside Mimir.
+
+### 4. Implementation Details
+
+Relevant docs:
+
+- `documentation/planning/hermes-vs-mimir-gap-analysis.md`
+- `documentation/reference/external-client-boundary.md`
+- `runtimes/local_experts`
+- coding services and trace stores under `packages/application` and
+  `packages/infrastructure`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Agent continuity need | Use session archive/context assembly | Bounded recall | Context block labels authority |
+| Full | Durable lesson from agent work | Create draft from reviewed evidence | Staging proposal | Validate and review before promotion |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Memory shortcut | Copying Hermes memory-file authority pattern | Unreviewed facts become trusted | Audit storage path | Convert to draft/review/promotion |
+| Client ownership leak | Mimir tries to own external skills/subagents | Boundary confusion | Read external-client boundary doc | Keep skills in client layer |
+
+### 7. Assumptions and Hidden Constraints
+
+- Hermes is inspiration, not runtime dependency.
+- External clients retain skills and subagents.
+
+### 8. Terminology Clarification
+
+`Hermes-inspired` means conceptually influenced, not compatible or embedded.
+
+### 9. Gaps / Issues in Original Manual
+
+- It did not tie this section tightly enough to the current external-client
+  boundary.
+
+### 10. Refactored Section (Final Version)
+
+Borrow Hermes-style continuity and local-agent ergonomics, but keep
+Mimir's stronger governance. Agents may retrieve, propose, trace, and archive;
+they must not silently create canonical memory.
+
+## Section: 24. Qwen3-Coder And Local Model Usage
+
+### 1. Purpose (Rewritten)
+
+This section explains local model role configuration. It is for operators and
+developers tuning providers.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+Different jobs use different model roles. Coding work can use a coder model.
+Memory authority still comes from review and promotion, not from the model.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+Role bindings resolve configured providers, models, fallbacks, timeouts,
+temperature, seed, input, and output limits. The coding bridge receives the
+selected model through environment values.
+
+### 4. Implementation Details
+
+Config:
+
+- `packages/infrastructure/src/config/env.ts`
+- `documentation/reference/env-vars.md`
+- `packages/infrastructure/src/coding/python-coding-controller-bridge.ts`
+
+Role env pattern:
+
+- `MAB_ROLE_<ROLE>_PROVIDER`
+- `MAB_ROLE_<ROLE>_MODEL`
+- `MAB_ROLE_<ROLE>_FALLBACK_MODEL`
+- `MAB_ROLE_<ROLE>_TIMEOUT_MS`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Defaults | Run a command that reports provider behavior | Fallback or model-backed result | Inspect warnings/trace |
+| Full | Model endpoint and env vars | Set role env and run coding task | Selected model used | Check local-agent trace model fields |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Model unavailable | Endpoint lacks model ID | Provider error/fallback | Query endpoint and trace | Pull/start model |
+| Credential missing | Paid/VoltAgent role needs provider key | Provider auth failure | Check env vars | Set required key or disable role |
+
+### 7. Assumptions and Hidden Constraints
+
+- Compose profile expects Docker/Ollama-compatible models.
+- Paid escalation is optional and bounded.
+- `qwen3-coder` is not a memory authority.
+
+### 8. Terminology Clarification
+
+`Role binding` means mapping a named job role to a provider and model.
+
+### 9. Gaps / Issues in Original Manual
+
+- It focused on qwen3-coder but did not fully connect role binding to
+  diagnostics.
+
+### 10. Refactored Section (Final Version)
+
+Configure model roles explicitly when you need model-backed behavior. Verify
+actual model use through traces and warnings. Never treat model output as
+canonical memory without review and promotion.
+
+## Section: 25. Coding Runtime
+
+### 1. Purpose (Rewritten)
+
+This section explains how local coding tasks run. It is for both audiences.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+The coding runtime is a worker that can review, triage, propose fixes, generate
+tests, summarize diffs, and run bounded coding tasks. It can receive memory
+context, but it does not own memory.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+`execute-coding-task` routes through `CodingDomainController`, then
+`PythonCodingControllerBridge`, then `python -m local_experts.bridge`. The
+bridge passes JSON over stdin/stdout and translates startup, timeout, and
+invalid JSON failures into coding responses.
+
+### 4. Implementation Details
+
+Files:
+
+- `packages/orchestration/src/coding/coding-domain-controller.ts`
+- `packages/infrastructure/src/coding/python-coding-controller-bridge.ts`
+- `runtimes/local_experts/local_experts/bridge.py`
+- `runtimes/local_experts/tests/test_safety_gate.py`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Task type and repo root | Run `execute-coding-task` | Coding response | Inspect `status`, `reason`, validations |
+| Full | Task plus memory context | Include `memoryContext` | Response says whether context was included | Query local-agent trace |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Python missing | Executable not found | Bridge start failure | Check `MAB_CODING_RUNTIME_PYTHON_EXECUTABLE` | Install Python or set env |
+| Module missing | Wrong `PYTHONPATH` or deps | Import error | Run Python safety test | Fix `MAB_CODING_RUNTIME_PYTHONPATH`, install deps |
+| Timeout | Task exceeds runtime limit | Escalation/failure response | Inspect timeout env/trace | Increase limit or narrow task |
+
+### 7. Assumptions and Hidden Constraints
+
+- The Python runtime is vendored and subprocess-driven.
+- It is not a long-running application server.
+- Tool outputs may spill over instead of staying inline.
+
+### 8. Terminology Clarification
+
+`Bridge` means the Node component that starts and talks to Python. `Escalate`
+means the coding response could not complete normally and reports why.
+
+### 9. Gaps / Issues in Original Manual
+
+- It explained the flow but needed clearer subprocess and failure boundaries.
+
+### 10. Refactored Section (Final Version)
+
+Use coding tasks for bounded local engineering assistance. Verify Python,
+provider, memory-context, trace, and spillover behavior. Convert durable
+lessons into drafts, not direct memory writes.
+
+## Section: 26. Local-Agent Traces
+
+### 1. Purpose (Rewritten)
+
+This section explains operational records for coding tasks. It is for
+operators debugging agent work and developers tracing behavior.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+A trace is a compact receipt of what a local agent task used and how it ended.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+Traces are SQLite-backed records containing request ID, actor ID, task type,
+model role, model ID, memory context status, retrieval trace status, provider
+error kind, retry count, seed usage, and status.
+
+### 4. Implementation Details
+
+Surfaces:
+
+- CLI: `list-agent-traces`
+- HTTP: `/v1/coding/traces`
+- MCP: `list_agent_traces`
+- SQLite trace store under infrastructure
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Request ID | Run `list-agent-traces` | Trace records | Match request ID |
+| Full | Debug task | Compare response metadata to trace | Runtime story | Confirm model/context/retry fields |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| No trace | Wrong request ID or task did not reach trace write | Empty list | Search by broader filters if supported | Use response metadata/audit |
+| Misleading diagnosis | Trace ignored | Operator guesses provider issue | Inspect trace fields | Follow recorded provider/error fields |
+
+### 7. Assumptions and Hidden Constraints
+
+- Traces are operational records, not durable knowledge.
+- They may reference spillover IDs for large outputs.
+
+### 8. Terminology Clarification
+
+`Trace` means operational telemetry. `Request ID` means correlation identifier
+for a specific call.
+
+### 9. Gaps / Issues in Original Manual
+
+- It listed trace fields but did not frame traces as receipts rather than
+  facts.
+
+### 10. Refactored Section (Final Version)
+
+Use local-agent traces to answer what happened during a coding task. Do not
+promote trace content directly. Use traces as evidence when creating a reviewed
+draft.
+
+## Section: 27. Tool-Output Spillover
+
+### 1. Purpose (Rewritten)
+
+This section explains how large outputs stay out of prompts. It is for both
+audiences.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+When a tool produces too much text, `mimir` stores the full output separately
+and returns a short preview plus an ID.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+The spillover service keeps small output inline, caps custom inline budgets,
+stores large output in SQLite-backed metadata/storage, and returns a preview
+record referenced by the coding response.
+
+### 4. Implementation Details
+
+Surfaces:
+
+- CLI: `show-tool-output`
+- HTTP: `/v1/coding/tool-output`
+- MCP: `show_tool_output`
+- tool-output store under infrastructure/application services
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Spillover ID | Run `show-tool-output` | Full stored output or `found: false` | Compare ID with coding response |
+| Full | Long task result | Inspect preview first, retrieve full only if needed | Prompt stays bounded | Confirm response includes spillover metadata |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Output not found | Wrong ID or expired/missing store | `found: false` | Check coding response ID | Re-run task or inspect traces |
+| Prompt overflow | User pastes full output into memory/prompt | Large prompt or bad note | Review draft/context | Summarize and cite ID instead |
+
+### 7. Assumptions and Hidden Constraints
+
+- Spillover output is not canonical memory.
+- Large logs should be summarized before becoming durable notes.
+
+### 8. Terminology Clarification
+
+`Spillover` means full output stored outside the immediate response.
+
+### 9. Gaps / Issues in Original Manual
+
+- It explained budgets but did not emphasize operator verification before
+  turning output into memory.
+
+### 10. Refactored Section (Final Version)
+
+Use spillover IDs to keep prompts small and recover full output only when
+needed. Turn durable findings into reviewed notes, not raw output dumps.
+
+## Section: 28. Audit History
+
+### 1. Purpose (Rewritten)
+
+This section explains how to inspect recorded actions. It is for operators and
+developers.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+Audit history answers who did what, when, and with what result where the system
+records audit entries.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+Audit records are SQLite-backed. Query filters include actor ID, action type,
+source, note ID, time range, and limit. Not every runtime event is guaranteed
+to have the same audit detail shape.
+
+### 4. Implementation Details
+
+Surfaces:
+
+- CLI: `query-history`
+- HTTP: `/v1/history/query`
+- MCP: `query_history`
+- `packages/infrastructure/src/sqlite/sqlite-audit-log.ts`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Actor ID or action type | Run `query-history` | Bounded audit records | Check filters applied before limit |
+| Full | Promotion/token/coding incident | Query by actor, action, note/time | Relevant lifecycle records | Compare with command response IDs |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Missing expected event | Event did not write audit or filters too strict | Empty result | Broaden query | Use traces/storage response IDs |
+| Too many results | Filter too broad | Irrelevant records | Narrow actor/action/time | Re-query |
+
+### 7. Assumptions and Hidden Constraints
+
+- Audit history is a diagnostic aid, not a complete event sourcing system.
+- SQLite schema is adapter-owned today.
+
+### 8. Terminology Clarification
+
+`Audit` means recorded operational history. `Action type` means the category of
+recorded operation.
+
+### 9. Gaps / Issues in Original Manual
+
+- It implied broad usefulness but did not state audit coverage limits.
+
+### 10. Refactored Section (Final Version)
+
+Use audit history for promotion, retrieval, token, coding, and other recorded
+actions. Filter carefully, then compare audit IDs with command responses,
+traces, and storage records.
+
+## Section: 29. Environment Variables
+
+### 1. Purpose (Rewritten)
+
+This section explains configuration surfaces. It is for both audiences.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+`mimir` reads settings from the environment of the running process. It does not
+automatically read `.env` files.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+`loadEnvironment()` reads `process.env` through
+`packages/infrastructure/src/config/env.ts`. Defaults derive storage paths from
+`MAB_DATA_ROOT`. Per-role model bindings override legacy/default provider
+settings.
+
+### 4. Implementation Details
+
+Reference:
+
+- `documentation/reference/env-vars.md`
+- `documentation/setup/configuration.md`
+- `.env.example`
+- `docker/compose.local.yml`
+- `docker/mimir-mcp-session.env.example`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | No env overrides | Run `version` or `auth-status` | Defaults used | Inspect output and storage path behavior |
+| Full | Repo-local state env | Set `MAB_VAULT_ROOT`, `MAB_STAGING_ROOT`, `MAB_SQLITE_PATH` | State written where expected | Check files under configured paths |
+| Model | Role env vars | Set `MAB_ROLE_<ROLE>_*` | Provider uses role config | Trace/provider response reflects role |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| `.env` ignored | No loader exists | Settings not applied | Print/check process env | Export vars in shell/process manager/client config |
+| Wrong state path | Defaults used unexpectedly | Files under home `.mimir` | Check env vars | Set explicit storage vars |
+| Bad JSON env | Registry/revocation JSON malformed | Startup/auth error | Validate JSON | Fix JSON or use file path |
+
+### 7. Assumptions and Hidden Constraints
+
+- `MAB_` remains the compatibility prefix.
+- New env vars must be documented in `env-vars.md`.
+- Docker profiles and local shell profiles are not equivalent.
+
+### 8. Terminology Clarification
+
+`Environment variable` means a setting passed to the process before it starts.
+`Default` means value used when no env override exists.
+
+### 9. Gaps / Issues in Original Manual
+
+- It listed env vars but included some stale release names and lacked a strong
+  no-dotenv warning in every relevant place.
+
+### 10. Refactored Section (Final Version)
+
+Configure `mimir` through process environment variables, not implicit `.env`
+loading. Use explicit storage paths in development. Use `documentation/reference/env-vars.md`
+as the complete reference and keep it synchronized with code.
+
+## Section: 30. Auth Operations
+
+### 1. Purpose (Rewritten)
+
+This section explains token and issuer operations. It is for operators and
+developers working on auth-control surfaces.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+Operators can inspect auth status, issue short-lived actor tokens, inspect
+tokens, revoke them, and list lifecycle state.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+Auth-control operations use administrative routes and validation. Issued tokens
+are stored in SQLite-backed lifecycle state and checked against registry and
+revocation policy.
+
+### 4. Implementation Details
+
+Surfaces:
+
+- CLI: `auth-status`, `auth-issued-tokens`, `issue-auth-token`,
+  `auth-introspect-token`, `revoke-auth-token`, `revoke-auth-tokens`,
+  `auth-issuers`, `set-auth-issuer-state`
+- HTTP: `/v1/system/auth/*`
+- Validation under `packages/infrastructure/src/transport`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Operator actor | Run `auth-status` | Auth mode and summary | Confirm role accepted |
+| Issue | Operator actor plus target actor | Run `issue-auth-token` | Token and token ID | Introspect token |
+| Revoke | Token ID | Run `revoke-auth-token` | Revoked lifecycle | `auth-issued-tokens` shows revoked |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Cannot issue | Missing `MAB_AUTH_ISSUER_SECRET` | Issue fails | Check env | Set secret securely |
+| Token rejected | Registry mismatch or revoked | Introspection failure | Inspect lifecycle and registry | Issue new valid token |
+| Wrong command name | Issued token uses unsupported command | Validation error | Check command catalog names | Use snake_case command identifiers where required |
+
+### 7. Assumptions and Hidden Constraints
+
+- Administrative auth endpoints are not exposed through direct MCP tools.
+- Token issuance should be time-bounded.
+
+### 8. Terminology Clarification
+
+`Issuer` means the configured authority able to mint tokens. `Lifecycle` means
+active, revoked, expired, or otherwise time-bound token state.
+
+### 9. Gaps / Issues in Original Manual
+
+- It included examples but did not show a complete issue -> introspect -> revoke
+  verification path.
+
+### 10. Refactored Section (Final Version)
+
+Perform auth operations as an operator/system actor. Issue tokens narrowly,
+introspect them before use, list lifecycle state when debugging, and revoke
+tokens when access should end.
+
+## Section: 31. Health And Diagnostics
+
+### 1. Purpose (Rewritten)
+
+This section explains operational checks and common degraded states. It is for
+operators.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+`live` means the process responds. `ready` means the system is ready to serve
+the configured workload. A process can be live but not ready.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+Health logic lives in `packages/infrastructure/src/health/runtime-health.ts`.
+`live` returns 200 for pass or degraded and 503 for fail. `ready` returns 200
+only for pass and 503 for degraded or fail. Qdrant failure is degraded for
+`live` and fatal for `ready`.
+
+### 4. Implementation Details
+
+Surfaces:
+
+- `GET /health/live`
+- `GET /health/ready`
+- CLI diagnostics: `version`, `auth-status`, `freshness-status`,
+  `search-context`, `list-agent-traces`, `show-tool-output`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Running API | Call `/health/live` | 200 when process usable | HTTP status |
+| Full | Running API plus deps | Call `/health/ready` | 200 only when dependencies ready | HTTP status and body |
+| Debug | Retrieval issue | Run search with `includeTrace` | Trace and health details | Inspect candidate/degradation data |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Ready 503 | Qdrant/model/config issue | Readiness failed | Health body/logs | Start or reconfigure dependency |
+| Auth denied | Enforced mode missing actor | 401/403 or JSON error | Auth status/introspection | Provide valid actor/token |
+| Coding failure | Python/model/tool output issue | Coding response escalates/fails | Trace and spillover | Fix bridge/provider/deps |
+
+### 7. Assumptions and Hidden Constraints
+
+- Health endpoints exist only on HTTP API, not MCP session container.
+- Some degraded states are intentional to preserve lexical/local operation.
+
+### 8. Terminology Clarification
+
+`Live` means process liveness. `Ready` means dependency readiness for the
+configured runtime.
+
+### 9. Gaps / Issues in Original Manual
+
+- It did not define live vs ready sharply enough for operators.
+
+### 10. Refactored Section (Final Version)
+
+Use `/health/live` to check process responsiveness and `/health/ready` to check
+operational readiness. When ready fails, inspect the named dependency rather
+than restarting blindly.
+
+## Section: 32. Testing And Evaluation
+
+### 1. Purpose (Rewritten)
+
+This section defines verification gates. It is for developers and release
+operators.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+Tests prove that the build, public command list, route documentation, security
+audit policy, and transports still match the code.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+The focused CI gate `.github/workflows/core-quality.yml` installs with frozen
+lockfile and runs typecheck, interface docs, security audit classification,
+live audit wrapper, command surface tests, and transport tests. It is not a
+full packaging/publication pipeline.
+
+### 4. Implementation Details
+
+Scripts:
+
+- `corepack pnpm typecheck`
+- `corepack pnpm test:interface-docs`
+- `corepack pnpm test:command-surface`
+- `corepack pnpm test:security-audit`
+- `corepack pnpm security:audit`
+- `corepack pnpm test:transport`
+- `corepack pnpm test`
+- Python safety test under `runtimes/local_experts/tests`
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Docs/interface change | Run `test:interface-docs` | Route/docs agree | Exit code 0 |
+| Minimal | Command change | Run `test:command-surface` | Command inventory agrees | Exit code 0 |
+| Dependency | Lockfile/package change | Run `install --frozen-lockfile` and `security:audit` | Install/audit gate passes | Exit code 0 |
+| Full | Release-like confidence | Run `typecheck`, focused tests, full `test` | Suite passes | Exit code 0 |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Lockfile drift | Package manifest changed without lockfile | Frozen install fails | CI install log | Sync lockfile intentionally |
+| Route map drift | Server routes and docs disagree | `test:interface-docs` fails | Test output names missing route | Update docs/source-derived maps |
+| New advisory | Audit allowlist does not permit it | `security:audit` fails | JSON classification | Upgrade dependency or narrow documented exception |
+
+### 7. Assumptions and Hidden Constraints
+
+- Current allowed advisory is only the documented temporary
+  `@voltagent/core 2.7.x -> uuid 9.0.1` path for `GHSA-w5hq-g745-h8pq`.
+- Full `pnpm test` is broader than the focused CI gate.
+
+### 8. Terminology Clarification
+
+`CI gate` means automated checks run in GitHub Actions. `Allowlist` means a
+temporary, tested exception for a known dependency advisory.
+
+### 9. Gaps / Issues in Original Manual
+
+- It had the commands, but the current CI gate and advisory policy needed to be
+  documented as first-class behavior.
+
+### 10. Refactored Section (Final Version)
+
+Run focused tests for changed surfaces and full tests when confidence matters.
+Treat frozen lockfile failures, route drift, command-surface drift, and new
+audit advisories as release blockers until explained and fixed.
+
+## Section: 33. Practical Operator Workflows
+
+### 1. Purpose (Rewritten)
+
+This section turns the system model into daily operating recipes. It is for
+operators.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+Most work fits one of five recipes: store continuity, draft durable memory,
+promote reviewed memory, give an agent bounded context, or diagnose degraded
+retrieval.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+The workflows combine the same command families described earlier: sessions,
+drafting, validation, review, promotion, retrieval, traces, and health.
+
+### 4. Implementation Details
+
+Relevant commands:
+
+- `create-session-archive`
+- `search-session-archives`
+- `draft-note`
+- `validate-note`
+- `promote-note`
+- `search-context`
+- `assemble-agent-context`
+- `execute-coding-task`
+- `list-agent-traces`
+
+### 5. Step-by-Step Usage
+
+| Workflow | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Store continuity | Transcript | Archive then search | Non-authoritative recall | Search result labels session |
+| Store durable fact | Sourced claim | Draft, validate, review, promote | Canonical note | Search canonical evidence |
+| Give agent memory | Query and budget | Assemble agent context | Fenced block | Inspect labels and truncation |
+| Fix retrieval | Bad search result | Check health, trace, Qdrant, chunks | Identified layer | Re-run search after fix |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Workflow skips review | Operator promotes too fast | Weak canonical memory | Check audit/promotion path | Revert/supersede with corrected note |
+| Wrong command for task | Archive used for fact or draft used for continuity | Poor retrieval/governance | Inspect state type | Move through correct workflow |
+
+### 7. Assumptions and Hidden Constraints
+
+- Operator judgment remains required for durable memory.
+- Workflows must preserve public command names unless a compatibility plan
+  exists.
+
+### 8. Terminology Clarification
+
+`Workflow` means a repeatable sequence of commands and checks.
+
+### 9. Gaps / Issues in Original Manual
+
+- It listed workflows but did not attach input/output/verification to each.
+
+### 10. Refactored Section (Final Version)
+
+Use repeatable recipes. For continuity, archive and search. For durable memory,
+draft, validate, review, promote, and search. For agents, assemble bounded
+context and inspect labels. For degradation, trace retrieval before repairing
+indexes.
+
+## Section: 34. What Not To Do
+
+### 1. Purpose (Rewritten)
+
+This section names unsafe shortcuts. It is for both audiences.
+
+### 2. High-Level Explanation (Non-Technical Layer)
+
+The fastest shortcut is often the one that breaks trust. Do not let agents or
+tools write trusted memory directly.
+
+### 3. System-Level Explanation (Engineering Layer)
+
+Unsafe shortcuts bypass staging, validation, review, auth, audit, indexing, or
+bounded context assembly. They create drift between filesystem state, SQLite
+metadata, FTS, Qdrant, and audit history.
+
+### 4. Implementation Details
+
+Protected boundaries:
+
+- Vault path helpers and note repositories.
 - Actor authorization policy.
-- `MimirOrchestrator`.
-
-Runtime flow:
-
-```text
-CLI / HTTP / MCP
-        |
-        v
-transport validation + actor context
-        |
-        v
-ActorAuthorizationPolicy
-        |
-        v
-MimirOrchestrator
-        |
-        +--> MimisbrunnrDomainController
-        |       +--> retrieval
-        |       +--> context packets
-        |       +--> staging drafts
-        |       +--> validation
-        |       +--> promotion
-        |       +--> refresh drafts
-        |       +--> imports
-        |       +--> history
-        |       +--> session archives
-        |
-        +--> CodingDomainController
-                +--> Node-to-Python bridge
-                +--> local_experts runtime
-                +--> local-agent trace store
-                +--> tool-output spillover store
-```
-
-The transport adapters should stay thin. They parse requests, inject or accept
-actor context, validate request shape, call the shared orchestrator, and return
-JSON. They should not contain business rules that bypass the application or
-orchestration layers.
-
-## 4. Authority And State Lifecycle
-
-mimir uses separate state categories:
-
-- Canonical memory: promoted Markdown notes in the canonical vault. This is the
-  durable fact authority.
-- Staging memory: draft Markdown notes in the staging vault. These are proposals
-  for operator review.
-- Metadata and audit: SQLite records for notes, chunks, promotions, history,
-  imports, auth tokens, revocations, session archives, namespace nodes,
-  representations, local-agent traces, and tool outputs.
-- Lexical retrieval index: SQLite FTS entries derived from promoted chunks.
-- Vector retrieval index: Qdrant embeddings derived from promoted chunks.
-- Session archives: immutable non-authoritative conversation archives.
-- Tool-output spillovers: large local-agent outputs stored outside prompt
-  context, referenced by output ID.
-
-The governed write path is:
-
-```text
-draft_note
-   |
-   v
-staging draft file + SQLite metadata
-   |
-   v
-validate_note
-   |
-   v
-operator review
-   |
-   v
-promote_note
-   |
-   v
-canonical note write
-   |
-   v
-chunking + SQLite metadata + FTS + optional Qdrant
-   |
-   v
-audit entry + promotion decision
-```
-
-The non-authoritative continuity path is:
-
-```text
-create_session_archive
-   |
-   v
-SQLite session archive + searchable messages
-   |
-   v
-search_session_archives or assemble_agent_context
-```
-
-Session archives are useful for long-running agent continuity. They do not
-create facts, supersede facts, or become canonical memory.
-
-## 5. Installation
-
-Required:
+- Promotion outbox and index sync.
+- Docker tool registry rule: no direct `mimisbrunnr` mounts.
+- Toolbox policy under `docker/mcp`.
 
-- Node `>=22.0.0`.
-- `pnpm@10.7.0`.
+### 5. Step-by-Step Usage
 
-Optional:
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Tempting shortcut | Stop and classify state type | Correct governed path | Compare with Section 4 |
+| Full | Need new capability | Add tests and docs before widening access | Reviewable change | CI/focused tests pass |
 
-- Python 3 for `runtimes/local_experts`.
-- `fastmcp`, `httpx`, and `pytest` for the Python runtime.
-- Qdrant for vector retrieval.
-- Docker Desktop and Docker Compose for the tracked local container profile.
-- Docker Model Runner or another Ollama-compatible endpoint for model-backed
-  embeddings, reasoning, drafting, reranking, and coding.
+### 6. Failure Modes and Diagnostics
 
-Install JavaScript dependencies:
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Direct canonical edit | Filesystem changed without metadata/index/audit | Retrieval/index drift | Compare files and SQLite/indexes | Create corrective draft/promotion or repair with tests |
+| Tool direct memory mount | Docker tool bypasses Mimir | Ungoverned writes | Validate tool registry | Remove mount, use commands |
 
-```powershell
-corepack pnpm install
-```
+### 7. Assumptions and Hidden Constraints
 
-Build everything:
+- Manual edits to canonical memory are high-risk unless performed through a
+  planned migration/repair.
+- Secrets should not be stored in notes, archives, traces, or spillovers.
 
-```powershell
-corepack pnpm build
-```
+### 8. Terminology Clarification
 
-Run the full JavaScript test suite:
+`Bypass` means changing state without the service that owns the invariant.
 
-```powershell
-corepack pnpm test
-```
+### 9. Gaps / Issues in Original Manual
 
-Run typecheck:
+- It listed prohibitions but did not explain the mechanism each shortcut
+  bypasses.
 
-```powershell
-corepack pnpm typecheck
-```
+### 10. Refactored Section (Final Version)
 
-Run retrieval evals:
+Do not edit canonical memory directly, promote failed drafts, treat session
+recall as fact, hide degradation, disable auth in shared environments, mount
+memory into tools, or store secrets. Use governed commands and tests instead.
 
-```powershell
-corepack pnpm run test:eval:retrieval
-```
+## Section: 35. Troubleshooting
 
-Install suggested Python runtime packages:
+### 1. Purpose (Rewritten)
 
-```powershell
-python -m pip install fastmcp httpx pytest
-```
+This section maps symptoms to causes and recovery steps. It is for operators.
 
-The Node apps do not automatically load `.env`. Set environment variables in
-the shell, Docker Compose file, process manager, or MCP client configuration.
+### 2. High-Level Explanation (Non-Technical Layer)
 
-### 5.1 Choose A First Setup Path
+Troubleshooting starts by identifying which layer failed: command shape, auth,
+storage, retrieval, external dependency, Python bridge, or Docker/MCP wiring.
 
-Choose the setup path based on what you want to learn first:
+### 3. System-Level Explanation (Engineering Layer)
 
-| Path | Best for | What you need | What works |
-| --- | --- | --- | --- |
-| Minimal local CLI | First-time learning, docs, auth, session archive tests | Node and pnpm | CLI, SQLite state, deterministic fallbacks |
-| Local CLI plus Python | Coding runtime smoke tests | Node, pnpm, Python packages | `execute-coding-task` can invoke the Python bridge |
-| Docker Desktop API stack | HTTP API plus Qdrant plus model endpoint wiring | Docker Desktop, Docker Compose, optional Model Runner | API, Qdrant, mounted state volumes, model-backed providers |
-| Docker MCP session | Agent/MCP client integration | Docker Desktop, MCP client, auth registry | Containerized stdio MCP server with startup validation |
-| Full local model-backed flow | Local agents with qwen3-coder and qwen3 retrieval roles | Docker Model Runner or compatible endpoint | Model-backed embeddings, reasoning, drafting, reranking, coding |
+Most failures surface as structured JSON errors, HTTP status codes, health
+states, validation details, retrieval warnings, traces, or process stderr.
 
-For a first-time user, the recommended order is:
+### 4. Implementation Details
 
-1. Minimal local CLI.
-2. Docker Desktop API stack.
-3. Docker MCP session.
-4. qwen3-coder/local model-backed flows.
+Useful surfaces:
 
-This order keeps the early steps understandable. You can verify the system
-before debugging containers, model endpoints, MCP client configuration, or
-Python runtime issues.
+- CLI JSON errors.
+- HTTP statuses and response bodies.
+- `/health/live` and `/health/ready`.
+- `includeTrace` retrieval.
+- `list-agent-traces`.
+- Docker/MCP session validation stderr.
 
-### 5.2 Minimal Local CLI Setup
+### 5. Step-by-Step Usage
 
-From the repository root:
+| Symptom | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| CLI payload missing | Command and payload | Provide exactly one of `--json`, `--input`, `--stdin` | Command runs or schema error | CLI exit code and JSON |
+| HTTP 405 | Method/path | Check interface table | Correct method | HTTP status changes |
+| Retrieval empty | Query/corpus | Check promoted notes, chunks, filters, Qdrant | Cause identified | Search succeeds after fix |
+| Coding fails | Request ID | Inspect traces/spillover | Bridge/provider cause | Corrected retry succeeds |
 
-```powershell
-corepack pnpm install
-corepack pnpm build
-corepack pnpm cli -- version
-corepack pnpm cli -- auth-status
-```
+### 6. Failure Modes and Diagnostics
 
-Expected behavior:
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Validation error | Bad payload/body/schema | `validation_failed` | Error details | Fix field/value |
+| Not found | Missing node/output/note | `not_found` | List/search first | Use existing ID |
+| Dependency issue | Qdrant/model/Python missing | Degraded/failure | Health/trace/stderr | Start/install/configure dependency |
 
-- `corepack pnpm install` installs workspace dependencies.
-- `corepack pnpm build` compiles TypeScript into each package/app `dist` directory.
-- `corepack pnpm cli -- version` prints JSON with `ok: true` and release metadata.
-- `corepack pnpm cli -- auth-status` prints the effective auth mode and actor registry
-  summary. In enforced mode, call it with operator or system actor context in the
-  JSON payload.
+### 7. Assumptions and Hidden Constraints
 
-You may see a Node warning that SQLite is experimental. That warning comes from
-Node's built-in SQLite support. It is not a mimir failure by itself.
+- Some warnings are non-blocking but operationally important.
+- Readiness can fail even when liveness passes.
 
-Default local storage locations:
+### 8. Terminology Clarification
 
-| Storage | Default |
-| --- | --- |
-| Data root on Windows | `%USERPROFILE%\.mimir` |
-| Data root on non-Windows | `$HOME/.mimir` |
-| Canonical vault | `$MAB_DATA_ROOT/vault/canonical` |
-| Staging vault | `$MAB_DATA_ROOT/vault/staging` |
-| SQLite state | `$MAB_DATA_ROOT/state/mimisbrunnr.sqlite` |
-| Qdrant URL | `http://127.0.0.1:6333` |
-| API host/port | `127.0.0.1:8080` |
+`Symptom` means what the user observes. `Root cause` means the underlying layer
+that must be fixed.
 
-If you want disposable test state, set `MAB_DATA_ROOT` before running commands:
+### 9. Gaps / Issues in Original Manual
 
-```powershell
-$env:MAB_DATA_ROOT = "$env:USERPROFILE\.mimir-test"
-corepack pnpm cli -- version
-```
+- It had good symptom bullets but did not impose a layer-first diagnostic
+  order.
 
-Use a test vault while learning if you do not want to touch your real memory
-vault.
+### 10. Refactored Section (Final Version)
 
-### 5.3 Minimal HTTP API Setup
-
-Build first, then start the API:
-
-```powershell
-corepack pnpm build
-corepack pnpm api
-```
-
-In another terminal:
-
-```powershell
-Invoke-RestMethod -Method Get -Uri http://127.0.0.1:8080/v1/system/version
-Invoke-RestMethod -Method Get -Uri http://127.0.0.1:8080/health/live
-Invoke-RestMethod -Method Get -Uri http://127.0.0.1:8080/health/ready
-```
-
-Expected behavior:
-
-- Version returns release metadata.
-- Live health verifies that the server process is responsive.
-- Ready health verifies operational readiness. It can fail if configured
-  dependencies are unreachable.
-
-When sending JSON to the API from PowerShell:
-
-```powershell
-$payload = @{
-  query = "paid models out of scope"
-  limit = 5
-  maxTokens = 2000
-} | ConvertTo-Json -Depth 10
-
-Invoke-RestMethod `
-  -Method Post `
-  -Uri http://127.0.0.1:8080/v1/history/session-archives/search `
-  -ContentType "application/json" `
-  -Body $payload
-```
-
-### 5.4 First-Time Safe Tour
-
-This tour creates only a non-authoritative session archive and then searches it.
-It does not promote canonical memory.
-
-Step 1: verify the CLI works.
-
-```powershell
-corepack pnpm cli -- version
-corepack pnpm cli -- auth-status
-```
-
-Step 2: create a session archive.
-
-```powershell
-$archive = @'
-{
-  "sessionId": "first-time-tour",
-  "messages": [
-    {
-      "role": "user",
-      "content": "I am learning mimir for the first time."
-    },
-    {
-      "role": "assistant",
-      "content": "This archive is non-authoritative continuity and should not be treated as canonical memory."
-    }
-  ]
-}
-'@
-
-corepack pnpm cli -- create-session-archive --json $archive
-```
-
-Step 3: search the session archive.
-
-```powershell
-$search = @'
-{
-  "query": "first time learning non-authoritative continuity",
-  "sessionId": "first-time-tour",
-  "limit": 5,
-  "maxTokens": 2000
-}
-'@
-
-corepack pnpm cli -- search-session-archives --json $search
-```
-
-Step 4: assemble agent context from canonical memory plus session recall.
-
-```powershell
-$context = @'
-{
-  "query": "What does this first-time session say about authority?",
-  "corpusIds": ["mimisbrunnr", "general_notes"],
-  "budget": {
-    "maxTokens": 3000,
-    "maxSources": 4,
-    "maxRawExcerpts": 2,
-    "maxSummarySentences": 4
-  },
-  "includeSessionArchives": true,
-  "sessionId": "first-time-tour",
-  "includeTrace": true
-}
-'@
-
-corepack pnpm cli -- assemble-agent-context --json $context
-```
-
-Expected result:
-
-- The session archive search should return hits from the archived messages.
-- The assembled agent context should label session recall as
-  `non_authoritative`.
-- If there are no canonical notes yet, canonical retrieval may have no evidence
-  or degraded health. That is normal in a new empty vault.
-
-### 5.5 First Staging Draft
-
-After the safe tour, create a staging draft. This writes a proposal, not
-canonical memory.
-
-```powershell
-$draft = @'
-{
-  "targetCorpus": "mimisbrunnr",
-  "noteType": "decision",
-  "title": "Session archives are non-authoritative",
-  "sourcePrompt": "Record the rule that session archives provide continuity but do not become fact authority.",
-  "supportingSources": [
-    {
-      "notePath": "manual:first-time-tour",
-      "headingPath": []
-    }
-  ],
-  "bodyHints": [
-    "Context: First-time operator workflow.",
-    "Decision: Use session archives for continuity and promotion for durable facts.",
-    "Rationale: Avoid silently converting conversation text into canonical memory.",
-    "Consequences: Agents can search sessions, but durable facts still require review."
-  ]
-}
-'@
-
-corepack pnpm cli -- draft-note --json $draft
-```
-
-Expected result:
-
-- Output includes `draftNoteId`.
-- Output includes `draftPath`.
-- Output includes generated frontmatter and body.
-- The draft is stored under the staging root.
-- The draft is not canonical memory.
-
-Do not promote it yet. Read section 13, section 14, and section 15 first.
-
-## 6. Docker Desktop And Docker Model Runner
-
-Docker Desktop is the easiest way to run the local container profile on a
-developer workstation. The repository uses ordinary Docker Compose assets, plus
-Docker Model Runner's Ollama-compatible endpoint when you want local model
-providers.
+Troubleshoot by layer. Validate payload shape, then auth, then storage, then
+retrieval/indexes, then external dependencies, then coding bridge or MCP
+framing. Use structured outputs instead of guessing.
 
-Official Docker references:
+## Section: 36. Glossary
 
-- Docker Desktop: https://docs.docker.com/get-started/introduction/get-docker-desktop/
-- Docker Compose: https://docs.docker.com/get-started/docker-concepts/the-basics/what-is-docker-compose/
-- Docker Model Runner CLI: https://docs.docker.com/reference/cli/docker/model/
-- Docker MCP Toolkit: https://docs.docker.com/ai/mcp-catalog-and-toolkit/toolkit/
+### 1. Purpose (Rewritten)
 
-The tracked local API stack is `docker/compose.local.yml`.
+This section keeps terminology stable. It is for both audiences.
 
-It runs:
+### 2. High-Level Explanation (Non-Technical Layer)
 
-- `mimir-api`.
-- `qdrant`.
-- Named Docker volumes for canonical vault, staging vault, SQLite state, and
-  Qdrant storage.
-- HTTP API on port `8080`.
-- Qdrant on port `6333`.
-- Model-backed providers pointing at
-  `http://model-runner.docker.internal:12434`.
+Stable terms prevent accidental behavior changes. If two words mean the same
+thing, this manual chooses one and reuses it.
 
-Start it:
+### 3. System-Level Explanation (Engineering Layer)
 
-```powershell
-docker compose -f docker/compose.local.yml up --build
-```
+Terminology maps to contracts, services, persistence state, and public command
+surfaces. Renaming a public term may require compatibility work.
 
-Stop it:
+### 4. Implementation Details
 
-```powershell
-docker compose -f docker/compose.local.yml down
-```
+Reference docs:
 
-The local compose profile is more model-backed than generic in-process defaults:
+- `documentation/reference/terminology.md`
+- `documentation/reference/glossary.md`
+- `documentation/reference/env-vars.md`
+- command and contract types under `packages/contracts`
 
-- Generic defaults use hash embeddings and heuristic reasoning unless
-  overridden.
-- Compose configures Ollama-compatible providers for embedding, reasoning,
-  drafting, reranking, and coding.
+### 5. Step-by-Step Usage
 
-Typical local model roles:
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Unknown term | Check this manual's terminology table | Meaning found | Use same term in docs/PR |
+| Full | New term | Add/update reference docs and tests if public | Stable terminology | Docs review passes |
 
-- `embedding_primary`: `docker.io/ai/qwen3-embedding:0.6B-F16`.
-- `mimisbrunnr_primary`: qwen3 reasoning/drafting model.
-- `reranker_primary`: qwen3 reranker model.
-- `coding_primary`: qwen3-coder.
-- `paid_escalation`: disabled unless explicitly configured.
+### 6. Failure Modes and Diagnostics
 
-Paid-model escalation is out of scope for the current local-agent direction.
-Do not enable `paid_escalation` unless you intentionally want external paid
-reasoning.
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Synonym drift | Multiple words for same concept | Confusing docs/API | Search docs/source | Pick canonical term and map aliases |
+| Public rename break | Command/env renamed without alias | User scripts fail | Command-surface tests | Add alias or migration note |
 
-Useful Docker Model Runner commands:
+### 7. Assumptions and Hidden Constraints
 
-```powershell
-docker model list
-docker model run <model-name>
-```
+- `MAB_` remains env compatibility prefix even though prose should say `mimir`
+  and `mimisbrunnr`.
 
-Model Runner must expose an Ollama-compatible endpoint reachable from the
-runtime. In Docker Desktop based compose profiles, the expected hostname is
-usually `model-runner.docker.internal` and the expected port is `12434`.
+### 8. Terminology Clarification
 
-### 6.1 Docker Desktop First-Run Checklist
+The terminology table at the top of this manual is authoritative for this
+manual. Reference docs remain canonical for repo-wide vocabulary.
 
-Before starting the compose profile, verify Docker works:
+### 9. Gaps / Issues in Original Manual
 
-```powershell
-docker version
-docker compose version
-```
+- The old glossary was useful but appeared late, after many terms were already
+  used.
 
-If Docker Desktop is not running, these commands fail or hang. Start Docker
-Desktop first and wait until it reports that the engine is running.
+### 10. Refactored Section (Final Version)
 
-Then build and start the local stack:
+Use one term for one concept. Define terms before using them. Keep aliases
+explicit, especially for CLI/MCP command casing and compatibility environment
+prefixes.
 
-```powershell
-corepack pnpm run docker:up
-```
+## Section: 37. Reference Map
 
-In another terminal, verify the API:
+### 1. Purpose (Rewritten)
 
-```powershell
-Invoke-RestMethod -Method Get -Uri http://127.0.0.1:8080/v1/system/version
-Invoke-RestMethod -Method Get -Uri http://127.0.0.1:8080/health/ready
-```
+This section points readers to source-of-truth documents. It is for both
+audiences.
 
-Verify Qdrant is reachable from the host:
+### 2. High-Level Explanation (Non-Technical Layer)
 
-```powershell
-Invoke-RestMethod -Method Get -Uri http://127.0.0.1:6333
-```
+When this manual is too broad, go to the smaller reference that owns the detail.
 
-Stop the stack and remove named volumes:
+### 3. System-Level Explanation (Engineering Layer)
 
-```powershell
-corepack pnpm run docker:down
-```
+The repository uses focused docs plus tests as maintenance gates. The manual is
+an operator/developer guide, while source-specific docs own interface,
+configuration, architecture, testing, and operation details.
 
-The repository script removes volumes. That is useful for a clean reset, but it
-also deletes the compose-managed local vault/state volumes. Do not run
-`docker:down` with `--volumes` semantics if the compose volumes contain data you
-intend to keep.
-
-### 6.2 Docker Model Runner First-Run Checklist
+### 4. Implementation Details
 
-Check that Docker Model Runner is available:
-
-```powershell
-docker model list
-```
+Use these references:
 
-If the command is unavailable, update Docker Desktop or enable/install the Model
-Runner feature according to Docker's current documentation.
+- `documentation/setup/installation.md`
+- `documentation/setup/configuration.md`
+- `documentation/operations/running.md`
+- `documentation/operations/docker-mcp-session.md`
+- `documentation/operations/docker-toolbox-v1.md`
+- `documentation/operations/toolbox-operator-guide.md`
+- `documentation/architecture/overview.md`
+- `documentation/architecture/runtime-flow.md`
+- `documentation/architecture/invariants-and-boundaries.md`
+- `documentation/reference/interfaces.md`
+- `documentation/reference/env-vars.md`
+- `documentation/reference/external-client-boundary.md`
+- `documentation/testing/README.md`
 
-Then check whether your intended models are present:
+### 5. Step-by-Step Usage
 
-```powershell
-docker model list
-```
+| Need | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Interface detail | Command/route question | Read `interfaces.md` | Current public surface | Run interface/command tests |
+| Config detail | Env question | Read `env-vars.md` | Supported env var | Confirm in config code |
+| Runtime flow | Execution question | Read `runtime-flow.md` | Traceable flow | Follow source files |
 
-The compose profile expects an Ollama-compatible endpoint reachable at:
+### 6. Failure Modes and Diagnostics
 
-```text
-http://model-runner.docker.internal:12434
-```
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Stale generated map | `.codesight` not regenerated | Route count mismatch | `codesight:routes:check` | Regenerate from source |
+| Manual/reference conflict | One doc changed alone | Confusing guidance | Compare with tests/source | Update docs together |
 
-From the host, the corresponding endpoint is usually:
+### 7. Assumptions and Hidden Constraints
 
-```text
-http://127.0.0.1:12434
-```
+- Generated local artifacts are ignored and should not be hand-edited.
+- Planning docs may describe intent, not shipped behavior.
 
-If model-backed calls fail:
+### 8. Terminology Clarification
 
-1. Confirm Docker Desktop is running.
-2. Confirm Model Runner is enabled.
-3. Confirm the model exists in `docker model list`.
-4. Confirm the endpoint is reachable.
-5. Confirm the `MAB_PROVIDER_DOCKER_OLLAMA_BASE_URL` value matches where the
-   runtime is executing: host processes usually use `127.0.0.1`, containers
-   usually use `model-runner.docker.internal`.
-6. Decide whether provider fallbacks should be enabled while learning.
+`Reference` means a narrower doc that owns a specific fact surface. `Planning`
+means design or future work unless explicitly marked current.
 
-### 6.3 Docker Troubleshooting For First-Time Users
+### 9. Gaps / Issues in Original Manual
 
-| Symptom | Likely cause | First check |
-| --- | --- | --- |
-| `docker` command not found | Docker Desktop not installed or not on PATH | Reopen terminal after install |
-| Compose build fails at `pnpm install` | Dependency or lockfile issue | Run `pnpm install` on host and inspect error |
-| API starts but ready health fails | Qdrant/model endpoint/auth readiness issue | Call `/health/ready` and inspect JSON |
-| Retrieval warns vector degraded | Qdrant or embedding path unavailable | Check Qdrant container and embedding provider |
-| Coding task fails in container | Python runtime or model endpoint issue | Run Docker MCP validate-only or inspect logs |
-| Model calls fail from container | Wrong endpoint hostname | Use `model-runner.docker.internal` inside containers |
+- It correctly pointed to canonical docs but still positioned the manual as a
+  broad guide despite known drift.
 
-Container logs:
+### 10. Refactored Section (Final Version)
 
-```powershell
-docker compose -f docker/compose.local.yml logs mimir-api
-docker compose -f docker/compose.local.yml logs qdrant
-```
+Use this manual for sequential understanding. Use reference docs for exact
+surfaces, configuration, routes, tests, and architecture. When docs disagree,
+verify against source and focused tests.
 
-## 7. Docker MCP Session Container
+## Section: 38. Final Operating Rule
 
-> **Current-state note:** This section documents the thin core `mimir-mcp`
-> session container. It does not cover `mimir-control` or the dynamic
-> `mimir-toolbox-mcp` broker; use
-> [`../operations/docker-toolbox-v1.md`](../operations/docker-toolbox-v1.md)
-> and [`../reference/interfaces.md`](../reference/interfaces.md) for those
-> surfaces.
+### 1. Purpose (Rewritten)
 
-The Docker MCP session profile is documented in
-`documentation/operations/docker-mcp-session.md` and configured through:
+This section states the system's governing principle. It is for both audiences.
 
-- `docker/mimir-mcp.Dockerfile`.
-- `docker/mimir-mcp-session-entrypoint.mjs`.
-- `docker/mimir-mcp-session.env.example`.
-- `docker/mimir-mcp-session.actor-registry.example.json`.
-- `docker/compose.mcp-session.yml`.
+### 2. High-Level Explanation (Non-Technical Layer)
 
-This profile is for running the stdio MCP server in a container with startup
-checks for:
+Use `mimir` as a guarded memory system, not as a place to dump unlimited notes
+or logs.
 
-- Auth configuration.
-- Canonical vault mount.
-- Staging vault mount.
-- SQLite state mount.
-- Qdrant reachability.
-- Model endpoint reachability.
-- Python runtime importability.
+### 3. System-Level Explanation (Engineering Layer)
 
-The session profile normally uses enforced auth, fixed MCP actor environment
-variables, and mounted auth registry files.
-
-Important MCP session variables:
-
-- `MAB_AUTH_MODE=enforced`.
-- `MAB_AUTH_ACTOR_REGISTRY_PATH`.
-- `MAB_AUTH_ISSUER_SECRET`.
-- `MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_PATH`.
-- `MAB_MCP_DEFAULT_ACTOR_ID`.
-- `MAB_MCP_DEFAULT_ACTOR_ROLE`.
-- `MAB_MCP_DEFAULT_ACTOR_AUTH_TOKEN`.
-- `MAB_MCP_DEFAULT_SOURCE`.
-
-The fixed MCP actor is useful because MCP clients do not need to pass actor
-metadata on every tool call. The server injects the configured actor and token.
-
-Use the validation-only mode before wiring it to a client:
-
-```powershell
-docker compose -f docker/compose.mcp-session.yml run --rm mimir-mcp-session --validate-only
-```
-
-Then configure your MCP client to launch the containerized command shown in
-`documentation/operations/docker-mcp-session.md`.
-
-Docker Desktop's MCP Toolkit is useful for checking the gateway-side MCP setup:
-
-```powershell
-docker mcp server list
-docker mcp tools list
-```
-
-Those commands list Docker Desktop gateway servers and exposed tools. They do
-not automatically register this repository's session-scoped mimir MCP container;
-use the explicit client snippet in
-`documentation/operations/docker-mcp-session.md` unless you later add a Docker
-MCP catalog entry for packaged installs.
-
-### 7.1 First-Time Docker MCP Session Steps
-
-Use this path after you already know the CLI works.
-
-1. Build the image.
-
-```powershell
-corepack pnpm run docker:mcp:build
-```
-
-2. Copy the example environment file.
-
-```powershell
-Copy-Item docker\mimir-mcp-session.env.example docker\mimir-mcp-session.env
-```
-
-3. Prepare host directories for mounted state.
-
-Example test layout:
-
-```text
-<MAB_DATA_ROOT>/vault/canonical
-<MAB_DATA_ROOT>/vault/staging
-<MAB_DATA_ROOT>/state
-<MAB_DATA_ROOT>/config/auth
-```
-
-4. Copy the example actor registry into the auth config directory and replace
-   the example token with your own session token.
-
-5. Edit `docker/mimir-mcp-session.env` so it points at those host paths and the
-   same actor ID/token as the registry.
-
-6. Validate without starting an MCP session.
-
-```powershell
-docker compose -f docker/compose.mcp-session.yml run --rm mimir-mcp-session --validate-only
-```
-
-7. Only after validation passes, configure your MCP client to run the Docker
-   command from `documentation/operations/docker-mcp-session.md`.
-
-Expected validation success means:
-
-- Environment variables are explicit.
-- Canonical, staging, state, and auth mounts are visible.
-- The session actor in env matches the registry.
-- Qdrant is reachable.
-- The configured model endpoint is reachable.
-- The Python coding runtime can start.
-
-If validation fails, fix the failing dependency first. Do not bypass validation
-by launching the raw MCP server with missing mounts or permissive auth.
-
-### 7.2 What The MCP Session Is Not
-
-The Docker MCP session profile is not a long-running daemon. It is a
-session-scoped tool server launched by an MCP client.
-
-It should not:
-
-- Auto-start for every workspace.
-- Keep hidden background memory writers alive.
-- Store canonical authority inside an ephemeral container.
-- Run with anonymous or ambiguous actor identity.
-- Silently downgrade strict model/Qdrant failures in the session profile.
-
-Use the HTTP Docker stack when you want a long-running local service. Use the
-MCP session container when an agent client needs an explicitly launched,
-validated, bounded tool session.
-
-## 8. Entrypoints
-
-> **Current-state note:** This section focuses on the three core
-> memory/runtime entrypoints. The repo also ships `mimir-control-mcp` and
-> `mimir-toolbox-mcp`; for the live MCP surface list and session modes, prefer
-> [`../reference/interfaces.md`](../reference/interfaces.md) and
-> [`../operations/docker-toolbox-v1.md`](../operations/docker-toolbox-v1.md).
-
-The three core memory/runtime entrypoints share the same service container:
-
-- CLI: `apps/mimir-cli/src/main.ts`.
-- HTTP: `apps/mimir-api/src/server.ts`.
-- MCP: `apps/mimir-mcp/src/main.ts` and
-  `apps/mimir-mcp/src/tool-definitions.ts`.
-
-The entrypoint choice depends on the job:
-
-| Need | Preferred entrypoint |
-| --- | --- |
-| Human local operation | CLI |
-| Local service integration | HTTP |
-| Agent integration | MCP |
-| Docker Desktop API stack | HTTP |
-| Docker MCP client session | MCP |
-| Scripted repeatable maintenance | CLI or HTTP |
-
-All command payloads are JSON objects. Actor context can be supplied in the
-payload, but each transport also has safe defaults.
-
-### CLI Payload Sources
-
-The CLI accepts exactly one payload source for most commands:
-
-```powershell
-corepack pnpm cli -- <command> --json '{ "field": "value" }'
-corepack pnpm cli -- <command> --input request.json
-corepack pnpm cli -- <command> --stdin
-```
-
-Output is always JSON.
-
-### HTTP Actor Headers
-
-HTTP accepts actor context through request body or headers:
-
-- `x-mimir-actor-id`.
-- `x-mimir-actor-role`.
-- `x-mimir-source`.
-- `x-request-id`.
-- `x-mimir-tool-name`.
-- `x-mimir-actor-token`.
-
-### MCP Protocol
-
-The MCP server supports:
-
-- `initialize`.
-- `tools/list`.
-- `tools/call`.
-
-It speaks stdio JSON-RPC with `Content-Length` framing.
-
-### 8.1 Reading JSON Responses
-
-Most service responses follow one of these shapes:
-
-Successful service result:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "resultField": "value"
-  },
-  "warnings": ["optional warning"]
-}
-```
-
-Failed service result:
-
-```json
-{
-  "ok": false,
-  "error": {
-    "code": "validation_failed",
-    "message": "Human-readable reason.",
-    "details": {
-      "field": "optional details"
-    }
-  }
-}
-```
-
-Some commands use a domain-specific response:
-
-- `validate-note` returns `valid`, `violations`, and `blockedFromPromotion`.
-- `execute-coding-task` returns `status`, `reason`, `attempts`,
-  `validations`, `localResult`, and `escalationMetadata`.
-- `show-tool-output` returns `found: true` with output, or `found: false`.
-
-As a first-time user, check these fields first:
-
-- `ok`.
-- `error.code`.
-- `error.message`.
-- `warnings`.
-- `data`.
-- `retrievalHealth.status`.
-- `memoryContextStatus`.
-- `escalationMetadata`.
-
-### 8.2 CLI Basics
-
-Use the root wrapper while developing:
-
-```powershell
-corepack pnpm cli -- <command> [options]
-```
-
-Common CLI examples:
-
-```powershell
-corepack pnpm cli -- version
-corepack pnpm cli -- auth-status
-corepack pnpm cli -- freshness-status
-corepack pnpm cli -- search-session-archives --json '{ "query": "example" }'
-```
-
-Use `--pretty` for readable JSON. It is on by default. Use `--no-pretty` for
-machine-readable compact output:
-
-```powershell
-corepack pnpm cli -- version --no-pretty
-```
-
-If a command fails, the CLI exits with a non-zero exit code and prints a JSON
-error. This makes it safe to use in scripts.
-
-### 8.3 HTTP Basics
-
-Start the API:
-
-```powershell
-corepack pnpm api
-```
-
-Then call it from another shell:
-
-```powershell
-Invoke-RestMethod -Method Get -Uri http://127.0.0.1:8080/v1/system/version
-```
-
-POST requests need a JSON object body:
-
-```powershell
-$body = @{
-  query = "first-time session"
-  limit = 5
-  maxTokens = 2000
-} | ConvertTo-Json -Depth 10
-
-Invoke-RestMethod `
-  -Method Post `
-  -Uri http://127.0.0.1:8080/v1/history/session-archives/search `
-  -ContentType "application/json" `
-  -Body $body
-```
-
-In permissive local development, you can omit actor headers and the HTTP adapter
-injects defaults. In enforced mode, provide actor headers and a token:
-
-```powershell
-Invoke-RestMethod `
-  -Method Get `
-  -Uri http://127.0.0.1:8080/v1/system/auth `
-  -Headers @{
-    "x-mimir-actor-id" = "operator-local"
-    "x-mimir-actor-role" = "operator"
-    "x-mimir-source" = "manual"
-    "x-mimir-actor-token" = "<token>"
-  }
-```
-
-### 8.4 MCP Basics
-
-Use MCP when an agent client should call mimir tools directly.
-
-Local MCP server command after build:
-
-```powershell
-corepack pnpm mcp
-```
-
-MCP clients normally launch the server process and call `tools/list` to discover
-available tools. If you are using the Docker MCP session container, prefer the
-containerized setup from section 7 because it validates mounts, auth, model
-endpoint, Qdrant, and Python startup before serving tools.
-
-MCP tool names use snake case:
-
-- CLI: `search-context`.
-- MCP: `search_context`.
-
-The tool input shape is the same logical request shape used by CLI and HTTP.
-The MCP server wraps the result in MCP `content` and `structuredContent`.
-
-### 8.5 Choosing The Right Surface
-
-Use CLI when:
-
-- You are learning.
-- You are debugging locally.
-- You want copyable, repeatable commands.
-- You are creating or validating notes manually.
-
-Use HTTP when:
-
-- Another local process needs a stable service endpoint.
-- You want Docker Desktop API hosting.
-- You need health endpoints.
-
-Use MCP when:
-
-- A local agent should retrieve memory or create drafts.
-- You want agent tool discovery.
-- You are integrating through an MCP-capable client.
-
-Do not use MCP just because it is available. For first-time operation, CLI is
-easier to inspect and debug.
-
-## 9. Feature Matrix
-
-| Feature | CLI | HTTP | MCP |
-| --- | --- | --- | --- |
-| Version | `version` | `GET /v1/system/version` | no direct tool |
-| Live health | no direct command | `GET /health/live` | startup process only |
-| Ready health | no direct command | `GET /health/ready` | startup process only |
-| Auth summary | `auth-status` | `GET /v1/system/auth` | no direct tool |
-| Issued token list | `auth-issued-tokens` | `GET /v1/system/auth/issued-tokens` | no direct tool |
-| Issue auth token | `issue-auth-token` | `POST /v1/system/auth/issue-token` | no direct tool |
-| Inspect auth token | `auth-introspect-token` | `POST /v1/system/auth/introspect-token` | no direct tool |
-| Revoke auth token | `revoke-auth-token` | `POST /v1/system/auth/revoke-token` | no direct tool |
-| Freshness report | `freshness-status` | `GET /v1/system/freshness` | no direct tool |
-| Search canonical context | `search-context` | `POST /v1/context/search` | `search_context` |
-| Search session archives | `search-session-archives` | `POST /v1/history/session-archives/search` | `search_session_archives` |
-| Assemble agent context | `assemble-agent-context` | `POST /v1/context/agent-context` | `assemble_agent_context` |
-| List namespace tree | `list-context-tree` | `POST /v1/context/tree` | `list_context_tree` |
-| Read namespace node | `read-context-node` | `POST /v1/context/node` | `read_context_node` |
-| Direct context packet | `get-context-packet` | `POST /v1/context/packet` | `get_context_packet` |
-| Decision summary | `fetch-decision-summary` | `POST /v1/context/decision-summary` | `fetch_decision_summary` |
-| Draft note | `draft-note` | `POST /v1/notes/drafts` | `draft_note` |
-| Validate note | `validate-note` | `POST /v1/notes/validate` | `validate_note` |
-| Promote note | `promote-note` | `POST /v1/notes/promote` | `promote_note` |
-| Create refresh draft | `create-refresh-draft` | `POST /v1/system/freshness/refresh-draft` | `create_refresh_draft` |
-| Create refresh drafts | `create-refresh-drafts` | `POST /v1/system/freshness/refresh-drafts` | `create_refresh_drafts` |
-| Import resource record | `import-resource` | `POST /v1/maintenance/import-resource` | `import_resource` |
-| Query audit history | `query-history` | `POST /v1/history/query` | `query_history` |
-| Create session archive | `create-session-archive` | `POST /v1/history/session-archives` | `create_session_archive` |
-| Execute coding task | `execute-coding-task` | `POST /v1/coding/execute` | `execute_coding_task` |
-| List local-agent traces | `list-agent-traces` | `POST /v1/coding/traces` | `list_agent_traces` |
-| Show spilled tool output | `show-tool-output` | `POST /v1/coding/tool-output` | `show_tool_output` |
-
-### 9.1 Code-Checked Minimal Payloads
-
-The payloads in this section mirror the current transport validator in
-`packages/infrastructure/src/transport/request-validation.ts`. They are useful
-when you want a small request that is syntactically valid even if the runtime
-later returns `not_found`, `validation_failed`, or a dependency error because
-your local vault does not contain matching state yet.
-
-Search context:
-
-```powershell
-corepack pnpm cli -- search-context --json '{
-  "query": "memory governance",
-  "corpusIds": ["mimisbrunnr"],
-  "budget": {
-    "maxTokens": 2000,
-    "maxSources": 4,
-    "maxRawExcerpts": 2,
-    "maxSummarySentences": 4
-  },
-  "strategy": "flat",
-  "intentHint": "decision_lookup",
-  "requireEvidence": true,
-  "includeTrace": true
-}'
-```
-
-Create a session archive:
-
-```powershell
-corepack pnpm cli -- create-session-archive --json '{
-  "sessionId": "example-session",
-  "messages": [
-    {
-      "role": "user",
-      "content": "Session archives are continuity, not canonical memory."
-    }
-  ]
-}'
-```
-
-Create a staging draft:
-
-```powershell
-corepack pnpm cli -- draft-note --json '{
-  "targetCorpus": "mimisbrunnr",
-  "noteType": "decision",
-  "title": "Agents use drafts before memory promotion",
-  "sourcePrompt": "Document the write discipline for local agents.",
-  "supportingSources": [
-    {
-      "notePath": "documentation/manuals/mimir-complete-manual.md",
-      "headingPath": ["12. Storing Information"]
-    }
-  ],
-  "bodyHints": [
-    "Context: Agents may discover durable knowledge during work.",
-    "Decision: They should create staging drafts, not canonical writes.",
-    "Rationale: Review prevents hidden or low-quality memory writes.",
-    "Consequences: Operators validate and promote only useful durable notes."
-  ]
-}'
-```
-
-Validate a note body:
-
-```powershell
-corepack pnpm cli -- validate-note --json '{
-  "targetCorpus": "mimisbrunnr",
-  "notePath": "mimisbrunnr/agents-use-drafts-before-memory-promotion.md",
-  "frontmatter": {
-    "noteId": "example-note-id",
-    "title": "Agents use drafts before memory promotion",
-    "project": "mimir",
-    "type": "decision",
-    "status": "promoted",
-    "updated": "2026-04-13",
-    "summary": "Agents should create staging drafts for durable knowledge and leave canonical writes to reviewed promotion.",
-    "tags": ["project/mimir", "domain/agent", "status/current"],
-    "scope": "agent memory writes",
-    "corpusId": "mimisbrunnr",
-    "currentState": true,
-    "supersedes": []
-  },
-  "body": "## Context\n\nAgents may discover durable knowledge during local work.\n\n## Decision\n\nAgents create staging drafts before memory promotion.\n\n## Rationale\n\nReview prevents hidden or low-quality memory writes.\n\n## Consequences\n\nOperators validate and promote only useful durable notes.",
-  "validationMode": "promotion"
-}'
-```
-
-Promote a reviewed draft:
-
-```powershell
-corepack pnpm cli -- promote-note --json '{
-  "draftNoteId": "draft-note-id",
-  "targetCorpus": "mimisbrunnr",
-  "expectedDraftRevision": "draft-revision",
-  "promoteAsCurrentState": true
-}'
-```
-
-List namespace nodes:
-
-```powershell
-corepack pnpm cli -- list-context-tree --json '{
-  "ownerScope": "mimisbrunnr",
-  "authorityStates": ["canonical", "staging"]
-}'
-```
-
-Run a coding task with memory context:
-
-```powershell
-corepack pnpm cli -- execute-coding-task --json '{
-  "taskType": "review",
-  "task": "Review the current change for direct canonical memory writes.",
-  "repoRoot": "<REPO_ROOT>",
-  "memoryContext": {
-    "query": "agents should create staging drafts before promotion",
-    "corpusIds": ["mimisbrunnr", "general_notes"],
-    "budget": {
-      "maxTokens": 4000,
-      "maxSources": 5,
-      "maxRawExcerpts": 2,
-      "maxSummarySentences": 5
-    },
-    "includeSessionArchives": false,
-    "includeTrace": true
-  }
-}'
-```
-
-## 10. Orchestrator
-
-`MimirOrchestrator` is the central runtime boundary.
-
-It does four things:
-
-- Authorizes the actor against the command.
-- Verifies the command routes to the expected domain.
-- Delegates mimisbrunnr commands to `MimisbrunnrDomainController`.
-- Delegates coding commands to `CodingDomainController`.
-
-The task-family router separates the mimisbrunnr domain from the coding domain.
-
-mimisbrunnr commands:
-
-- `search_context`.
-- `search_session_archives`.
-- `assemble_agent_context`.
-- `get_context_packet`.
-- `fetch_decision_summary`.
-- `draft_note`.
-- `create_session_archive`.
-- `create_refresh_draft`.
-- `create_refresh_drafts`.
-- `import_resource`.
-- `validate_note`.
-- `promote_note`.
-- `query_history`.
-
-Coding commands:
-
-- `execute_coding_task`.
-- `list_agent_traces`.
-- `show_tool_output`.
-
-The orchestrator also injects memory context into coding requests when
-`memoryContext` is provided. It does this by calling `assembleAgentContext`,
-then appending the fenced context block to the coding task's `context` field.
-If memory context assembly fails, the coding request still runs, but the context
-contains a fenced unavailable-context note and `memoryContextStatus` reports the
-failure.
-
-## 11. Actor Roles And Authorization
-
-Actor roles:
-
-- `retrieval`.
-- `writer`.
-- `orchestrator`.
-- `system`.
-- `operator`.
-
-Authorization modes:
-
-- `permissive`: useful for local development. Unregistered non-internal actors
-  may proceed after role checks.
-- `enforced`: production-like mode. Non-internal actors must be registered or
-  use a valid issued token.
-
-Command role policy:
-
-| Command group | Allowed roles |
-| --- | --- |
-| Retrieval and context reads | `retrieval`, `operator`, `orchestrator`, `system` |
-| Draft creation | `writer`, `operator`, `orchestrator`, `system` |
-| Validation, promotion, refresh, history, import | `operator`, `orchestrator`, `system` |
-| Coding execution | `operator`, `system` |
-| Trace listing | `operator`, `orchestrator`, `system` |
-| Tool output reading | `operator`, `system` |
-
-Auth registry entries can restrict:
-
-- Actor ID.
-- Actor role.
-- Static auth tokens.
-- Multiple token credentials.
-- Source.
-- Enabled/disabled state.
-- Allowed transports.
-- Allowed commands.
-- Allowed administrative actions.
-- Validity window.
-
-Issued tokens can restrict:
-
-- Actor ID.
-- Actor role.
-- Source.
-- Allowed transports.
-- Allowed commands.
-- Allowed admin actions.
-- Validity window.
-- TTL.
-
-Issued tokens can also carry `allowedCorpora` in the claim payload, but the
-current authorization path does not enforce corpus restrictions. Treat
-`allowedCorpora` as metadata until enforcement is added in code.
-
-Use issued tokens for short-lived operational access. Revoke them through the
-revocation store when no longer needed.
-
-Issuing and revoking tokens also writes bounded audit-history entries. Those
-records store the token id, target actor metadata, lifecycle-policy booleans,
-and revocation reason where applicable. They do not store the raw token value.
-
-## 12. Storing Information
-
-There are three ways to store information, each with a different authority
-level.
-
-Choose the storage path with this rule:
-
-| You have | Use | Why |
-| --- | --- | --- |
-| A conversation transcript or temporary continuity | `create-session-archive` | Searchable later, but cannot accidentally become authority |
-| A candidate fact, decision, runbook, or architecture note | `draft-note` | Creates a reviewable proposal in staging |
-| A validated and reviewed draft | `promote-note` | Creates or updates canonical memory |
-| A readable external file/source document to process later | `import-resource` | Records source digest and preview without writing memory |
-| A huge tool output | Tool-output spillover | Keeps prompts bounded and stores full output separately |
-
-Do not skip from conversation text to canonical memory. The correct path is:
-
-```text
-conversation or tool output
-   |
-   v
-operator decides it is durable
-   |
-   v
-draft-note
-   |
-   v
-validate-note + review
-   |
-   v
-promote-note
-```
-
-### 12.1 Staging Drafts
-
-Use staging drafts for candidate durable memory.
-
-CLI example:
-
-```powershell
-corepack pnpm cli -- draft-note --json '{
-  "targetCorpus": "mimisbrunnr",
-  "noteType": "decision",
-  "title": "Use governed memory promotion for agent notes",
-  "sourcePrompt": "Agents must not write canonical memory directly.",
-  "supportingSources": [
-    {
-      "notePath": "documentation/manuals/mimir-complete-manual.md",
-      "headingPath": ["Start Here If You Are New"]
-    }
-  ],
-  "bodyHints": [
-    "Record the authority boundary.",
-    "Explain that operator review is required before promotion."
-  ]
-}'
-```
-
-The draft service:
-
-- Checks actor role.
-- Enforces corpus boundary rules.
-- Builds frontmatter.
-- Optionally asks the configured drafting provider to create a structured body.
-- Falls back to deterministic required sections if the drafting provider is not
-  available or fails.
-- Runs deterministic draft validation.
-- Writes to staging.
-- Upserts metadata into SQLite.
-
-Drafts are proposals. They are not canonical memory.
-
-Draft request fields explained:
-
-| Field | Required | Meaning |
-| --- | --- | --- |
-| `targetCorpus` | Yes | `mimisbrunnr` for governed project memory, `general_notes` for non-current general notes |
-| `noteType` | Yes | One of the note schema types such as `decision`, `runbook`, `architecture`, `investigation`, or `policy` |
-| `title` | Yes | Human-readable note title |
-| `sourcePrompt` | Yes | Why this draft exists |
-| `supportingSources` | Yes | Evidence/source references; each item requires `notePath` and `headingPath`, with optional `noteId`, `chunkId`, and `excerpt` |
-| `frontmatterOverrides` | No | Explicit frontmatter values when the defaults are not enough |
-| `bodyHints` | No | Bullets that help the deterministic or model-backed drafter fill sections |
-
-For first-time use, provide `bodyHints` that match the required sections for
-the `noteType`. For a `decision`, include hints for Context, Decision,
-Rationale, and Consequences. This reduces validation failures and makes review
-easier.
-
-After creating a draft, write down these output fields:
-
-- `draftNoteId`: needed for promotion.
-- `draftPath`: where the staging file was written.
-- `frontmatter`: what validation will check.
-- `body`: what the operator should read and review.
-- `warnings`: provider fallback or validation warnings.
-
-### 12.2 Session Archives
-
-Use session archives for continuity across long conversations.
-
-CLI example:
-
-```powershell
-corepack pnpm cli -- create-session-archive --json '{
-  "sessionId": "operator-session-2026-04-13",
-  "messages": [
-    { "role": "user", "content": "We decided to keep paid models out of scope." },
-    { "role": "assistant", "content": "Recorded as session continuity, not canonical memory." }
-  ]
-}'
-```
-
-Session archives:
-
-- Require a non-empty `sessionId`.
-- Require at least one message.
-- Accept `system`, `user`, `assistant`, and `tool` roles.
-- Are immutable after creation.
-- Are searchable through session archive search.
-- Are non-authoritative.
-
-Use session archives for continuity, not truth.
-
-Session archive request fields:
-
-| Field | Required | Meaning |
-| --- | --- | --- |
-| `sessionId` | Yes | Stable name for the conversation/session |
-| `messages` | Yes | Non-empty list of transcript messages |
-| `messages[].role` | Yes | `system`, `user`, `assistant`, or `tool` |
-| `messages[].content` | Yes | Non-empty message text |
-
-Good session archive names are specific:
-
-- `codex-hermes-gap-bridge-2026-04-13`.
-- `operator-docker-mcp-setup-first-run`.
-- `memory-review-session-qwen3-coder`.
-
-Poor session archive names are vague:
-
-- `test`.
-- `notes`.
-- `chat`.
-
-The session ID is searchable and filterable, so use names you can recognize
-later.
-
-### 12.3 Import Job Records
-
-Use import-resource to record a readable source file that should be processed
-later. The service reads the file, stores its digest, size, and preview, and
-records an import job. It does not import directories directly.
-
-```powershell
-corepack pnpm cli -- import-resource --json '{
-  "sourcePath": "documentation/planning/hermes-vs-mimir-gap-analysis.md",
-  "importKind": "reference_repo"
-}'
-```
-
-Import jobs do not write canonical memory. They are controlled maintenance
-records over source files.
-
-Use import jobs when you want to remember that a resource must be processed, but
-you do not yet know what durable knowledge should be extracted from it. For an
-external repository such as Hermes, import a specific source file or analysis
-document, perform the review, then create specific staging drafts for the
-lessons that survive review.
-
-## 13. Validating Notes
-
-Validation is deterministic and does not mutate state.
-
-CLI example:
-
-```powershell
-corepack pnpm cli -- validate-note --input candidate-note.json
-```
-
-The request must include:
-
-- `targetCorpus`.
-- `notePath`.
-- `frontmatter`.
-- `body`.
-- `validationMode`: `draft` or `promotion`.
-
-Validation checks:
-
-- Required frontmatter strings.
-- Date format.
-- Controlled tags.
-- Path containment under the target corpus.
-- `.md` extension.
-- Required body sections by note type.
-- Corpus policy, including general-notes restrictions.
-- Temporal validity windows.
-- Supersession consistency.
-- Lifecycle mode.
-
-Required sections by note type:
-
-| Note type | Required sections |
-| --- | --- |
-| `decision` | Context, Decision, Rationale, Consequences |
-| `constraint` | Constraint, Scope, Rationale, Implications |
-| `bug` | Summary, Symptoms, Reproduction, Impact, Status |
-| `investigation` | Question, Findings, Evidence, Next Steps |
-| `runbook` | Purpose, Preconditions, Procedure, Verification |
-| `architecture` | Context, Components, Data Flow, Constraints |
-| `glossary` | Term, Definition, Related Terms |
-| `handoff` | Context, Current State, Open Questions, Next Steps |
-| `reference` | Summary, Details, Sources |
-| `policy` | Policy, Scope, Rules, Exceptions |
-
-If validation returns `blockedFromPromotion: true`, do not promote the note.
-Fix the draft or reject it.
-
-### 13.1 Concrete Validation Example
-
-Validation accepts note content as JSON. It does not automatically load a file
-from `notePath`; the caller supplies frontmatter and body.
-
-```powershell
-$candidate = @'
-{
-  "targetCorpus": "mimisbrunnr",
-  "notePath": "mimisbrunnr/session-archives-are-non-authoritative.md",
-  "frontmatter": {
-    "noteId": "example-note-id",
-    "title": "Session archives are non-authoritative",
-    "project": "mimir",
-    "type": "decision",
-    "status": "promoted",
-    "updated": "2026-04-13",
-    "summary": "Session archives provide continuity but do not create canonical fact authority.",
-    "tags": ["project/mimir", "domain/retrieval", "status/current"],
-    "scope": "memory governance",
-    "corpusId": "mimisbrunnr",
-    "currentState": true,
-    "supersedes": []
-  },
-  "body": "## Context\n\nAgents need continuity across sessions.\n\n## Decision\n\nUse session archives for continuity and promotion for durable memory.\n\n## Rationale\n\nConversation text can be incomplete or wrong, so it must not become authority automatically.\n\n## Consequences\n\nAgents may search session recall, but durable memory still requires review and promotion.",
-  "validationMode": "promotion"
-}
-'@
-
-corepack pnpm cli -- validate-note --json $candidate
-```
-
-Read the response like this:
-
-- `valid: true`: deterministic checks passed.
-- `valid: false`: do not promote.
-- `violations`: fix every error before promotion.
-- `blockedFromPromotion: true`: promotion should be blocked even if there are
-  warnings you are tempted to ignore.
-
-### 13.2 Common Validation Failures
-
-| Failure | Cause | Fix |
-| --- | --- | --- |
-| Missing required section | Body lacks a required heading for the note type | Add the exact required heading |
-| Unknown tag | Tag is not in the controlled vocabulary | Use an allowed tag or update the policy in code |
-| Wrong corpus path | `notePath` does not start with the target corpus | Move path under `mimisbrunnr/` or `general_notes/` |
-| General note marked current | `general_notes` cannot be current-state authority | Use `mimisbrunnr` or set `currentState: false` |
-| Date format invalid | Date is not `YYYY-MM-DD` | Normalize the date |
-| Superseded state inconsistent | Superseded note lacks `supersededBy` or current note has it | Fix supersession fields |
-
-Warnings still deserve review. A warning is not always a blocker, but it is
-operator-visible risk.
-
-## 14. Reviewing Drafts
-
-This section documents the operator-driven review path through files, CLI, HTTP,
-MCP, and history queries. For the live surfaced review inventory, prefer
-`documentation/reference/interfaces.md`.
-
-Recommended review checklist:
-
-1. Read the staging draft body and frontmatter.
-2. Confirm the note is useful, specific, and sourced.
-3. Confirm it does not duplicate existing canonical memory.
-4. Confirm it does not smuggle session-only or tool-output text into canonical
-   authority.
-5. Run `validate-note` in promotion mode.
-6. Decide whether to promote, rewrite, leave staged, or reject outside the
-   current service surface.
-
-When using Codex with the companion Superpowers workflows:
-
-- `mimir-note-capture` helps decide whether information should be
-  rejected, session-only, merged, rewritten, escalated, or turned into a staged
-  draft.
-- `mimir-note-review` applies adversarial review before staging or
-  promotion.
-- `mimir-memory-protocol` reminds the operator to checkpoint durable
-  knowledge at the end of meaningful work.
-
-Those are local operator workflows, not replacement authority paths. They
-should still respect `draft-note`, validation, and promotion.
-
-### 14.1 First-Time Review Workflow
-
-When `draft-note` returns a draft:
-
-1. Open the file under the staging root, or inspect the returned `body`.
-2. Confirm the title says exactly what the note is about.
-3. Confirm the summary is short and factual.
-4. Confirm the body contains the required sections for its note type.
-5. Confirm every important claim has a source or clear provenance.
-6. Confirm the note is not just a transcript. Rewrite it into a durable fact,
-   decision, runbook, or policy.
-7. Search existing memory for duplicates.
-8. Run `validate-note` with `validationMode: "promotion"`.
-9. Promote only when the content is still correct after review.
-
-Review questions:
-
-- Is this information still true today?
-- Is it specific enough to help a future agent?
-- Is it scoped to the right project or subsystem?
-- Does it conflict with existing canonical memory?
-- Does it contain secrets, tokens, or private incidental content?
-- Is this a durable fact, or only session continuity?
-- Should it supersede an older current-state note?
-
-If you cannot answer those questions, leave it staged or archive it as
-session-only. Do not promote it.
-
-## 15. Promoting Notes
-
-Promotion is the only implemented path from staging draft to canonical memory.
-
-CLI example:
-
-```powershell
-corepack pnpm cli -- promote-note --json '{
-  "draftNoteId": "draft-note-id",
-  "targetCorpus": "mimisbrunnr",
-  "expectedDraftRevision": "known-draft-revision",
-  "promoteAsCurrentState": true
-}'
-```
-
-Promotion does the following:
-
-- Checks actor role.
-- Loads the staging draft.
-- Verifies the expected draft revision when provided.
-- Builds promoted canonical frontmatter.
-- Runs promotion validation.
-- Detects exact duplicates using content hash.
-- Builds a semantic signature from title, summary, and scope.
-- If `promoteAsCurrentState` is true, finds older current-state notes that
-  match type/project/title or scope and supersedes them.
-- Optionally prepares a current-state snapshot note.
-- Enqueues a promotion outbox entry.
-- Processes canonical writes.
-- Chunks the canonical note.
-- Syncs SQLite metadata.
-- Syncs SQLite FTS.
-- Syncs Qdrant if a vector index and embedding provider are available.
-- Regenerates context representations when configured.
-- Updates the staging draft lifecycle.
-- Records promotion history.
-
-Promotion can fail with:
-
-- `forbidden`.
-- `not_found`.
-- `revision_conflict`.
-- `validation_failed`.
-- `duplicate_detected`.
-- `write_failed`.
-
-Use `expectedDraftRevision` when promoting manually. It protects against
-promoting a draft that changed between review and promotion.
-
-### 15.1 Promotion Result Fields
-
-Successful promotion returns:
-
-- `promotedNoteId`: new canonical note ID.
-- `canonicalPath`: canonical file path written under the target corpus.
-- `supersededNoteIds`: older current-state notes replaced by this promotion.
-- `chunkCount`: number of chunks created for retrieval.
-- `auditEntryId`: audit record ID when audit write succeeds.
-- `warnings`: non-blocking audit or sync warnings.
-
-After promotion, immediately verify:
-
-```powershell
-$verify = @'
-{
-  "query": "Session archives are non-authoritative",
-  "corpusIds": ["mimisbrunnr"],
-  "budget": {
-    "maxTokens": 2000,
-    "maxSources": 5,
-    "maxRawExcerpts": 2,
-    "maxSummarySentences": 4
-  },
-  "requireEvidence": true,
-  "includeTrace": true
-}
-'@
-
-corepack pnpm cli -- search-context --json $verify
-```
-
-You are checking that:
-
-- The promoted note appears as evidence.
-- The context packet summary is correct.
-- `retrievalHealth.status` is not `unhealthy`.
-- Any vector degradation warning is understood.
-
-### 15.2 When To Use `promoteAsCurrentState`
-
-Use `promoteAsCurrentState: true` when the note states the current truth for a
-topic, policy, architecture, or runbook.
-
-Use `promoteAsCurrentState: false` when the note is historical, reference-only,
-or should not supersede older current-state notes.
-
-Examples:
-
-| Note | `promoteAsCurrentState` |
-| --- | --- |
-| Current policy: agents must not write canonical memory directly | `true` |
-| Historical investigation from last month | `false` |
-| Current Docker MCP session runbook | `true` |
-| Imported reference notes from Hermes analysis | Usually `false` unless converted into a current mimisbrunnr policy |
-
-Current-state promotion can supersede older notes. That is useful, but it is
-also the reason promotion should be reviewed carefully.
-
-## 16. Freshness And Refresh Drafts
-
-Freshness surfaces track temporal validity on notes.
-
-CLI report:
-
-```powershell
-corepack pnpm cli -- freshness-status --json '{
-  "expiringWithinDays": 14,
-  "corpusId": "mimisbrunnr",
-  "limitPerCategory": 10
-}'
-```
-
-HTTP:
-
-```text
-GET /v1/system/freshness?expiringWithinDays=14&corpusId=mimisbrunnr&limitPerCategory=10
-```
-
-Refresh one note:
-
-```powershell
-corepack pnpm cli -- create-refresh-draft --json '{
-  "noteId": "canonical-note-id",
-  "expiringWithinDays": 14,
-  "bodyHints": ["Check whether this note is still accurate."]
-}'
-```
-
-Refresh a bounded batch:
-
-```powershell
-corepack pnpm cli -- create-refresh-drafts --json '{
-  "corpusId": "mimisbrunnr",
-  "expiringWithinDays": 14,
-  "maxDrafts": 5,
-  "sourceStates": ["expired", "expiring_soon"]
-}'
-```
-
-Refresh drafts are governed staging drafts. They are not direct canonical
-writes.
-
-## 17. Retrieval
-
-Retrieval combines:
-
-- Query intent classification.
-- SQLite FTS lexical candidates.
-- Qdrant vector candidates when available.
-- Ranking fusion.
-- Optional reranking.
-- Answerability assessment.
-- Bounded context packet assembly.
-- Freshness warnings.
-- Retrieval health reporting.
-- Optional retrieval trace.
-- Audit history.
-
-Search canonical context:
-
-```powershell
-corepack pnpm cli -- search-context --json '{
-  "query": "How should agents store durable memory?",
-  "corpusIds": ["mimisbrunnr", "general_notes"],
-  "budget": {
-    "maxTokens": 4000,
-    "maxSources": 6,
-    "maxRawExcerpts": 3,
-    "maxSummarySentences": 6
-  },
-  "requireEvidence": true,
-  "includeTrace": true
-}'
-```
-
-Important request fields:
-
-- `query`: required search text.
-- `corpusIds`: one or more of `mimisbrunnr`, `general_notes`.
-- `budget`: optional token/source/excerpt/summary bounds; the shared default
-  context budget is used when omitted.
-- `intentHint`: optional intent override hint.
-- `noteTypePriority`: optional type preference.
-- `tagFilters`: optional controlled tags.
-- `includeSuperseded`: include superseded notes when supported by lower layers.
-- `requireEvidence`: include raw excerpts in the packet where budget allows.
-- `includeTrace`: include retrieval trace.
-- `strategy`: use `hierarchical` when you want scope-diverse candidate
-  selection.
-
-The response includes:
-
-- `packet`.
-- `candidateCounts`.
-- `provenance`.
-- `retrievalHealth`.
-- Optional `trace`.
-- Optional warnings.
-
-Retrieval health values:
-
-- `healthy`: delivered evidence and vector path is not degraded.
-- `degraded`: delivered evidence, but vector retrieval is degraded or empty.
-- `unhealthy`: no delivered candidates.
-
-If vector retrieval is degraded, lexical retrieval remains active. Do not treat
-degraded vector retrieval as total memory failure, but do surface it to the
-operator because recall quality may be weaker.
-
-## 18. Context Packets
-
-Context packets are bounded read-side products for agents and tools.
-
-Direct packet assembly:
-
-```powershell
-corepack pnpm cli -- get-context-packet --json '{
-  "intent": "architecture_recall",
-  "budget": {
-    "maxTokens": 2000,
-    "maxSources": 3,
-    "maxRawExcerpts": 1,
-    "maxSummarySentences": 4
-  },
-  "includeRawExcerpts": true,
-  "candidates": [
-    {
-      "noteType": "architecture",
-      "score": 0.91,
-      "summary": "The orchestrator gates transport requests before domain execution.",
-      "scope": "orchestration",
-      "qualifiers": [],
-      "tags": ["domain/orchestration"],
-      "stalenessClass": "current",
-      "provenance": {
-        "noteId": "example",
-        "notePath": "mimisbrunnr/example.md",
-        "headingPath": ["Architecture"]
-      }
-    }
-  ]
-}'
-```
-
-Direct context packet assembly is useful for tests, adapters, and future
-read-side services. Most operators should use `search-context` or
-`assemble-agent-context` instead.
-
-## 19. Decision Summaries
-
-Decision summaries are retrieval products focused on decisions around a topic.
-
-```powershell
-corepack pnpm cli -- fetch-decision-summary --json '{
-  "topic": "canonical memory promotion",
-  "budget": {
-    "maxTokens": 2000,
-    "maxSources": 5,
-    "maxRawExcerpts": 2,
-    "maxSummarySentences": 5
-  }
-}'
-```
-
-Use decision summaries when an agent needs to understand prior design choices
-without reading unrelated implementation notes.
-The `budget` field is optional for this command and defaults to the shared
-context budget.
-
-## 20. Namespace Tree And Nodes
-
-Namespace services expose context nodes without mutating authority state.
-
-List tree:
-
-```powershell
-corepack pnpm cli -- list-context-tree --json '{
-  "ownerScope": "mimisbrunnr",
-  "authorityStates": ["canonical", "session"]
-}'
-```
-
-Read node:
-
-```powershell
-corepack pnpm cli -- read-context-node --json '{
-  "uri": "mimir://mimisbrunnr/note/<noteId>"
-}'
-```
-
-Use namespace reads when an agent needs structured browsing rather than ranked
-search.
-
-The implemented owner scopes are:
-
-- `mimisbrunnr`.
-- `general_notes`.
-- `imports`.
-- `sessions`.
-- `system`.
-
-For note nodes, the current URI shape is:
-
-```text
-mimir://<ownerScope>/note/<noteId>
-```
-
-The namespace service reads nodes that already exist in SQLite metadata. If you
-use a placeholder URI, the response should be `ok: false` with `not_found`.
-
-## 21. Session Recall
-
-Search session archives:
-
-```powershell
-corepack pnpm cli -- search-session-archives --json '{
-  "query": "paid models out of scope",
-  "sessionId": "operator-session-2026-04-13",
-  "limit": 5,
-  "maxTokens": 2000
-}'
-```
-
-The search clamps:
-
-- Limit to a maximum of 20.
-- Token budget to a maximum of 12000.
-
-Session recall is intentionally labeled non-authoritative when injected into
-agent context. It helps an agent remember conversation continuity, but the agent
-must not treat it as promoted fact.
-
-## 22. Agent Context Assembly
-
-Agent context assembly creates a fenced block designed to be safe to append to
-local-agent prompts.
-
-```powershell
-corepack pnpm cli -- assemble-agent-context --json '{
-  "query": "How should a local agent update durable memory?",
-  "corpusIds": ["mimisbrunnr", "general_notes"],
-  "budget": {
-    "maxTokens": 6000,
-    "maxSources": 6,
-    "maxRawExcerpts": 3,
-    "maxSummarySentences": 6
-  },
-  "includeSessionArchives": true,
-  "sessionId": "operator-session-2026-04-13",
-  "includeTrace": true
-}'
-```
-
-The result contains:
-
-- `contextBlock`: fenced XML-like context block.
-- `tokenEstimate`.
-- `truncated`.
-- `sourceSummary`.
-- `retrievalHealth`.
-- Optional retrieval `trace`.
-
-The block starts with:
-
-```xml
-<agent-context source="mimisbrunnr" authority="retrieved">
-```
-
-It contains:
-
-- A system note explaining authority boundaries.
-- `<canonical-memory>` with canonical retrieval.
-- Optional `<session-recall authority="non_authoritative">`.
-
-Agent context assembly applies a hard maximum context budget. If `budget` is
-omitted, it uses the shared default context budget. If the block is too large,
-it is truncated and marked.
-
-## 23. Hermes-Inspired Local-Agent Improvements
-
-Hermes was used as architectural inspiration, not as a drop-in replacement.
-
-Useful ideas adapted into mimir:
-
-- Session continuity as a separate read-side feature.
-- Layered context assembly for local agents.
-- Local coder model specialization with qwen3-coder metadata.
-- Agent execution traces.
-- Retry/error metadata around local model/provider failures.
-- Tool-output budgeting so large outputs do not flood prompts.
-
-Important things intentionally not copied from Hermes:
-
-- `MEMORY.md` or `USER.md` as durable authority.
-- Autonomous background writes to shared memory.
-- Provider sprawl or paid-model assumptions.
-- Lossy context compression as canonical memory.
-- Broad messaging/gateway complexity.
-- Skill self-patching without review.
-
-The mimisbrunnr policy is stricter:
-
-- Hermes-like working memory can inform retrieval and session continuity.
-- It must not bypass staging, validation, promotion, audit, or operator review.
-- Background agents may create drafts or quarantine proposals, but they should
-  not write canonical memory directly.
-
-## 24. Qwen3-Coder And Local Model Usage
-
-The local coding role defaults to qwen3-coder-style metadata:
-
-- Role: `coding_primary`.
-- Provider: Docker/Ollama-compatible endpoint.
-- Default model ID: `qwen3-coder`.
-- Default temperature: `0`.
-- Default seed: `42`.
-- Default timeout: `120000` ms.
-- Default max input chars: `30000`.
-- Default max output tokens: `4000`.
-
-The model-role registry lets each role be configured independently:
-
-- `MAB_ROLE_CODING_PRIMARY_PROVIDER`.
-- `MAB_ROLE_CODING_PRIMARY_MODEL`.
-- `MAB_ROLE_CODING_PRIMARY_TEMPERATURE`.
-- `MAB_ROLE_CODING_PRIMARY_SEED`.
-- `MAB_ROLE_CODING_PRIMARY_TIMEOUT_MS`.
-- `MAB_ROLE_CODING_PRIMARY_MAX_INPUT_CHARS`.
-- `MAB_ROLE_CODING_PRIMARY_MAX_OUTPUT_TOKENS`.
-
-Use qwen3-coder for coding-domain tasks. Do not use it as the authority for
-canonical memory writes. It can propose, summarize, diagnose, and generate
-patches through the coding runtime, but memory updates still go through
-governed note workflows.
-
-## 25. Coding Runtime
-
-The coding runtime is invoked through:
-
-- `execute-coding-task`.
-- `POST /v1/coding/execute`.
-- MCP tool `execute_coding_task`.
-
-Supported task types:
-
-- `triage`.
-- `review`.
-- `draft_patch`.
-- `generate_tests`.
-- `summarize_diff`.
-- `propose_fix`.
-
-Basic CLI example:
-
-```powershell
-corepack pnpm cli -- execute-coding-task --json '{
-  "taskType": "review",
-  "task": "Review the staged changes for memory-governance regressions.",
-  "repoRoot": "<REPO_ROOT>",
-  "context": "Focus on direct canonical writes and auth bypasses."
-}'
-```
-
-With memory context:
-
-```powershell
-corepack pnpm cli -- execute-coding-task --json '{
-  "taskType": "triage",
-  "task": "Find why vector retrieval is degraded.",
-  "repoRoot": "<REPO_ROOT>",
-  "memoryContext": {
-    "query": "vector retrieval degraded lexical retrieval active qdrant health",
-    "corpusIds": ["mimisbrunnr", "general_notes"],
-    "budget": {
-      "maxTokens": 5000,
-      "maxSources": 6,
-      "maxRawExcerpts": 3,
-      "maxSummarySentences": 6
-    },
-    "includeSessionArchives": true,
-    "includeTrace": true
-  }
-}'
-```
-
-The orchestrator assembles memory context before calling the Python bridge.
-The coding response and audit entry report whether memory context was requested
-and included.
-
-The local Python runtime lives in `runtimes/local_experts`. It is invoked as a
-bounded worker, not as the application host.
-
-## 26. Local-Agent Traces
-
-Local-agent traces are compact records stored in SQLite.
-
-They capture:
-
-- Trace ID.
-- Request ID.
-- Actor ID.
-- Task type.
-- Model role.
-- Model ID.
-- Whether memory context was included.
-- Whether retrieval trace was included.
-- Status.
-- Reason.
-- Tool used.
-- Provider error kind.
-- Retry count.
-- Whether a seed was applied.
-- Creation timestamp.
-
-List traces:
-
-```powershell
-corepack pnpm cli -- list-agent-traces --json '{
-  "requestId": "request-id-from-actor-context"
-}'
-```
-
-Use traces to answer:
-
-- Did the local agent receive memory context?
-- Which model role/model ID was used?
-- Did it retry?
-- Did provider failure classification trigger?
-- Did the task succeed, fail, or escalate?
-
-## 27. Tool-Output Spillover
-
-Large local-agent outputs are stored outside prompt context.
-
-The budget service:
-
-- Keeps outputs up to 64 KiB inline by default.
-- Caps custom inline budgets at 256 KiB.
-- Stores larger outputs in the tool-output store.
-- Replaces inline text with a `<tool-output-spillover>` preview.
-- Records spillover IDs in escalation metadata.
-
-Retrieve full output:
-
-```powershell
-corepack pnpm cli -- show-tool-output --json '{
-  "outputId": "tool-output-id"
-}'
-```
-
-Use tool-output spillover when:
-
-- A command prints long logs.
-- A patch generator returns a large body.
-- A validation run produces long stdout/stderr.
-- An agent needs the full output only after deciding it matters.
-
-Do not copy huge tool output into canonical notes. Summarize the relevant fact
-and preserve the output ID or provenance if needed.
-
-## 28. Audit History
-
-History is stored in SQLite audit records.
-
-Query history:
-
-```powershell
-corepack pnpm cli -- query-history --json '{
-  "actor": {
-    "actorId": "operator-cli",
-    "actorRole": "operator",
-    "source": "mimir-cli-admin",
-    "authToken": "<token>"
-  },
-  "actorId": "operator-cli",
-  "actionType": "issue_auth_token",
-  "limit": 20,
-  "noteId": "optional-note-id"
-}'
-```
-
-Supported `query-history` filters are `actorId`, `actionType`, `source`, `noteId`, `since`, `until`, and `limit`.
-Filtering happens before the bounded `limit` is applied.
-
-History records are produced for:
-
-- Retrieval.
-- Promotion.
-- Token issuance.
-- Token revocation.
-- Coding task execution.
-- Other application actions where the service records audit entries.
-
-Use history to inspect:
-
-- Which actor did what.
-- Which note IDs were affected.
-- Which chunks were affected.
-- Whether the outcome was accepted, rejected, or partial.
-- Details such as retrieval candidate counts, promotion outbox ID, memory
-  context status, or coding task metadata.
-
-## 29. Environment Variables
-
-The complete reference is `documentation/reference/env-vars.md`.
-
-Important runtime variables:
-
-- `MAB_NODE_ENV`.
-- `MAB_RELEASE_VERSION`.
-- `MAB_RELEASE_COMMIT`.
-- `MAB_RELEASE_BUILT_AT`.
-- `MAB_VAULT_ROOT`.
-- `MAB_STAGING_ROOT`.
-- `MAB_SQLITE_PATH`.
-- `MAB_QDRANT_URL`.
-- `MAB_QDRANT_COLLECTION`.
-- `MAB_QDRANT_SOFT_FAIL`.
-- `MAB_API_HOST`.
-- `MAB_API_PORT`.
-- `MAB_LOG_LEVEL`.
-
-Provider selector variables:
-
-- `MAB_EMBEDDING_PROVIDER`.
-- `MAB_REASONING_PROVIDER`.
-- `MAB_DRAFTING_PROVIDER`.
-- `MAB_RERANKER_PROVIDER`.
-- `MAB_DISABLE_PROVIDER_FALLBACKS`.
-
-Provider endpoint/model variables:
-
-- `MAB_OLLAMA_BASE_URL`.
-- `MAB_PROVIDER_DOCKER_OLLAMA_BASE_URL`.
-- `MAB_PROVIDER_PAID_ESCALATION_BASE_URL`.
-- `MAB_PROVIDER_PAID_ESCALATION_API_KEY`.
-- `MAB_OLLAMA_EMBEDDING_MODEL`.
-- `MAB_OLLAMA_REASONING_MODEL`.
-- `MAB_OLLAMA_DRAFTING_MODEL`.
-
-Role binding override pattern:
-
-```text
-MAB_ROLE_<ROLE>_PROVIDER
-MAB_ROLE_<ROLE>_MODEL
-MAB_ROLE_<ROLE>_TEMPERATURE
-MAB_ROLE_<ROLE>_SEED
-MAB_ROLE_<ROLE>_TIMEOUT_MS
-MAB_ROLE_<ROLE>_MAX_INPUT_CHARS
-MAB_ROLE_<ROLE>_MAX_OUTPUT_TOKENS
-```
-
-Roles:
-
-- `CODING_PRIMARY`.
-- `MIMISBRUNNR_PRIMARY`.
-- `EMBEDDING_PRIMARY`.
-- `RERANKER_PRIMARY`.
-- `PAID_ESCALATION`.
-
-Coding runtime variables:
-
-- `MAB_CODING_RUNTIME_PYTHON_EXECUTABLE`.
-- `MAB_CODING_RUNTIME_PYTHONPATH`.
-- `MAB_CODING_RUNTIME_MODULE`.
-- `MAB_CODING_RUNTIME_TIMEOUT_MS`.
-
-Auth variables:
-
-- `MAB_AUTH_MODE`.
-- `MAB_AUTH_ALLOW_ANONYMOUS_INTERNAL`.
-- `MAB_AUTH_ACTOR_REGISTRY_PATH`.
-- `MAB_AUTH_ACTOR_REGISTRY_JSON`.
-- `MAB_AUTH_ISSUER_SECRET`.
-- `MAB_AUTH_ISSUED_TOKEN_REQUIRE_REGISTRY_MATCH`.
-- `MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_PATH`.
-- `MAB_AUTH_REVOKED_ISSUED_TOKEN_IDS_JSON`.
-
-MCP session defaults:
-
-- `MAB_MCP_DEFAULT_ACTOR_ID`.
-- `MAB_MCP_DEFAULT_ACTOR_ROLE`.
-- `MAB_MCP_DEFAULT_ACTOR_AUTH_TOKEN`.
-- `MAB_MCP_DEFAULT_SOURCE`.
-
-## 30. Auth Operations
-
-Check auth state:
-
-```powershell
-corepack pnpm cli -- auth-status --json '{
-  "actor": {
-    "actorId": "operator-cli",
-    "actorRole": "operator",
-    "source": "mimir-cli-admin",
-    "authToken": "<token>"
-  }
-}'
-```
-
-Issue a token:
-
-```powershell
-corepack pnpm cli -- issue-auth-token --json '{
-  "actor": {
-    "actorId": "operator-cli",
-    "actorRole": "operator",
-    "source": "mimir-cli-admin",
-    "authToken": "<token>"
-  },
-  "actorId": "operator-local",
-  "actorRole": "operator",
-  "source": "manual",
-  "allowedTransports": ["cli", "http", "mcp"],
-  "allowedCommands": ["search_context", "promote_note"],
-  "ttlMinutes": 60
-}'
-```
-
-The current token-issue validator accepts the orchestrator command names listed
-in `packages/infrastructure/src/transport/auth-control-validation.ts`, including
-the newer local-agent commands such as `assemble_agent_context`,
-`create_session_archive`, `list_agent_traces`, and `show_tool_output`.
-
-Inspect a token:
-
-```powershell
-corepack pnpm cli -- auth-introspect-token --json '{
-  "actor": {
-    "actorId": "operator-cli",
-    "actorRole": "operator",
-    "source": "mimir-cli-admin",
-    "authToken": "<token>"
-  },
-  "token": "issued-token",
-  "expectedTransport": "mcp",
-  "expectedCommand": "search_context"
-}'
-```
-
-List issued tokens:
-
-```powershell
-corepack pnpm cli -- auth-issued-tokens --json '{
-  "actor": {
-    "actorId": "operator-cli",
-    "actorRole": "operator",
-    "source": "mimir-cli-admin",
-    "authToken": "<token>"
-  },
-  "includeRevoked": true,
-  "limit": 20
-}'
-```
-
-Filter issued tokens by issuer, revoker, or lifecycle state:
-
-```powershell
-corepack pnpm cli -- auth-issued-tokens --json '{
-  "actor": {
-    "actorId": "operator-cli",
-    "actorRole": "operator",
-    "source": "mimir-cli-admin",
-    "authToken": "<token>"
-  },
-  "issuedByActorId": "security-cli",
-  "revokedByActorId": "operator-cli",
-  "lifecycleStatus": "revoked",
-  "includeRevoked": true
-}'
-```
-
-Issued-token lifecycle operations are also visible in query history. Look for
-`issue_auth_token` and `revoke_auth_token` entries when you need an audit trail
-for who minted or revoked a specific token id. Combine `actorId`,
-`actionType`, and `source` when you need an exact operator-facing lifecycle
-slice instead of a broad history scan.
-
-Revoke a token:
-
-```powershell
-corepack pnpm cli -- revoke-auth-token --json '{
-  "actor": {
-    "actorId": "operator-cli",
-    "actorRole": "operator",
-    "source": "mimir-cli-admin",
-    "authToken": "<token>"
-  },
-  "tokenId": "issued-token-id",
-  "reason": "operator cleanup"
-}'
-```
-
-Auth-control CLI and HTTP endpoints require an operator or system actor when auth
-is enforced.
-
-When issued-token listings include lifecycle attribution, the payload can
-include issuer fields for active or future records and revoker fields for
-revoked records:
-
-- `issuedByActorId`
-- `issuedByActorRole`
-- `issuedBySource`
-- `issuedByTransport`
-
-- `revokedByActorId`
-- `revokedByActorRole`
-- `revokedBySource`
-- `revokedByTransport`
-
-Issued-token listing responses now also support request-side filtering by:
-
-- `actorId`
-- `issuedByActorId`
-- `revokedByActorId`
-- `lifecycleStatus`
-- `asOf`
-- `includeRevoked`
-- `limit`
-
-The summary returned beside an issued-token listing applies the same filters
-except for `limit`.
-
-## 31. Health And Diagnostics
-
-HTTP health endpoints:
-
-```text
-GET /health/live
-GET /health/ready
-```
-
-`live` is for process liveness.
-
-`ready` is for operational readiness and includes checks such as temporal
-validity and vector health where available.
-
-Useful diagnostics:
-
-```powershell
-corepack pnpm cli -- version
-corepack pnpm cli -- auth-status
-corepack pnpm cli -- freshness-status
-corepack pnpm cli -- search-context --json '{ ... "includeTrace": true }'
-corepack pnpm cli -- list-agent-traces --json '{ "requestId": "..." }'
-corepack pnpm cli -- show-tool-output --json '{ "outputId": "..." }'
-corepack pnpm run test:eval:retrieval
-```
-
-Common states:
-
-- Qdrant unreachable with soft fail enabled: vector retrieval degrades, lexical
-  retrieval remains active.
-- Qdrant unreachable with hard fail behavior: readiness may fail and retrieval
-  may error depending on configuration.
-- Model Runner unreachable with fallbacks enabled: deterministic or heuristic
-  providers may be used.
-- Model Runner unreachable with fallbacks disabled: model-backed calls may fail.
-- Enforced auth without a valid registry/token: non-internal actors are denied.
-- Missing Python runtime dependencies: coding tasks fail or escalate.
-
-## 32. Testing And Evaluation
-
-Primary verification commands:
-
-```powershell
-corepack pnpm typecheck
-corepack pnpm test:interface-docs
-corepack pnpm test:command-surface
-corepack pnpm test:security-audit
-corepack pnpm security:audit
-corepack pnpm test
-corepack pnpm run test:transport
-corepack pnpm run test:e2e
-corepack pnpm run test:eval:retrieval
-```
-
-The focused GitHub Actions gate is `.github/workflows/core-quality.yml`. It runs
-typecheck, tracked interface-documentation checks, security-audit classification,
-the live security audit wrapper, command-surface checks, and transport tests.
-It is not a full release pipeline.
-
-Route-map maintenance:
-
-```powershell
-corepack pnpm codesight:routes
-corepack pnpm codesight:routes:check
-```
-
-The Codesight route artifacts under `.codesight/` are local generated files and
-are ignored by git. Regenerate them from the HTTP route definitions exported by
-`apps/mimir-api/src/server.ts`; do not hand-edit the generated route list.
-
-Security audit policy:
-
-- `corepack pnpm security:audit` parses `pnpm audit --audit-level moderate --json`.
-- Unknown advisories fail the command.
-- The only current exception is the temporary transitive `GHSA-w5hq-g745-h8pq`
-  path through `@voltagent/core 2.7.x -> uuid 9.0.1`.
-- Remove that exception from `scripts/audit-security.mjs` when VoltAgent ships a
-  compatible patched dependency.
-
-Docker operations:
-
-```powershell
-corepack pnpm run docker:up
-corepack pnpm run docker:down
-corepack pnpm run docker:mcp:build
-```
-
-Important test areas:
-
-- Transport adapters.
-- MCP adapter.
-- Docker MCP startup.
-- Context authority contracts.
-- Context namespace.
-- Context representations.
-- Hierarchical retrieval.
-- Retrieval strategy diff.
-- Retrieval traces.
-- Session archives.
-- Local model providers.
-- Hermes bridge runtime.
-- Service boundaries and regression.
-- Retrieval eval fixtures.
-
-There is currently no tracked `pnpm run lint` script.
-
-## 33. Practical Operator Workflows
-
-### Store A New Durable Fact
-
-1. Decide whether the information deserves durable memory.
-2. If it is only session continuity, create a session archive instead.
-3. If it is durable, create a staging draft with `draft-note`.
-4. Review the draft.
-5. Validate in promotion mode.
-6. Promote with `promote-note`.
-7. Search for the fact to confirm retrieval.
-
-### Store Conversation Continuity
-
-1. Create a session archive with `create-session-archive`.
-2. Search it with `search-session-archives`.
-3. Include it in `assemble-agent-context` only when continuity matters.
-4. Do not promote session recall directly.
-
-### Give A Local Agent Memory
-
-1. Call `assemble-agent-context` for explicit prompt assembly, or provide
-   `memoryContext` to `execute-coding-task`.
-2. Include session archives only when the session history matters.
-3. Include traces when debugging retrieval quality.
-4. Inspect `memoryContextStatus` and local-agent traces after execution.
-
-### Review Local-Agent Work
-
-1. Run `execute-coding-task`.
-2. Inspect the returned status, reason, validations, and escalation metadata.
-3. Use `list-agent-traces` for the request ID.
-4. Use `show-tool-output` for spillover IDs.
-5. Validate any generated note or patch through the normal workflow.
-
-### Fix Retrieval Degradation
-
-1. Check `search-context` response `retrievalHealth`.
-2. Check Qdrant reachability.
-3. Check `MAB_QDRANT_URL`.
-4. Confirm embeddings are configured.
-5. Confirm promoted notes have chunks.
-6. Run `corepack pnpm run test:eval:retrieval`.
-7. Re-promote or repair indexes only after identifying the failed layer.
-
-### Refresh Stale Memory
-
-1. Run `freshness-status`.
-2. Create refresh drafts for expired or expiring notes.
-3. Review and validate the drafts.
-4. Promote only after confirming current facts.
-
-## 34. What Not To Do
-
-Do not:
-
-- Edit canonical memory directly as an agent shortcut.
-- Treat session archives as canonical memory.
-- Treat retrieval traces as durable facts.
-- Treat tool-output spillover as memory.
-- Promote a note that failed validation.
-- Disable auth in a shared or production-like environment.
-- Enable paid-model escalation casually.
-- Let a background agent write canonical memory.
-- Use Hermes `MEMORY.md` or `USER.md` patterns as authority.
-- Hide vector retrieval degradation from operators.
-- Store secrets in notes, drafts, session archives, traces, or tool outputs.
-
-## 35. Troubleshooting
-
-### CLI Says A Payload Is Missing
-
-Most CLI commands require exactly one of:
-
-- `--json`.
-- `--input`.
-- `--stdin`.
-
-Commands that do not require payloads include:
-
-- `version`.
-
-Some commands accept optional payloads:
-
-- `auth-status` when auth is not enforced. In enforced mode, include operator or
-  system actor context.
-- `freshness-status`.
-- `auth-issued-tokens`.
-- `create-refresh-drafts`.
-
-### HTTP Returns 405
-
-The route exists, but the HTTP method is wrong. Most application routes are
-`POST`. Health/version/auth summary/freshness list endpoints are `GET`.
-
-### HTTP Body Rejected
-
-The HTTP server accepts JSON object bodies and has a 1 MB safety limit.
-
-### MCP Tool Fails Validation
-
-Run `tools/list` or inspect `apps/mimir-mcp/src/tool-definitions.ts` for the
-schema. MCP tool names use snake case, while CLI commands use kebab case.
-
-### Promotion Fails With Duplicate
-
-An identical non-superseded canonical note already exists. Search canonical
-memory, decide whether to supersede, merge, or reject the staged draft.
-
-### Promotion Fails With Revision Conflict
-
-The draft changed after the revision you reviewed. Re-read it, re-validate it,
-and promote with the new revision only if it still passes review.
-
-### Coding Task Fails
-
-Check:
-
-- Python executable.
-- `MAB_CODING_RUNTIME_PYTHONPATH`.
-- `MAB_CODING_RUNTIME_MODULE`.
-- Python dependencies.
-- Docker Model Runner endpoint.
-- qwen3-coder model availability.
-- Local-agent traces.
-- Spillover outputs.
-
-### Retrieval Has No Results
-
-Check:
-
-- Canonical notes exist.
-- Notes were promoted, not only drafted.
-- Chunks exist in SQLite metadata.
-- FTS index was updated.
-- Qdrant is reachable if vector search is expected.
-- Query budget is not too small.
-- Corpus IDs are correct.
-- Tag filters are not too restrictive.
-
-## 36. Glossary
-
-Canonical memory: promoted durable note state used as authority.
-
-Staging draft: candidate note awaiting review and promotion.
-
-Promotion: deterministic workflow that moves a validated draft into canonical
-memory and synchronizes indexes.
-
-Session archive: immutable non-authoritative transcript storage for continuity.
-
-Context packet: bounded retrieval product with summary, evidence, constraints,
-uncertainties, and answerability.
-
-Agent context: fenced prompt block assembled from canonical retrieval and
-optional non-authoritative session recall.
-
-Retrieval health: read-side status showing whether retrieval is healthy,
-degraded, or unhealthy.
-
-Vector degradation: condition where vector retrieval is missing or degraded but
-lexical retrieval may still serve results.
-
-Tool-output spillover: full output stored outside prompt context, with a small
-preview and output ID returned inline.
-
-Local-agent trace: compact operational record for a local coding-agent request.
-
-Current-state note: canonical note marked as current for a topic/scope.
-
-Supersession: state where a new current canonical note replaces an older one.
-
-Refresh draft: governed staged proposal to update expired or expiring memory.
-
-Actor registry: configured list of actors, roles, credentials, transport
-permissions, command permissions, and validity windows.
-
-Issued token: short-lived centrally issued actor token that can be inspected and
-revoked.
-
-## 37. Reference Map
-
-When this manual and the canonical current-state docs disagree, treat the
-canonical docs as authoritative.
-
-Use these files when you need source details:
-
-- `README.md`: current repository overview.
-- `documentation/planning/current-implementation.md`: current shipped runtime
-  summary.
-- `documentation/planning/backlog.md`: remaining planned work and partial areas.
-- `documentation/setup/installation.md`: installation paths.
-- `documentation/setup/configuration.md`: configuration guidance.
-- `documentation/setup/development-workflow.md`: development workflow.
-- `documentation/reference/interfaces.md`: HTTP, CLI, MCP, and internal interfaces.
-- `documentation/reference/env-vars.md`: environment variables.
-- `documentation/reference/glossary.md`: terminology.
-- `documentation/reference/repo-map.md`: repository map.
-- `documentation/reference/external-client-boundary.md`: Codex/Claude versus
-  Mimir ownership boundary.
-- `documentation/architecture/overview.md`: package-level architecture.
-- `documentation/architecture/runtime-flow.md`: request and promotion flows.
-- `documentation/architecture/invariants-and-boundaries.md`: safety boundaries.
-- `documentation/operations/running.md`: running commands.
-- `documentation/operations/troubleshooting.md`: troubleshooting.
-- `documentation/operations/docker-toolbox-v1.md`: live toolbox control-plane
-  and broker model.
-- `documentation/operations/docker-mcp-session.md`: containerized MCP session.
-- `documentation/local-agent-context.md`: local-agent context assembly.
-- `documentation/qwen3-coder-local-profile.md`: qwen3-coder local role profile.
-- `documentation/planning/hermes-vs-mimir-gap-analysis.md`: Hermes gap
-  analysis.
-- `documentation/superpowers/plans/2026-04-13-hermes-gap-bridge-implementation-plan.md`:
-  implementation plan behind the Hermes bridge work.
-- `documentation/testing/README.md`: test guide.
-
-## 38. Final Operating Rule
-
-Use mimisbrunnr as a governed memory and context system, not as an
-unbounded note dump.
-
-The strongest local-agent pattern is:
+The safe loop is:
 
 ```text
 retrieve bounded context
-   |
-   v
-agent performs useful local work
-   |
-   v
-agent outputs proposals, traces, and evidence
-   |
-   v
-operator validates and reviews
-   |
-   v
-governed promotion updates canonical memory
+agent or operator does work
+capture evidence, traces, or draft proposals
+validate and review
+promote only durable, sourced knowledge
 ```
 
-That is the main lesson from the Hermes comparison: borrow better read-side and
-agent-continuity ideas, but keep mimisbrunnr's stronger write discipline.
+### 4. Implementation Details
+
+This rule is enforced by:
+
+- staged draft service
+- validation service
+- review commands
+- promotion orchestrator
+- audit/history stores
+- bounded retrieval and context assembly
+- tool-output spillover
+- toolbox policy boundaries
+
+### 5. Step-by-Step Usage
+
+| Path | Input | Action | Expected output | Verification method |
+| --- | --- | --- | --- | --- |
+| Minimal | Any new fact | Ask whether it is continuity, proposal, or authority | Correct path chosen | State type matches command |
+| Full | Agent-generated durable lesson | Draft, validate, review, promote | Canonical note | Retrieval finds sourced evidence |
+
+### 6. Failure Modes and Diagnostics
+
+| Failure | Root cause | Symptom | Verify | Recover |
+| --- | --- | --- | --- | --- |
+| Note dump behavior | Governance skipped | Low-quality or unsafe memory | Audit and retrieval quality | Rework through draft/review |
+| Unbounded context | Raw vault/log dumped into prompt | Token overflow or confused agent | Inspect prompt/context block | Use packet/agent-context assembly |
+
+### 7. Assumptions and Hidden Constraints
+
+- Boring, explicit, testable workflows are preferred over clever shortcuts.
+- Behavior should remain stable unless a change is deliberate and tested.
+
+### 8. Terminology Clarification
+
+`Governed` means constrained by explicit policy, validation, review, and audit.
+
+### 9. Gaps / Issues in Original Manual
+
+- The old final rule was correct; it needed stronger connection to concrete
+  mechanisms and verification.
+
+### 10. Refactored Section (Final Version)
+
+The final operating rule is: retrieve bounded context, let agents do useful
+work, capture evidence and proposals, then validate, review, and promote only
+durable sourced knowledge. Keep canonical memory governed.
+
+## Structural Improvements Applied
+
+- Converted the manual into a dual-audience format for operators and developers.
+- Defined terminology before first substantive use.
+- Preserved the original 38 main sections and folded nested subsections into
+  their parent sections.
+- Added implementation anchors for every section.
+- Added input, action, expected output, and verification method for every usage
+  path.
+- Added diagnostics with root cause, symptom, verification, and recovery.
+- Made hidden assumptions explicit, especially no dotenv loading, no tracked
+  SQLite migration system, frozen lockfile behavior, and the active nested repo.
+- Updated runtime entrypoint coverage from three core surfaces to five
+  first-party Node entrypoints.
+- Clarified direct MCP framing behavior from current code.
+- Reframed Docker MCP session mode as direct MCP with startup validation, not
+  toolbox broker mode.
+- Made dependency advisory handling and route/command drift checks part of the
+  manual's testing model.
+
+## Unresolved Uncertainties
+
+- Which GitHub Actions checks are required branch protections is repository
+  settings state, not visible from tracked files.
+- Whether every target non-Codex MCP client accepts the same command snippet
+  format must be verified per client.
+- Whether future releases will add a SQLite migration runner, dotenv loader,
+  release publication pipeline, or production deployment descriptors is outside
+  the current tracked code.
+- The Docker MCP Toolkit behavior may change independently of this repository;
+  current rollout blockers are machine/toolkit dependent.
+
+## Notes on Risk / Limitations
+
+- This manual is source-reviewed against the current repository, but correctness
+  still depends on keeping docs, code, and tests synchronized after changes.
+- Some internal behaviors are intentionally summarized; developers should trace
+  from the implementation files named in each section for code-level work.
+- The manual avoids recommending new dependencies or public API changes.
+- The safest limited go-live posture is to keep the core-quality gate green,
+  keep advisory exceptions narrow, and avoid broad Docker/toolbox apply until
+  rollout blockers are resolved.
