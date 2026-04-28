@@ -51,6 +51,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/infrastructure
 
+  apps/mimir-toolbox-mcp:
+    dependencies:
+      '@mimir/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@mimir/infrastructure':
+        specifier: workspace:*
+        version: link:../../packages/infrastructure
+
   packages/application:
     dependencies:
       '@mimir/contracts':
