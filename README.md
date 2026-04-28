@@ -39,7 +39,7 @@ The tracked repository currently implements:
 
 The tracked repository does not currently include:
 
-- a full tracked CI/CD pipeline for packaging and release publication
+- a full tracked release pipeline for packaging and publication
 - Kubernetes, Helm, Terraform, or deployment descriptors beyond the tracked local Docker profiles
 - a tracked migration system for SQLite
 - a tracked dotenv loader for Node processes
@@ -513,7 +513,7 @@ useful for rollout context, but they are not release contract docs.
 
 - namespace browsing is currently backed by rows in the `notes` table; imported jobs and session archives are stored, but they are not exposed through the namespace tree
 - the Docker MCP session profile still assumes Qdrant and the model endpoint are managed intentionally outside the session container
-- tracked GitHub Actions cover the focused core-quality gate plus targeted VoltAgent contract and upstream canary checks, but there is no full release pipeline validating packaging and release publication together
+- tracked GitHub Actions cover the focused core-quality gate plus targeted VoltAgent contract and upstream canary checks, but there is no end-to-end release pipeline validating packaging and publication together
 
 ## AI-agent navigation
 
