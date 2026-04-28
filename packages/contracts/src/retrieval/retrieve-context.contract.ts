@@ -26,7 +26,7 @@ export interface RetrievalHealthReport {
 export interface RetrieveContextRequest {
   actor: ActorContext;
   query: string;
-  budget: ContextBudget;
+  budget?: ContextBudget;
   corpusIds: CorpusId[];
   strategy?: RetrieveContextStrategy;
   intentHint?: QueryIntent;

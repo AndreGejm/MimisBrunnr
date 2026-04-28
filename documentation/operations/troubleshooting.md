@@ -163,6 +163,23 @@ What to do:
 
 - trust `apps/mimir-api/src/server.ts`, `apps/mimir-cli/src/main.ts`, and `apps/mimir-mcp/src/tool-definitions.ts`
 - update `documentation/reference/interfaces.md` when you change any transport surface
+- run `corepack pnpm test:interface-docs` to verify the tracked HTTP interface map
+- run `corepack pnpm codesight:routes` if you need to refresh ignored local `.codesight` route artifacts
+
+## `security:audit` reports the VoltAgent uuid advisory
+
+Current expected behavior:
+
+- the audit wrapper allows only `GHSA-w5hq-g745-h8pq` when it appears through the
+  documented `@voltagent/core 2.7.x -> uuid 9.0.1` workspace paths
+- any other advisory, path, or version pattern fails the command
+
+What to do:
+
+- if the command fails for a new advisory, treat it as a real dependency review
+- if VoltAgent publishes a compatible patched dependency, upgrade VoltAgent and
+  remove the exception from `scripts/audit-security.mjs`
+- do not replace the wrapper with a blanket audit ignore
 
 ## The repo map seems to disagree with the workspace
 
@@ -188,4 +205,5 @@ What to do:
 
 ### TODO gaps
 
-- If the repo adds CI or a standard launcher that reads `.env`, add those failure modes here
+- If the repo adds a broader release pipeline or a standard launcher that reads
+  `.env`, add those failure modes here

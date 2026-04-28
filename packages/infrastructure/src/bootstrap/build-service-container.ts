@@ -282,7 +282,10 @@ export function buildServiceContainer(
     promotionOrchestratorService
   );
   const importOrchestrationService = new ConcreteImportOrchestrationService(
-    importJobStore
+    importJobStore,
+    {
+      allowedSourceRoots: env.importAllowedRoots
+    }
   );
   const contextNamespaceService = new ConcreteContextNamespaceService(
     contextNamespaceStore
@@ -334,7 +337,8 @@ export function buildServiceContainer(
       retrieveContextService,
       decisionSummaryService,
       contextPacketService,
-      agentContextAssemblyService
+      agentContextAssemblyService,
+      contextNamespaceService
     ),
     new MimisbrunnrMemoryController(
       stagingDraftService,

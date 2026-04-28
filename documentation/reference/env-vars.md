@@ -32,6 +32,8 @@ the stored context layer mimisbrunnr.
 | `MAB_DATA_ROOT` | root for default host state paths | `%USERPROFILE%\.mimir` on Windows, `$HOME/.mimir` elsewhere |
 | `MAB_VAULT_ROOT` | canonical note root | `$MAB_DATA_ROOT/vault/canonical` |
 | `MAB_STAGING_ROOT` | staging draft root | `$MAB_DATA_ROOT/vault/staging` |
+| `MAB_IMPORT_ALLOWED_ROOTS` | semicolon/newline-delimited roots allowed for `import-resource` source reads | optional; when unset, legacy local-operator behavior permits any readable process path |
+| `MAB_IMPORT_ALLOWED_ROOTS_JSON` | JSON array form of allowed import roots | optional; takes precedence over `MAB_IMPORT_ALLOWED_ROOTS` |
 | `MAB_SQLITE_PATH` | SQLite path | `$MAB_DATA_ROOT/state/mimisbrunnr.sqlite` |
 | `MAB_QDRANT_URL` | Qdrant base URL | `http://127.0.0.1:6333` |
 | `MAB_QDRANT_COLLECTION` | Qdrant collection | `mimisbrunnr_chunks` |

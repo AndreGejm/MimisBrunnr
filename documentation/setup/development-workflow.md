@@ -25,8 +25,11 @@ corepack pnpm test
 Use the narrower scripts when they fit the slice you changed:
 
 ```bash
+corepack pnpm test:interface-docs
 corepack pnpm test:transport
 corepack pnpm test:command-surface
+corepack pnpm test:security-audit
+corepack pnpm security:audit
 corepack pnpm test:installer-codex-smoke
 corepack pnpm test:voltagent-contracts
 corepack pnpm test:voltagent-smoke
@@ -95,6 +98,36 @@ If a capability becomes externally reachable:
 - add or extend transport tests
 - update the matching docs under `documentation/apps/*` and
   `documentation/reference/interfaces.md`
+- run `corepack pnpm test:interface-docs` so the tracked HTTP interface docs
+  stay aligned with the route definitions exported from `apps/mimir-api/src/server.ts`
+
+### Codesight and interface maps
+
+`.codesight/` is a local generated artifact and is ignored by git. Do not edit
+its route map by hand. When the HTTP route surface changes, update the tracked
+interface docs and regenerate the local Codesight route artifacts from source:
+
+```bash
+corepack pnpm codesight:routes
+corepack pnpm codesight:routes:check
+corepack pnpm test:interface-docs
+```
+
+`codesight:routes` builds the workspace, reads the route definitions exported by
+`apps/mimir-api/src/server.ts`, and rewrites `.codesight/routes.md` plus the
+route section in `.codesight/CODESIGHT.md` when those local files exist.
+
+### Dependency advisories
+
+Run `corepack pnpm security:audit` after dependency changes. The script parses
+`pnpm audit --audit-level moderate --json` and fails on any advisory that is not
+explicitly allowed in `scripts/audit-security.mjs`.
+
+The current allowlist is intentionally narrow: it permits only the known
+transitive `GHSA-w5hq-g745-h8pq` advisory for `@voltagent/core 2.7.x` resolving
+to `uuid 9.0.1` along the documented workspace paths. Do not replace this with a
+blanket `pnpm audit` ignore. Remove the exception when VoltAgent publishes a
+compatible patched dependency.
 
 ### Toolbox policy and broker work
 
@@ -127,7 +160,8 @@ Useful current-state references:
 
 ## Constraints to remember
 
-- there is no tracked CI workflow doing this verification for you
+- the tracked CI workflow is focused on core quality; it is not a full release
+  publication pipeline
 - there is no tracked migration runner for SQLite changes
 - there is no cross-platform one-shot bootstrap script
 - the Windows installer `prepare-repo-workspace` path requires a clean worktree

@@ -138,12 +138,15 @@ change.
 ```bash
 corepack pnpm cli -- version
 
-corepack pnpm cli -- search-context --json "{\"query\":\"toolbox rollout readiness\",\"budget\":{\"maxTokens\":1200,\"maxSources\":4,\"maxRawExcerpts\":1,\"maxSummarySentences\":4},\"corpusIds\":[\"general_notes\",\"mimisbrunnr\"]}"
+corepack pnpm cli -- search-context --json "{\"query\":\"toolbox rollout readiness\",\"corpusIds\":[\"general_notes\",\"mimisbrunnr\"]}"
 
 corepack pnpm cli -- list-toolboxes --json "{}"
 
 corepack pnpm cli -- sync-toolbox-runtime --json "{}"
 ```
+
+`search-context`, `assemble-agent-context`, and `fetch-decision-summary` use
+the shared default context budget when `budget` is omitted.
 
 ## Canonical docs
 

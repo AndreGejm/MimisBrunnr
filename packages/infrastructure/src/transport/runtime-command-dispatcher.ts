@@ -75,11 +75,11 @@ const RUNTIME_COMMAND_HANDLERS: Record<RuntimeCliCommandName, RuntimeCommandHand
       request as unknown as AssembleAgentContextRequest
     ),
   "list-context-tree": async (request, container) =>
-    container.services.contextNamespaceService.listTree(
+    container.orchestrator.listContextTree(
       request as unknown as ListContextTreeRequest
     ),
   "read-context-node": async (request, container) =>
-    container.services.contextNamespaceService.readNode(
+    container.orchestrator.readContextNode(
       request as unknown as ReadContextNodeRequest
     ),
   "get-context-packet": async (request, container) =>

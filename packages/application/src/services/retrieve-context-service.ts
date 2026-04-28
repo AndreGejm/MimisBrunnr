@@ -117,12 +117,13 @@ export class RetrieveContextService {
         finalLimit: Math.max(8, budget.maxSources * 3),
         tagFilters: request.tagFilters
       });
-      const rankedCandidates = await this.rerankCandidates(
+      const rerankResult = await this.rerankCandidates(
         request.query,
         intent,
         fusedCandidates,
         Math.max(6, budget.maxSources * 2)
       );
+      const rankedCandidates = rerankResult.candidates;
 
       const answerability = await this.queryIntentService.assessAnswerability(
         request.query,
@@ -141,7 +142,9 @@ export class RetrieveContextService {
         answerability
       );
       const packet = packetResponse.packet;
-      const warnings: string[] = [];
+      const warnings: string[] = [
+        ...rerankResult.warnings
+      ];
       const selectedCandidates = selectDeliveredCandidates(
         rankedCandidates,
         packet.evidence
@@ -167,6 +170,7 @@ export class RetrieveContextService {
       } else if (answerability === "needs_escalation" && !this.paidEscalationProvider) {
         warnings.push("No paid escalation provider is configured for follow-up reasoning.");
       }
+      warnings.push(...escalation.warnings);
 
       const auditResult = await this.auditHistoryService?.recordAction({
         actionType: "retrieve_context",
@@ -324,20 +328,29 @@ export class RetrieveContextService {
     intent: QueryIntent,
     candidates: ContextCandidate[],
     limit: number
-  ): Promise<ContextCandidate[]> {
+  ): Promise<{ candidates: ContextCandidate[]; warnings: string[] }> {
     if (!this.rerankerProvider || candidates.length <= limit) {
-      return candidates.slice(0, limit);
+      return {
+        candidates: candidates.slice(0, limit),
+        warnings: []
+      };
     }
 
     try {
-      return await this.rerankerProvider.rerankCandidates({
-        query,
-        intent,
-        candidates,
-        limit
-      });
+      return {
+        candidates: await this.rerankerProvider.rerankCandidates({
+          query,
+          intent,
+          candidates,
+          limit
+        }),
+        warnings: []
+      };
     } catch {
-      return candidates.slice(0, limit);
+      return {
+        candidates: candidates.slice(0, limit),
+        warnings: ["Reranker provider failed; fused ranking fallback was used."]
+      };
     }
   }
 
@@ -348,13 +361,17 @@ export class RetrieveContextService {
   ): Promise<{
     summary?: string;
     telemetry?: PaidExecutionTelemetry;
+    warnings: string[];
   }> {
     if (answerability === "local_answer") {
-      return {};
+      return {
+        warnings: []
+      };
     }
 
     if (!this.paidEscalationProvider) {
       return {
+        warnings: [],
         telemetry: {
           providerId: "disabled",
           timeoutMs: 0,
@@ -374,10 +391,12 @@ export class RetrieveContextService {
       const summary = await this.paidEscalationProvider.summarizeUncertainty(query, evidence);
       return {
         summary,
+        warnings: [],
         telemetry: this.paidEscalationProvider.consumePaidExecutionTelemetry?.()
       };
     } catch {
       return {
+        warnings: ["Paid escalation provider failed; local uncertainty summary was used."],
         telemetry: this.paidEscalationProvider.consumePaidExecutionTelemetry?.()
       };
     }

@@ -20,8 +20,10 @@ import {
   type ListAgentTracesResponse,
   type ListAiToolsRequest,
   type ListAiToolsResponse,
+  type ListContextTreeRequest,
   type PromoteNoteRequest,
   type QueryHistoryRequest,
+  type ReadContextNodeRequest,
   type RetrieveContextRequest,
   type SearchSessionArchivesRequest,
   type ServiceResult,
@@ -92,6 +94,22 @@ export class MimirOrchestrator {
     this.assertAuthorized("assemble_agent_context", request.actor);
     this.assertMimisbrunnrRoute("assemble_agent_context");
     return this.mimisbrunnrController.assembleAgentContext(request);
+  }
+
+  async listContextTree(
+    request: ListContextTreeRequest
+  ) {
+    this.assertAuthorized("list_context_tree", request.actor);
+    this.assertMimisbrunnrRoute("list_context_tree");
+    return this.mimisbrunnrController.listContextTree(request);
+  }
+
+  async readContextNode(
+    request: ReadContextNodeRequest
+  ) {
+    this.assertAuthorized("read_context_node", request.actor);
+    this.assertMimisbrunnrRoute("read_context_node");
+    return this.mimisbrunnrController.readContextNode(request);
   }
 
   async draftNote(
@@ -235,6 +253,8 @@ export class MimirOrchestrator {
       | "search_context"
       | "search_session_archives"
       | "assemble_agent_context"
+      | "list_context_tree"
+      | "read_context_node"
       | "get_context_packet"
       | "fetch_decision_summary"
       | "draft_note"

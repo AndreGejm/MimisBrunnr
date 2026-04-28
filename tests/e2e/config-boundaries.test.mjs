@@ -80,6 +80,27 @@ test("loadEnvironment matches the layered config composition", () => {
   assert.deepEqual(infrastructure.loadEnvironment(env), composed);
 });
 
+test("loadStorageConfig parses optional import allowed roots", () => {
+  const jsonRoots = loadStorageConfig(envFixture({
+    MAB_IMPORT_ALLOWED_ROOTS_JSON: JSON.stringify([
+      "C:/trusted/imports",
+      "D:/shared/docs"
+    ])
+  }));
+  assert.deepEqual(jsonRoots.importAllowedRoots, [
+    "C:/trusted/imports",
+    "D:/shared/docs"
+  ]);
+
+  const delimitedRoots = loadStorageConfig(envFixture({
+    MAB_IMPORT_ALLOWED_ROOTS: "C:/trusted/imports;D:/shared/docs"
+  }));
+  assert.deepEqual(delimitedRoots.importAllowedRoots, [
+    "C:/trusted/imports",
+    "D:/shared/docs"
+  ]);
+});
+
 test("loadProviderConfig preserves alias precedence and role-bound model overrides", () => {
   const provider = loadProviderConfig(envFixture({
     MAB_OLLAMA_REASONING_MODEL: "legacy-reasoning-model",

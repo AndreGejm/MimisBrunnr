@@ -7,7 +7,7 @@ import type { RetrievalHealthReport } from "./retrieve-context.contract.js";
 export interface AssembleAgentContextRequest {
   actor: ActorContext;
   query: string;
-  budget: ContextBudget;
+  budget?: ContextBudget;
   corpusIds: CorpusId[];
   includeTrace?: boolean;
   includeSessionArchives?: boolean;

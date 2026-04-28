@@ -1,5 +1,6 @@
 import type {
   AgentContextAssemblyService,
+  ContextNamespaceService,
   DecisionSummaryService,
   ContextPacketService,
   RetrieveContextService
@@ -9,6 +10,8 @@ import type {
   AssembleContextPacketRequest,
   AssembleContextPacketResponse,
   GetDecisionSummaryRequest,
+  ListContextTreeRequest,
+  ReadContextNodeRequest,
   RetrieveContextRequest
 } from "@mimir/contracts";
 export class MimisbrunnrRetrievalController {
@@ -16,7 +19,8 @@ export class MimisbrunnrRetrievalController {
     private readonly retrieveContextService: RetrieveContextService,
     private readonly decisionSummaryService: DecisionSummaryService,
     private readonly contextPacketService: ContextPacketService,
-    private readonly agentContextAssemblyService: AgentContextAssemblyService
+    private readonly agentContextAssemblyService: AgentContextAssemblyService,
+    private readonly contextNamespaceService: ContextNamespaceService
   ) {}
 
   async searchContext(
@@ -35,6 +39,18 @@ export class MimisbrunnrRetrievalController {
     request: AssembleAgentContextRequest
   ) {
     return this.agentContextAssemblyService.assembleAgentContext(request);
+  }
+
+  async listContextTree(
+    request: ListContextTreeRequest
+  ) {
+    return this.contextNamespaceService.listTree(request);
+  }
+
+  async readContextNode(
+    request: ReadContextNodeRequest
+  ) {
+    return this.contextNamespaceService.readNode(request);
   }
 
   async getContextPacket(

@@ -67,6 +67,10 @@ const expectedSystemCommands = [
   "describe-toolbox",
   "freshness-status",
   "issue-auth-token",
+  "scaffold-toolbox",
+  "scaffold-toolbox-band",
+  "preview-toolbox",
+  "list-toolbox-servers",
   "list-active-toolbox",
   "list-active-tools",
   "list-toolboxes",
@@ -75,6 +79,7 @@ const expectedSystemCommands = [
   "revoke-auth-tokens",
   "set-auth-issuer-state",
   "sync-mcp-profiles",
+  "sync-toolbox-runtime",
   "sync-toolbox-client"
 ];
 const expectedAuthorizationRoles = new Map([
@@ -250,6 +255,8 @@ test("runtime dispatcher covers every cataloged runtime command", async () => {
       searchContext: responseFor("search-context"),
       searchSessionArchives: responseFor("search-session-archives"),
       assembleAgentContext: responseFor("assemble-agent-context"),
+      listContextTree: responseFor("list-context-tree"),
+      readContextNode: responseFor("read-context-node"),
       getContextPacket: responseFor("get-context-packet"),
       fetchDecisionSummary: responseFor("fetch-decision-summary"),
       draftNote: responseFor("draft-note"),
@@ -283,6 +290,54 @@ test("runtime dispatcher covers every cataloged runtime command", async () => {
       request
     });
   }
+});
+
+test("runtime dispatcher routes namespace reads through the orchestrator boundary", async () => {
+  const actor = {
+    actorId: "namespace-reader",
+    actorRole: "retrieval",
+    transport: "internal",
+    source: "command-catalog-test",
+    requestId: "namespace-boundary-test",
+    initiatedAt: "2026-01-01T00:00:00.000Z"
+  };
+  const responseFor = (commandName) => async (request) => ({
+    command: commandName,
+    request
+  });
+  const failIfCalled = () => {
+    throw new Error("Context namespace service was called directly.");
+  };
+  const container = {
+    toolboxSessionPolicyEnforcer: {
+      authorize() {}
+    },
+    orchestrator: {
+      listContextTree: responseFor("list-context-tree"),
+      readContextNode: responseFor("read-context-node")
+    },
+    services: {
+      contextNamespaceService: {
+        listTree: failIfCalled,
+        readNode: failIfCalled
+      }
+    }
+  };
+
+  assert.deepEqual(
+    await dispatchRuntimeCommand("list-context-tree", { actor }, container),
+    {
+      command: "list-context-tree",
+      request: { actor }
+    }
+  );
+  assert.deepEqual(
+    await dispatchRuntimeCommand("read-context-node", { actor, uri: "mimir://note/example" }, container),
+    {
+      command: "read-context-node",
+      request: { actor, uri: "mimir://note/example" }
+    }
+  );
 });
 
 test("command surface inventory reports a fully aligned runtime surface", () => {

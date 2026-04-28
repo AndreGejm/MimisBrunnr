@@ -11,6 +11,7 @@ export interface AppEnvironment {
   release: ReleaseMetadata;
   vaultRoot: string;
   stagingRoot: string;
+  importAllowedRoots?: string[];
   sqlitePath: string;
   qdrantUrl: string;
   qdrantCollection: string;

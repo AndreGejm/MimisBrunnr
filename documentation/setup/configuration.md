@@ -26,6 +26,11 @@ Default values from `packages/infrastructure/src/config/env.ts`:
 If you want repo-local state, override `MAB_VAULT_ROOT`, `MAB_STAGING_ROOT`,
 and `MAB_SQLITE_PATH`.
 
+`import-resource` is a local operator flow. By default it preserves legacy
+behavior and can read any path the process can read after auth succeeds. Set
+`MAB_IMPORT_ALLOWED_ROOTS` or `MAB_IMPORT_ALLOWED_ROOTS_JSON` to restrict import
+source reads to explicit directories.
+
 ## Provider defaults
 
 Generic runtime defaults:

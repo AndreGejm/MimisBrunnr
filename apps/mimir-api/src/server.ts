@@ -115,6 +115,46 @@ export interface RuntimeHttpRouteDefinition {
   defaultActorRole: ActorRole;
 }
 
+export interface HttpRouteDefinition {
+  path: string;
+  method: "GET" | "POST";
+  kind: "health" | "system" | "runtime";
+  tags: string[];
+  commandName?: RouteName;
+  defaultActorRole?: ActorRole;
+}
+
+export function getHttpRouteDefinitions(): HttpRouteDefinition[] {
+  return Object.entries(ROUTES).map(([path, route]) => {
+    if (route.healthMode) {
+      return {
+        path,
+        method: route.method,
+        kind: "health",
+        tags: ["health", route.healthMode]
+      };
+    }
+
+    if (route.name) {
+      return {
+        path,
+        method: route.method,
+        kind: "runtime",
+        tags: ["runtime", `command:${route.name}`, `role:${DEFAULT_ACTOR_ROLE[route.name]}`],
+        commandName: route.name,
+        defaultActorRole: DEFAULT_ACTOR_ROLE[route.name]
+      };
+    }
+
+    return {
+      path,
+      method: route.method,
+      kind: "system",
+      tags: tagsForSystemRoute(path)
+    };
+  });
+}
+
 export function getRuntimeHttpRouteDefinitions(): RuntimeHttpRouteDefinition[] {
   const routeByCommandName = new Map<RouteName, { path: string; method: "GET" | "POST" }>();
 
@@ -140,6 +180,20 @@ export function getRuntimeHttpRouteDefinitions(): RuntimeHttpRouteDefinition[] {
       defaultActorRole: DEFAULT_ACTOR_ROLE[command.cliName]
     };
   });
+}
+
+function tagsForSystemRoute(path: string): string[] {
+  const tags = ["system"];
+  if (path.includes("/auth")) {
+    tags.push("auth");
+  }
+  if (path.includes("/freshness")) {
+    tags.push("freshness");
+  }
+  if (path.includes("/version")) {
+    tags.push("version");
+  }
+  return tags;
 }
 
 export interface MimirApiServer {

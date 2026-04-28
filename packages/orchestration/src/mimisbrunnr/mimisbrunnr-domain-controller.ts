@@ -9,8 +9,10 @@ import type {
   DraftNoteRequest,
   GetDecisionSummaryRequest,
   ImportResourceRequest,
+  ListContextTreeRequest,
   PromoteNoteRequest,
   QueryHistoryRequest,
+  ReadContextNodeRequest,
   RetrieveContextRequest,
   SearchSessionArchivesRequest,
   ValidateNoteRequest,
@@ -48,6 +50,18 @@ export class MimisbrunnrDomainController {
     request: AssembleAgentContextRequest
   ) {
     return this.retrievalController.assembleAgentContext(request);
+  }
+
+  async listContextTree(
+    request: ListContextTreeRequest
+  ) {
+    return this.retrievalController.listContextTree(request);
+  }
+
+  async readContextNode(
+    request: ReadContextNodeRequest
+  ) {
+    return this.retrievalController.readContextNode(request);
   }
 
   async draftNote(

@@ -69,11 +69,39 @@ class ContentLengthTransport {
   }
 
   send(message: unknown): void {
-    this.output.write(`${JSON.stringify(message)}\n`);
+    const body = JSON.stringify(message);
+    this.output.write(`Content-Length: ${Buffer.byteLength(body, "utf8")}\r\n\r\n${body}`);
   }
 
   private drain(): void {
     while (true) {
+      const headerText = this.buffer.toString("utf8", 0, Math.min(this.buffer.length, 256));
+      if (/^Content-Length:/i.test(headerText)) {
+        const separator = this.buffer.indexOf("\r\n\r\n");
+        if (separator === -1) {
+          return;
+        }
+
+        const header = this.buffer.toString("utf8", 0, separator);
+        const match = header.match(/^Content-Length:\s*(\d+)$/im);
+        if (!match) {
+          throw new Error("Missing Content-Length header in MCP request.");
+        }
+
+        const contentLength = Number.parseInt(match[1], 10);
+        const totalLength = separator + 4 + contentLength;
+        if (this.buffer.length < totalLength) {
+          return;
+        }
+
+        const parsed = JSON.parse(
+          this.buffer.subarray(separator + 4, totalLength).toString("utf8")
+        ) as unknown;
+        this.buffer = this.buffer.subarray(totalLength);
+        this.emit(parsed);
+        continue;
+      }
+
       const lineBreakIndex = this.buffer.indexOf("\n");
       if (lineBreakIndex === -1) {
         return;
@@ -83,9 +111,13 @@ class ContentLengthTransport {
       this.buffer = this.buffer.subarray(lineBreakIndex + 1);
       const parsed = JSON.parse(line) as unknown;
 
-      for (const listener of this.listeners) {
-        void listener(parsed);
-      }
+      this.emit(parsed);
+    }
+  }
+
+  private emit(message: unknown): void {
+    for (const listener of this.listeners) {
+      void listener(message);
     }
   }
 }

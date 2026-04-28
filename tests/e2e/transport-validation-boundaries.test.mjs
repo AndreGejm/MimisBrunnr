@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  DEFAULT_CONTEXT_BUDGET
+} from "../../packages/contracts/dist/index.js";
+import {
   TransportValidationError,
   validateIssueActorTokenControlRequest,
   validateRevokeIssuedActorTokensControlRequest,
@@ -55,6 +58,28 @@ test("transport validation accepts tools-package-plan requests", () => {
   });
 
   assert.deepEqual(request.ids, ["aider"]);
+});
+
+test("transport validation applies the default context budget to retrieval entry points", () => {
+  const searchRequest = validateTransportRequest("search-context", {
+    query: "architecture notes",
+    corpusIds: ["mimisbrunnr"]
+  });
+  const assemblyRequest = validateTransportRequest("assemble-agent-context", {
+    query: "handoff context",
+    corpusIds: ["general_notes"]
+  });
+
+  assert.deepEqual(searchRequest.budget, DEFAULT_CONTEXT_BUDGET);
+  assert.deepEqual(assemblyRequest.budget, DEFAULT_CONTEXT_BUDGET);
+});
+
+test("transport validation applies the default context budget to decision summaries", () => {
+  const request = validateTransportRequest("fetch-decision-summary", {
+    topic: "release posture"
+  });
+
+  assert.deepEqual(request.budget, DEFAULT_CONTEXT_BUDGET);
 });
 
 test("transport validation accepts bounded bulk auth token revocation requests", () => {

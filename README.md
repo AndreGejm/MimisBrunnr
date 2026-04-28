@@ -39,7 +39,7 @@ The tracked repository currently implements:
 
 The tracked repository does not currently include:
 
-- a full tracked CI/CD pipeline for docs, builds, tests, packaging, and release publication
+- a full tracked CI/CD pipeline for packaging and release publication
 - Kubernetes, Helm, Terraform, or deployment descriptors beyond the tracked local Docker profiles
 - a tracked migration system for SQLite
 - a tracked dotenv loader for Node processes
@@ -359,12 +359,29 @@ validation step, and MCP client snippet.
 ### CLI
 
 - `version`
+- `auth-issuers`
 - `auth-status`
 - `auth-issued-tokens`
 - `auth-introspect-token`
 - `freshness-status`
 - `issue-auth-token`
 - `revoke-auth-token`
+- `revoke-auth-tokens`
+- `set-auth-issuer-state`
+- `check-mcp-profiles`
+- `list-toolbox-servers`
+- `scaffold-toolbox`
+- `scaffold-toolbox-band`
+- `preview-toolbox`
+- `sync-mcp-profiles`
+- `sync-toolbox-runtime`
+- `sync-toolbox-client`
+- `list-toolboxes`
+- `describe-toolbox`
+- `request-toolbox-activation`
+- `list-active-toolbox`
+- `list-active-tools`
+- `deactivate-toolbox`
 - `execute-coding-task`
 - `list-agent-traces`
 - `show-tool-output`
@@ -420,7 +437,10 @@ See `documentation/operations/running.md` for the current health model and runti
 ```bash
 corepack pnpm build
 corepack pnpm typecheck
+corepack pnpm test:interface-docs
+corepack pnpm test:command-surface
 corepack pnpm test:transport
+corepack pnpm security:audit
 corepack pnpm test
 py -3 -m pytest runtimes/local_experts/tests/test_safety_gate.py -v   # Windows
 python3 -m pytest runtimes/local_experts/tests/test_safety_gate.py -v # macOS/Linux
@@ -428,6 +448,30 @@ python3 -m pytest runtimes/local_experts/tests/test_safety_gate.py -v # macOS/Li
 
 `corepack pnpm test` currently expands to `pnpm test:e2e`, which first runs
 `pnpm build` and then executes the tracked end-to-end suite.
+
+### Maintenance and CI gates
+
+The focused GitHub Actions gate is `.github/workflows/core-quality.yml`. It runs
+typecheck, interface-documentation drift checks, security-audit classification,
+command-surface checks, and transport tests on changes that affect the core
+runtime, docs, package metadata, or those test surfaces.
+
+Route documentation is source-derived. `apps/mimir-api/src/server.ts` exposes
+the HTTP route definitions used by `documentation/reference/interfaces.md` tests
+and by the local Codesight route generator:
+
+```bash
+corepack pnpm codesight:routes       # regenerate ignored local .codesight route artifacts
+corepack pnpm codesight:routes:check # compare local generated artifacts with source
+corepack pnpm test:interface-docs    # ensure tracked interface docs list every HTTP route
+```
+
+Dependency advisory handling is also explicit. `corepack pnpm security:audit`
+runs `pnpm audit --audit-level moderate --json` and allows only the documented
+temporary VoltAgent transitive advisory for `@voltagent/core 2.7.x -> uuid
+9.0.1`. New advisories, widened paths, or a changed version pattern fail the
+gate. Remove that exception in `scripts/audit-security.mjs` when VoltAgent ships
+a compatible patched dependency.
 
 ## Repository structure
 
@@ -469,7 +513,7 @@ useful for rollout context, but they are not release contract docs.
 
 - namespace browsing is currently backed by rows in the `notes` table; imported jobs and session archives are stored, but they are not exposed through the namespace tree
 - the Docker MCP session profile still assumes Qdrant and the model endpoint are managed intentionally outside the session container
-- tracked GitHub Actions currently cover targeted VoltAgent contract and upstream canary checks, but there is no full release pipeline validating docs, builds, tests, packaging, and release publication together
+- tracked GitHub Actions cover the focused core-quality gate plus targeted VoltAgent contract and upstream canary checks, but there is no full release pipeline validating packaging and release publication together
 
 ## AI-agent navigation
 

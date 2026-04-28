@@ -1,0 +1,66 @@
+name: core-quality
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/core-quality.yml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "tsconfig*.json"
+      - "apps/**"
+      - "packages/**"
+      - ".codesight/**"
+      - "tests/e2e/command-catalog.test.mjs"
+      - "tests/e2e/codesight-route-map.test.mjs"
+      - "tests/e2e/security-audit.test.mjs"
+      - "tests/e2e/transport-adapters.test.mjs"
+      - "tests/e2e/mcp-adapter.test.mjs"
+      - "scripts/audit-security.mjs"
+      - "scripts/update-codesight-routes.mjs"
+      - "scripts/lib/command-surface-report.mjs"
+      - "scripts/report-command-surface.mjs"
+      - "documentation/reference/interfaces.md"
+      - "README.md"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/core-quality.yml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "tsconfig*.json"
+      - "apps/**"
+      - "packages/**"
+      - ".codesight/**"
+      - "tests/e2e/command-catalog.test.mjs"
+      - "tests/e2e/codesight-route-map.test.mjs"
+      - "tests/e2e/security-audit.test.mjs"
+      - "tests/e2e/transport-adapters.test.mjs"
+      - "tests/e2e/mcp-adapter.test.mjs"
+      - "scripts/audit-security.mjs"
+      - "scripts/update-codesight-routes.mjs"
+      - "scripts/lib/command-surface-report.mjs"
+      - "scripts/report-command-surface.mjs"
+      - "documentation/reference/interfaces.md"
+      - "README.md"
+
+jobs:
+  core-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.7.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test:interface-docs
+      - run: pnpm test:security-audit
+      - run: pnpm security:audit
+      - run: pnpm test:command-surface
+      - run: pnpm test:transport

@@ -96,9 +96,15 @@ const TRANSPORTS: ReadonlyArray<TransportKind> = [
 async function main(): Promise<void> {
   const parsed = parseCli(process.argv.slice(2));
 
-  if (parsed.options.help || !parsed.command) {
+  if (parsed.options.help) {
     printUsage();
-    process.exitCode = parsed.command ? 0 : 1;
+    process.exitCode = 0;
+    return;
+  }
+
+  if (!parsed.command) {
+    printUsage();
+    process.exitCode = 1;
     return;
   }
 
@@ -1454,7 +1460,8 @@ Notes:
   - reject-note expects JSON input with draftNoteId and optional reviewNotes.
   - create-session-archive expects JSON input with sessionId and a non-empty messages array of { role, content } objects.
   - search-session-archives expects query and optional sessionId, limit, and maxTokens.
-  - assemble-agent-context expects query, corpusIds, budget, and optional session recall controls.
+  - search-context, assemble-agent-context, and fetch-decision-summary use the default context budget when budget is omitted.
+  - assemble-agent-context expects query and corpusIds, plus optional budget and session recall controls.
   - list-agent-traces expects requestId.
   - show-tool-output expects outputId.
   - list-ai-tools accepts optional JSON input with ids (string array), includeEnvironment (boolean), and includeRuntime (boolean).

@@ -7,6 +7,7 @@ import process from "node:process";
 import test from "node:test";
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { CLI_COMMAND_NAMES } from "../../apps/mimir-cli/dist/command-surface.js";
 
 test("mimir-cli exposes shared release metadata through the version command", async () => {
   const result = await runNodeCommand(
@@ -46,6 +47,21 @@ test("mimir-cli accepts a leading argument separator for root workspace passthro
   assert.equal(payload.ok, true);
   assert.equal(payload.release.applicationName, "mimir");
   assert.equal(payload.release.version, "0.2.1");
+});
+
+test("mimir-cli prints root help with a successful exit code", async () => {
+  const result = await runNodeCommand(
+    path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
+    ["--help"],
+    process.env
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.match(result.stdout, /mimir CLI/);
+  assert.match(result.stdout, /Commands:/);
+  for (const commandName of CLI_COMMAND_NAMES) {
+    assert.ok(result.stdout.includes(commandName), `Expected help output to list '${commandName}'.`);
+  }
 });
 
 

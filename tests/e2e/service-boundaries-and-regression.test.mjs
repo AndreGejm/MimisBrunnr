@@ -1686,6 +1686,116 @@ test("retrieve context uses the paid escalation provider to enrich uncertainty w
   });
 });
 
+test("retrieve context warns when paid escalation fails after local evidence is insufficient", async (t) => {
+  const { container } = await createHarness(t);
+
+  const retrieveContextService = new application.RetrieveContextService({
+    lexicalIndex: container.ports.lexicalIndex,
+    metadataControlStore: container.ports.metadataControlStore,
+    vectorIndex: container.ports.vectorIndex,
+    embeddingProvider: container.ports.embeddingProvider,
+    localReasoningProvider: container.ports.localReasoningProvider,
+    auditHistoryService: container.services.auditHistoryService,
+    paidEscalationProvider: {
+      providerId: "paid-escalation-test",
+      async classifyIntent() {
+        return "fact_lookup";
+      },
+      async assessAnswerability() {
+        return "needs_escalation";
+      },
+      async summarizeUncertainty() {
+        throw new Error("paid provider unavailable");
+      },
+      consumePaidExecutionTelemetry() {
+        return {
+          providerId: "voltagent_agent",
+          modelId: "openai/gpt-4.1-mini",
+          timeoutMs: 12_000,
+          outcomeClass: "error",
+          errorCode: "provider_unavailable",
+          fallbackApplied: true,
+          retryCount: 1
+        };
+      }
+    },
+    rerankerProvider: container.ports.rerankerProvider
+  });
+
+  const result = await retrieveContextService.retrieveContext({
+    actor: actor("retrieval"),
+    query: "unmapped query with failing paid provider",
+    budget: {
+      maxTokens: 320,
+      maxSources: 2,
+      maxRawExcerpts: 1,
+      maxSummarySentences: 2
+    },
+    corpusIds: ["mimisbrunnr"],
+    requireEvidence: false
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.data.packet.answerability, "needs_escalation");
+  assert.ok(
+    result.warnings?.includes(
+      "Paid escalation provider failed; local uncertainty summary was used."
+    )
+  );
+});
+
+test("retrieve context warns when reranking fails and fused ranking is reused", async (t) => {
+  const { container } = await createHarness(t);
+
+  for (let index = 0; index < 8; index += 1) {
+    await createAndPromote(container, {
+      title: `Reranker Fallback ${index}`,
+      noteType: "architecture",
+      bodyHints: [
+        "Reranker fallback selected context should remain available.",
+        `Reranker fallback fixture ${index} preserves fused ranking.`
+      ],
+      scope: `reranker-fallback-${index}`
+    });
+  }
+
+  const retrieveContextService = new application.RetrieveContextService({
+    lexicalIndex: container.ports.lexicalIndex,
+    metadataControlStore: container.ports.metadataControlStore,
+    vectorIndex: container.ports.vectorIndex,
+    embeddingProvider: container.ports.embeddingProvider,
+    localReasoningProvider: container.ports.localReasoningProvider,
+    auditHistoryService: container.services.auditHistoryService,
+    rerankerProvider: {
+      providerId: "failing-reranker",
+      async rerankCandidates() {
+        throw new Error("reranker unavailable");
+      }
+    }
+  });
+
+  const result = await retrieveContextService.retrieveContext({
+    actor: actor("retrieval"),
+    query: "reranker fallback selected context preserves fused ranking",
+    budget: {
+      maxTokens: 320,
+      maxSources: 1,
+      maxRawExcerpts: 1,
+      maxSummarySentences: 2
+    },
+    corpusIds: ["mimisbrunnr"],
+    requireEvidence: false
+  });
+
+  assert.equal(result.ok, true);
+  assert.ok(result.data.packet.evidence.length >= 1);
+  assert.ok(
+    result.warnings?.includes(
+      "Reranker provider failed; fused ranking fallback was used."
+    )
+  );
+});
+
 test("retrieve context surfaces degraded vector mode explicitly while continuing lexical retrieval", async (t) => {
   const { container } = await createHarness(t);
 

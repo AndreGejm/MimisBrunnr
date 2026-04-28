@@ -210,7 +210,7 @@ runtime:
 
 The repository intentionally does not currently include:
 
-- GitHub Actions or another tracked CI system.
+- a full release-publication CI/CD pipeline.
 - Kubernetes, Helm, Terraform, or production deployment descriptors.
 - A tracked SQLite migration framework.
 - A tracked dotenv loader for Node apps.
@@ -1939,7 +1939,8 @@ Important request fields:
 
 - `query`: required search text.
 - `corpusIds`: one or more of `mimisbrunnr`, `general_notes`.
-- `budget`: token/source/excerpt/summary bounds.
+- `budget`: optional token/source/excerpt/summary bounds; the shared default
+  context budget is used when omitted.
 - `intentHint`: optional intent override hint.
 - `noteTypePriority`: optional type preference.
 - `tagFilters`: optional controlled tags.
@@ -2025,6 +2026,8 @@ corepack pnpm cli -- fetch-decision-summary --json '{
 
 Use decision summaries when an agent needs to understand prior design choices
 without reading unrelated implementation notes.
+The `budget` field is optional for this command and defaults to the shared
+context budget.
 
 ## 20. Namespace Tree And Nodes
 
@@ -2131,8 +2134,9 @@ It contains:
 - `<canonical-memory>` with canonical retrieval.
 - Optional `<session-recall authority="non_authoritative">`.
 
-Agent context assembly applies a hard maximum context budget. If the block is
-too large, it is truncated and marked.
+Agent context assembly applies a hard maximum context budget. If `budget` is
+omitted, it uses the shared default context budget. If the block is too large,
+it is truncated and marked.
 
 ## 23. Hermes-Inspired Local-Agent Improvements
 
@@ -2623,11 +2627,40 @@ Primary verification commands:
 
 ```powershell
 corepack pnpm typecheck
+corepack pnpm test:interface-docs
+corepack pnpm test:command-surface
+corepack pnpm test:security-audit
+corepack pnpm security:audit
 corepack pnpm test
 corepack pnpm run test:transport
 corepack pnpm run test:e2e
 corepack pnpm run test:eval:retrieval
 ```
+
+The focused GitHub Actions gate is `.github/workflows/core-quality.yml`. It runs
+typecheck, tracked interface-documentation checks, security-audit classification,
+the live security audit wrapper, command-surface checks, and transport tests.
+It is not a full release pipeline.
+
+Route-map maintenance:
+
+```powershell
+corepack pnpm codesight:routes
+corepack pnpm codesight:routes:check
+```
+
+The Codesight route artifacts under `.codesight/` are local generated files and
+are ignored by git. Regenerate them from the HTTP route definitions exported by
+`apps/mimir-api/src/server.ts`; do not hand-edit the generated route list.
+
+Security audit policy:
+
+- `corepack pnpm security:audit` parses `pnpm audit --audit-level moderate --json`.
+- Unknown advisories fail the command.
+- The only current exception is the temporary transitive `GHSA-w5hq-g745-h8pq`
+  path through `@voltagent/core 2.7.x -> uuid 9.0.1`.
+- Remove that exception from `scripts/audit-security.mjs` when VoltAgent ships a
+  compatible patched dependency.
 
 Docker operations:
 

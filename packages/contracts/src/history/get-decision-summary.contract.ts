@@ -5,7 +5,7 @@ import type { ContextBudget } from "../common/context-budget.js";
 export interface GetDecisionSummaryRequest {
   actor: ActorContext;
   topic: string;
-  budget: ContextBudget;
+  budget?: ContextBudget;
 }
 
 export interface GetDecisionSummaryResponse {

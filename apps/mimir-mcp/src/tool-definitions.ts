@@ -144,7 +144,7 @@ const UNORDERED_MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
     defaultActorRole: "retrieval",
     inputSchema: {
       type: "object",
-      required: ["query", "corpusIds", "budget"],
+      required: ["query", "corpusIds"],
       additionalProperties: true,
       properties: {
         actor: { type: "object" },
@@ -198,7 +198,7 @@ const UNORDERED_MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
     defaultActorRole: "retrieval",
     inputSchema: {
       type: "object",
-      required: ["query", "corpusIds", "budget"],
+      required: ["query", "corpusIds"],
       additionalProperties: true,
       properties: {
         actor: { type: "object" },
@@ -486,7 +486,7 @@ const UNORDERED_MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
     defaultActorRole: "retrieval",
     inputSchema: {
       type: "object",
-      required: ["topic", "budget"],
+      required: ["topic"],
       additionalProperties: true,
       properties: {
         actor: { type: "object" },

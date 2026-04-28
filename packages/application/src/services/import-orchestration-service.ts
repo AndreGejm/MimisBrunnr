@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import path, { basename, resolve } from "node:path";
 import type { ServiceResult } from "@mimir/contracts";
 import type { ImportJob } from "@mimir/domain";
 import type {
@@ -9,15 +9,38 @@ import type {
 } from "@mimir/contracts";
 import type { ImportJobStore } from "../ports/import-job-store.js";
 
-type ImportResourceErrorCode = "not_found" | "write_failed";
+type ImportResourceErrorCode = "forbidden" | "not_found" | "write_failed";
+
+export interface ImportOrchestrationServiceOptions {
+  allowedSourceRoots?: string[];
+}
 
 export class ImportOrchestrationService {
-  constructor(private readonly importJobStore: ImportJobStore) {}
+  private readonly allowedSourceRoots: string[];
+
+  constructor(
+    private readonly importJobStore: ImportJobStore,
+    options: ImportOrchestrationServiceOptions = {}
+  ) {
+    this.allowedSourceRoots = (options.allowedSourceRoots ?? [])
+      .map((root) => resolve(root))
+      .filter((root) => root.trim().length > 0);
+  }
 
   async importResource(
     request: ImportResourceRequest
   ): Promise<ServiceResult<ImportResourceResponse, ImportResourceErrorCode>> {
     const sourcePath = resolve(request.sourcePath);
+    if (!this.isAllowedSourcePath(sourcePath)) {
+      return {
+        ok: false,
+        error: {
+          code: "forbidden",
+          message: `Import source '${sourcePath}' is outside configured import roots.`
+        }
+      };
+    }
+
     let sourceText: string;
 
     try {
@@ -75,6 +98,22 @@ export class ImportOrchestrationService {
       };
     }
   }
+
+  private isAllowedSourcePath(sourcePath: string): boolean {
+    if (this.allowedSourceRoots.length === 0) {
+      return true;
+    }
+
+    const normalizedSourcePath = normalizeForPathComparison(sourcePath);
+    return this.allowedSourceRoots.some((root) => {
+      const normalizedRoot = normalizeForPathComparison(root);
+      const relativePath = path.relative(normalizedRoot, normalizedSourcePath);
+      return (
+        relativePath === "" ||
+        (!relativePath.startsWith("..") && !path.isAbsolute(relativePath))
+      );
+    });
+  }
 }
 
 function normalizeSourcePreview(sourceText: string): string {
@@ -83,4 +122,9 @@ function normalizeSourcePreview(sourceText: string): string {
     .replace(/\r\n?/g, "\n")
     .trim()
     .slice(0, 240);
+}
+
+function normalizeForPathComparison(value: string): string {
+  const resolved = resolve(value);
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }

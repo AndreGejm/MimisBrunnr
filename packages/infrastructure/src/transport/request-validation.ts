@@ -1,4 +1,5 @@
 import {
+  DEFAULT_CONTEXT_BUDGET,
   RUNTIME_COMMAND_DEFINITIONS,
   toCliCommandName,
   type RuntimeCliCommandName
@@ -140,7 +141,7 @@ const TRANSPORT_COMMAND_VALIDATORS: Record<RuntimeCliCommandName, TransportComma
   "search-context": (payload, actor) => ({
     actor,
     query: requireString(payload.query, "query"),
-    budget: validateBudget(payload.budget, "budget"),
+    budget: validateBudget(payload.budget, "budget", { defaultWhenMissing: true }),
     corpusIds: requireEnumArray(payload.corpusIds, "corpusIds", CORPORA, { ...CONTEXT_ALIAS_OPTIONS, minItems: 1 }),
     strategy: optionalEnum(payload.strategy, "strategy", RETRIEVAL_STRATEGIES),
     intentHint: optionalEnum(payload.intentHint, "intentHint", QUERY_INTENTS),
@@ -160,7 +161,7 @@ const TRANSPORT_COMMAND_VALIDATORS: Record<RuntimeCliCommandName, TransportComma
   "assemble-agent-context": (payload, actor) => ({
     actor,
     query: requireString(payload.query, "query"),
-    budget: validateBudget(payload.budget, "budget"),
+    budget: validateBudget(payload.budget, "budget", { defaultWhenMissing: true }),
     corpusIds: requireEnumArray(payload.corpusIds, "corpusIds", CORPORA, { ...CONTEXT_ALIAS_OPTIONS, minItems: 1 }),
     includeTrace: optionalBoolean(payload.includeTrace, "includeTrace"),
     includeSessionArchives: optionalBoolean(payload.includeSessionArchives, "includeSessionArchives"),
@@ -191,7 +192,7 @@ const TRANSPORT_COMMAND_VALIDATORS: Record<RuntimeCliCommandName, TransportComma
   "fetch-decision-summary": (payload, actor) => ({
     actor,
     topic: requireString(payload.topic, "topic"),
-    budget: validateBudget(payload.budget, "budget")
+    budget: validateBudget(payload.budget, "budget", { defaultWhenMissing: true })
   }),
   "draft-note": (payload, actor) => ({
     actor,
@@ -326,7 +327,15 @@ function validateActorOverride(value: unknown, field: string): JsonRecord {
   };
 }
 
-function validateBudget(value: unknown, field: string): JsonRecord {
+function validateBudget(
+  value: unknown,
+  field: string,
+  options: { defaultWhenMissing?: boolean } = {}
+): JsonRecord {
+  if (value === undefined && options.defaultWhenMissing) {
+    return { ...DEFAULT_CONTEXT_BUDGET };
+  }
+
   const budget = requireObject(value, field);
   return {
     maxTokens: requireInteger(budget.maxTokens, `${field}.maxTokens`, { min: 1 }),
