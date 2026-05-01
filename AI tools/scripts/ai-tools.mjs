@@ -966,6 +966,185 @@ async function cleanupCandidates(flags) {
   });
 }
 
+async function extractText(flags, positional) {
+  const filePathArg = positional[0];
+  if (!filePathArg) {
+    return baseEnvelope("extract-text", process.cwd(), {}, [], ["Missing file path."]);
+  }
+
+  const filePath = path.resolve(filePathArg);
+  const fileName = path.basename(filePath);
+  if (isSecretLikeFile(fileName)) {
+    return baseEnvelope("extract-text", path.dirname(filePath), {}, [], ["Refusing to extract text from a secret-like file."]);
+  }
+
+  const text = await readBoundedTextFile(filePath);
+  const maxChars = numberFlag(flags, "max-chars", DEFAULT_MAX_CHARS);
+  const extracted = truncate(text, maxChars);
+  return baseEnvelope("extract-text", path.dirname(filePath), {
+    source_path: filePath,
+    char_count: text.length,
+    line_count: text.split(/\r?\n/u).filter((line) => line.length > 0).length,
+    truncated: extracted.length < text.length,
+    text: extracted
+  });
+}
+
+async function extractLinks(flags, positional) {
+  const root = path.resolve(flags.root ? String(flags.root) : positional[0] ?? process.cwd());
+  const rootStat = await stat(root);
+  const maxItems = numberFlag(flags, "max-items", DEFAULT_MAX_ITEMS);
+  const links = [];
+
+  const inspectFile = async (fullPath, relativePath) => {
+    if (!/\.(md|mdx|html?)$/iu.test(relativePath)) {
+      return;
+    }
+    const text = await readBoundedTextFile(fullPath);
+    for (const link of extractMarkdownLinks(text)) {
+      const targetWithoutHash = link.target.split("#")[0];
+      const external = isExternalLink(link.target);
+      let exists = null;
+      if (!external && targetWithoutHash.length > 0) {
+        try {
+          await access(path.resolve(path.dirname(fullPath), targetWithoutHash), constants.R_OK);
+          exists = true;
+        } catch {
+          exists = false;
+        }
+      }
+      links.push({
+        path: relativePath,
+        line: link.line,
+        target: link.target,
+        external,
+        exists
+      });
+    }
+  };
+
+  if (rootStat.isFile()) {
+    await inspectFile(root, path.basename(root));
+  } else {
+    await walk(root, flags, async ({ fullPath, relativePath, entry }) => {
+      if (entry.isFile()) {
+        await inspectFile(fullPath, relativePath);
+      }
+    });
+  }
+
+  links.sort((left, right) => left.path.localeCompare(right.path) || left.line - right.line || left.target.localeCompare(right.target));
+  return baseEnvelope("extract-links", rootStat.isDirectory() ? root : path.dirname(root), {
+    links: links.slice(0, maxItems),
+    truncated: links.length > maxItems
+  });
+}
+
+function mediaTypeForExtension(extension) {
+  if ([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"].includes(extension)) {
+    return "image";
+  }
+  if ([".mp4", ".mov", ".mkv", ".webm", ".avi"].includes(extension)) {
+    return "video";
+  }
+  if ([".mp3", ".wav", ".flac", ".m4a", ".ogg"].includes(extension)) {
+    return "audio";
+  }
+  return null;
+}
+
+function mimeTypeForExtension(extension) {
+  const mimeTypes = {
+    ".avi": "video/x-msvideo",
+    ".flac": "audio/flac",
+    ".gif": "image/gif",
+    ".jpeg": "image/jpeg",
+    ".jpg": "image/jpeg",
+    ".m4a": "audio/mp4",
+    ".mkv": "video/x-matroska",
+    ".mov": "video/quicktime",
+    ".mp3": "audio/mpeg",
+    ".mp4": "video/mp4",
+    ".ogg": "audio/ogg",
+    ".png": "image/png",
+    ".svg": "image/svg+xml",
+    ".wav": "audio/wav",
+    ".webm": "video/webm",
+    ".webp": "image/webp"
+  };
+  return mimeTypes[extension] ?? "application/octet-stream";
+}
+
+async function readImageDimensions(fullPath, extension) {
+  const buffer = await readFile(fullPath);
+  if (extension === ".png" && buffer.length >= 24 && buffer.toString("ascii", 12, 16) === "IHDR") {
+    return {
+      width: buffer.readUInt32BE(16),
+      height: buffer.readUInt32BE(20)
+    };
+  }
+  if (extension === ".gif" && buffer.length >= 10) {
+    return {
+      width: buffer.readUInt16LE(6),
+      height: buffer.readUInt16LE(8)
+    };
+  }
+  if (extension === ".svg") {
+    const text = buffer.toString("utf8");
+    const width = /<svg[^>]*\swidth=["']?([0-9.]+)/iu.exec(text)?.[1];
+    const height = /<svg[^>]*\sheight=["']?([0-9.]+)/iu.exec(text)?.[1];
+    return {
+      width: width ? Number(width) : null,
+      height: height ? Number(height) : null
+    };
+  }
+  return { width: null, height: null };
+}
+
+async function mediaInfo(flags, positional) {
+  const root = path.resolve(flags.root ? String(flags.root) : positional[0] ?? process.cwd());
+  const rootStat = await stat(root);
+  const maxItems = numberFlag(flags, "max-items", DEFAULT_MAX_ITEMS);
+  const files = [];
+
+  const inspectFile = async (fullPath, relativePath) => {
+    const extension = path.extname(relativePath).toLowerCase();
+    const mediaType = mediaTypeForExtension(extension);
+    if (!mediaType) {
+      return;
+    }
+    const fileStat = await stat(fullPath);
+    const item = {
+      path: relativePath,
+      media_type: mediaType,
+      mime_type: mimeTypeForExtension(extension),
+      extension,
+      size_bytes: fileStat.size,
+      modified_at: fileStat.mtime.toISOString()
+    };
+    if (mediaType === "image") {
+      Object.assign(item, await readImageDimensions(fullPath, extension));
+    }
+    files.push(item);
+  };
+
+  if (rootStat.isFile()) {
+    await inspectFile(root, path.basename(root));
+  } else {
+    await walk(root, flags, async ({ fullPath, relativePath, entry }) => {
+      if (entry.isFile()) {
+        await inspectFile(fullPath, relativePath);
+      }
+    });
+  }
+
+  files.sort((left, right) => left.path.localeCompare(right.path));
+  return baseEnvelope("media-info", rootStat.isDirectory() ? root : path.dirname(root), {
+    files: files.slice(0, maxItems),
+    truncated: files.length > maxItems
+  });
+}
+
 function toMarkdown(payload) {
   const lines = [`# ${payload.tool}`, "", `Root: ${payload.root}`, ""];
   if (Array.isArray(payload.data.tools)) {
@@ -1001,7 +1180,7 @@ async function run() {
   if (!command || command === "help" || command === "--help") {
     return baseEnvelope("help", process.cwd(), {
       usage: "node \"AI tools/scripts/ai-tools.mjs\" <command> [args] [--json]",
-      commands: ["list-tools", "file-inventory", "tree-lite", "smart-search", "chunk-file", "log-summary", "diff-summary", "command-index", "config-map", "csv-profile", "extract-headings", "doc-check", "cleanup-candidates"]
+      commands: ["list-tools", "file-inventory", "tree-lite", "smart-search", "chunk-file", "log-summary", "diff-summary", "command-index", "config-map", "csv-profile", "extract-headings", "doc-check", "cleanup-candidates", "extract-text", "extract-links", "media-info"]
     });
   }
 
@@ -1043,6 +1222,15 @@ async function run() {
   }
   if (command === "cleanup-candidates") {
     return cleanupCandidates(flags);
+  }
+  if (command === "extract-text") {
+    return extractText(flags, positional);
+  }
+  if (command === "extract-links") {
+    return extractLinks(flags, positional);
+  }
+  if (command === "media-info") {
+    return mediaInfo(flags, positional);
   }
 
   return baseEnvelope(command, resolveRoot(flags), {}, [], [`Unknown command: ${command}`]);

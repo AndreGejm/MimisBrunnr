@@ -6,10 +6,11 @@ import path from "node:path";
 import { test } from "node:test";
 
 const launcherPath = path.join(process.cwd(), "AI tools", "scripts", "ai-tools.mjs");
+const aliasPath = path.join(process.cwd(), "AI tools", "scripts", "ai.mjs");
 
-function runAiTool(args, options = {}) {
+function runNodeScript(scriptPath, args, options = {}) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [launcherPath, ...args], {
+    const child = spawn(process.execPath, [scriptPath, ...args], {
       cwd: options.cwd ?? process.cwd(),
       env: { ...process.env, ...options.env },
       stdio: ["ignore", "pipe", "pipe"]
@@ -28,6 +29,14 @@ function runAiTool(args, options = {}) {
       resolve({ exitCode, stdout, stderr });
     });
   });
+}
+
+function runAiTool(args, options = {}) {
+  return runNodeScript(launcherPath, args, options);
+}
+
+function runAiAlias(args, options = {}) {
+  return runNodeScript(aliasPath, args, options);
 }
 
 async function createFixtureRoot(t) {
@@ -62,6 +71,18 @@ test("ai-tools list-tools returns machine-readable tool metadata", async () => {
   assert.ok(payload.data.tools.some((tool) => tool.name === "doc-check"));
   assert.ok(payload.data.tools.some((tool) => tool.name === "cleanup-candidates"));
   assert.ok(payload.data.tools.some((tool) => tool.name === "extract-headings"));
+  assert.ok(payload.data.tools.some((tool) => tool.name === "extract-text"));
+  assert.ok(payload.data.tools.some((tool) => tool.name === "extract-links"));
+  assert.ok(payload.data.tools.some((tool) => tool.name === "media-info"));
+});
+
+test("ai alias delegates to the shared launcher", async () => {
+  const result = await runAiAlias(["list-tools", "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "list-tools");
+  assert.ok(payload.data.tools.some((tool) => tool.name === "file-inventory"));
 });
 
 test("ai-tools file-inventory summarizes a workspace without dependency folders", async (t) => {
@@ -394,4 +415,81 @@ test("ai-tools cleanup-candidates stays dry-run and classifies temporary files",
   assert.ok(payload.data.safe_candidates.some((candidate) => candidate.path === "tmp/scratch.tmp"));
   assert.ok(payload.data.review_required.some((candidate) => candidate.path === "debug.log"));
   assert.equal(payload.data.deleted_files, 0);
+});
+
+test("ai-tools extract-text returns bounded text and refuses secret-like files", async (t) => {
+  const root = await createFixtureRoot(t);
+  const textPath = path.join(root, "docs", "extract.md");
+  const secretPath = path.join(root, ".env");
+  await writeFile(textPath, "Alpha line\nBeta line\nGamma line\n", "utf8");
+  await writeFile(secretPath, "SECRET_TOKEN=do-not-print\n", "utf8");
+
+  const result = await runAiTool(["extract-text", textPath, "--max-chars", "12", "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "extract-text");
+  assert.equal(payload.errors.length, 0);
+  assert.equal(payload.data.truncated, true);
+  assert.ok(payload.data.text.length <= 12);
+  assert.equal(payload.data.line_count, 3);
+
+  const secretResult = await runAiTool(["extract-text", secretPath, "--json"]);
+  assert.equal(secretResult.exitCode, 1);
+  const secretPayload = JSON.parse(secretResult.stdout);
+  assert.equal(JSON.stringify(secretPayload).includes("do-not-print"), false);
+});
+
+test("ai-tools extract-links collects Markdown links from files and folders", async (t) => {
+  const root = await createFixtureRoot(t);
+  await writeFile(
+    path.join(root, "docs", "links.md"),
+    [
+      "# Links",
+      "",
+      "[Guide](guide.md)",
+      "[Missing](missing.md)",
+      "[External](https://example.com)"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const result = await runAiTool(["extract-links", "--root", path.join(root, "docs"), "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "extract-links");
+  assert.equal(payload.errors.length, 0);
+  assert.ok(payload.data.links.some((link) => link.target === "guide.md" && link.exists === true));
+  assert.ok(payload.data.links.some((link) => link.target === "missing.md" && link.exists === false));
+  assert.ok(payload.data.links.some((link) => link.target === "https://example.com" && link.external === true));
+});
+
+test("ai-tools media-info reports basic image dimensions and media metadata", async (t) => {
+  const root = await createFixtureRoot(t);
+  const pngPath = path.join(root, "docs", "pixel.png");
+  const mp4Path = path.join(root, "docs", "clip.mp4");
+  const pngBytes = Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    0x00, 0x00, 0x00, 0x0d,
+    0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x02,
+    0x00, 0x00, 0x00, 0x03,
+    0x08, 0x02, 0x00, 0x00, 0x00
+  ]);
+  await writeFile(pngPath, pngBytes);
+  await writeFile(mp4Path, Buffer.from("not a real mp4 but enough for extension metadata"));
+
+  const result = await runAiTool(["media-info", "--root", root, "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "media-info");
+  assert.equal(payload.errors.length, 0);
+  const png = payload.data.files.find((file) => file.path === "docs/pixel.png");
+  const mp4 = payload.data.files.find((file) => file.path === "docs/clip.mp4");
+  assert.equal(png.width, 2);
+  assert.equal(png.height, 3);
+  assert.equal(png.media_type, "image");
+  assert.equal(mp4.media_type, "video");
 });

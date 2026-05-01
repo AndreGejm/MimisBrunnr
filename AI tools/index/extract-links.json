@@ -1,0 +1,13 @@
+{
+  "name": "extract-links",
+  "purpose": "Extract Markdown links from a file or folder with local existence checks and external-link flags.",
+  "script": "scripts/ai-tools.mjs",
+  "schema_version": "1.0",
+  "status": "draft",
+  "safe": true,
+  "mutates_files": false,
+  "requires_network": false,
+  "reads_secrets": false,
+  "default_output": "json",
+  "example": "node \"AI tools/scripts/ai-tools.mjs\" extract-links --root docs --json"
+}

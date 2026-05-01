@@ -1,0 +1,13 @@
+{
+  "name": "media-info",
+  "purpose": "Summarize image, audio, and video files with file metadata and basic image dimensions when available.",
+  "script": "scripts/ai-tools.mjs",
+  "schema_version": "1.0",
+  "status": "draft",
+  "safe": true,
+  "mutates_files": false,
+  "requires_network": false,
+  "reads_secrets": false,
+  "default_output": "json",
+  "example": "node \"AI tools/scripts/ai-tools.mjs\" media-info --root assets --json"
+}

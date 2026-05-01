@@ -31,6 +31,12 @@ The first shared launcher is:
 node "AI tools/scripts/ai-tools.mjs" <command> [options]
 ```
 
+Short alias:
+
+```bash
+node "AI tools/scripts/ai.mjs" <command> [options]
+```
+
 Available read-only commands:
 
 - `list-tools`: emit machine-readable metadata for the tools in `index/`.
@@ -57,6 +63,12 @@ Available read-only commands:
 - `doc-check`: check Markdown files for broken local links, duplicate headings,
   and long sections without dumping document bodies.
 - `cleanup-candidates`: dry-run temporary, cache, and log cleanup candidates.
+- `extract-text`: extract bounded text from one readable text file while
+  refusing secret-like files.
+- `extract-links`: extract Markdown links from a file or folder with local
+  existence checks and external-link flags.
+- `media-info`: summarize image, audio, and video files with file metadata and
+  basic image dimensions when available.
 
 Examples:
 
@@ -74,6 +86,9 @@ node "AI tools/scripts/ai-tools.mjs" csv-profile data.csv --json
 node "AI tools/scripts/ai-tools.mjs" extract-headings README.md --json
 node "AI tools/scripts/ai-tools.mjs" doc-check --root docs --json
 node "AI tools/scripts/ai-tools.mjs" cleanup-candidates --root . --json
+node "AI tools/scripts/ai-tools.mjs" extract-text README.md --max-chars 12000 --json
+node "AI tools/scripts/ai-tools.mjs" extract-links --root docs --json
+node "AI tools/scripts/ai-tools.mjs" media-info --root assets --json
 ```
 
 ## Tool Categories

@@ -9,6 +9,7 @@ folder's `README.md`.
 Use the launcher for the current first-pass helpers:
 
 ```bash
+node "AI tools/scripts/ai.mjs" list-tools --json
 node "AI tools/scripts/ai-tools.mjs" list-tools --json
 node "AI tools/scripts/ai-tools.mjs" file-inventory --root . --json
 node "AI tools/scripts/ai-tools.mjs" tree-lite --root . --json
@@ -22,6 +23,9 @@ node "AI tools/scripts/ai-tools.mjs" csv-profile data.csv --json
 node "AI tools/scripts/ai-tools.mjs" extract-headings README.md --json
 node "AI tools/scripts/ai-tools.mjs" doc-check --root docs --json
 node "AI tools/scripts/ai-tools.mjs" cleanup-candidates --root . --json
+node "AI tools/scripts/ai-tools.mjs" extract-text README.md --max-chars 12000 --json
+node "AI tools/scripts/ai-tools.mjs" extract-links --root docs --json
+node "AI tools/scripts/ai-tools.mjs" media-info --root assets --json
 ```
 
 When using or adding tools:
