@@ -695,6 +695,277 @@ async function configMap(flags) {
   });
 }
 
+function parseCsvLine(line) {
+  const values = [];
+  let current = "";
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+    if (char === '"' && quoted && next === '"') {
+      current += '"';
+      index += 1;
+      continue;
+    }
+    if (char === '"') {
+      quoted = !quoted;
+      continue;
+    }
+    if (char === "," && !quoted) {
+      values.push(current);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  values.push(current);
+  return values;
+}
+
+function detectColumnType(values) {
+  const presentValues = values.filter((value) => value.trim().length > 0);
+  if (presentValues.length === 0) {
+    return "empty";
+  }
+  if (presentValues.every((value) => Number.isFinite(Number(value)))) {
+    return "number";
+  }
+  if (presentValues.every((value) => /^(true|false)$/iu.test(value))) {
+    return "boolean";
+  }
+  if (presentValues.every((value) => !Number.isNaN(Date.parse(value)))) {
+    return "date";
+  }
+  return "string";
+}
+
+async function csvProfile(flags, positional) {
+  const filePathArg = positional[0];
+  if (!filePathArg) {
+    return baseEnvelope("csv-profile", process.cwd(), {}, [], ["Missing CSV file path."]);
+  }
+
+  const filePath = path.resolve(filePathArg);
+  const text = await readBoundedTextFile(filePath);
+  const lines = text.split(/\r?\n/u).filter((line) => line.trim().length > 0);
+  if (lines.length === 0) {
+    return baseEnvelope("csv-profile", path.dirname(filePath), {
+      source_path: filePath,
+      rows: 0,
+      columns: [],
+      missing_values: {},
+      detected_types: {},
+      duplicates: 0
+    });
+  }
+
+  const columns = parseCsvLine(lines[0]).map((column, index) => column.trim() || `column_${index + 1}`);
+  const rows = lines.slice(1).map(parseCsvLine);
+  const missingValues = Object.fromEntries(columns.map((column) => [column, 0]));
+  const valuesByColumn = Object.fromEntries(columns.map((column) => [column, []]));
+  const rowCounts = new Map();
+
+  for (const row of rows) {
+    const normalizedRow = columns.map((_, index) => row[index] ?? "");
+    const rowKey = JSON.stringify(normalizedRow);
+    rowCounts.set(rowKey, (rowCounts.get(rowKey) ?? 0) + 1);
+    for (let index = 0; index < columns.length; index += 1) {
+      const column = columns[index];
+      const value = normalizedRow[index].trim();
+      if (value.length === 0) {
+        missingValues[column] += 1;
+      }
+      valuesByColumn[column].push(value);
+    }
+  }
+
+  return baseEnvelope("csv-profile", path.dirname(filePath), {
+    source_path: filePath,
+    rows: rows.length,
+    columns,
+    missing_values: missingValues,
+    detected_types: Object.fromEntries(columns.map((column) => [column, detectColumnType(valuesByColumn[column])])),
+    duplicates: Array.from(rowCounts.values()).reduce((total, count) => total + Math.max(0, count - 1), 0)
+  });
+}
+
+function extractMarkdownHeadings(text) {
+  const headings = [];
+  const lines = text.split(/\r?\n/u);
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = /^(#{1,6})\s+(.+?)\s*#*\s*$/u.exec(lines[index]);
+    if (!match) {
+      continue;
+    }
+    headings.push({
+      level: match[1].length,
+      text: match[2].trim(),
+      line: index + 1
+    });
+  }
+  return headings;
+}
+
+async function extractHeadings(flags, positional) {
+  const filePathArg = positional[0];
+  if (!filePathArg) {
+    return baseEnvelope("extract-headings", process.cwd(), { headings: [] }, [], ["Missing document file path."]);
+  }
+
+  const filePath = path.resolve(filePathArg);
+  const text = await readBoundedTextFile(filePath);
+  return baseEnvelope("extract-headings", path.dirname(filePath), {
+    source_path: filePath,
+    headings: extractMarkdownHeadings(text)
+  });
+}
+
+function extractMarkdownLinks(text) {
+  const links = [];
+  const lines = text.split(/\r?\n/u);
+  for (let index = 0; index < lines.length; index += 1) {
+    for (const match of lines[index].matchAll(/\[[^\]]+\]\(([^)]+)\)/gu)) {
+      links.push({
+        target: match[1].trim(),
+        line: index + 1
+      });
+    }
+  }
+  return links;
+}
+
+function isExternalLink(target) {
+  return /^(https?:|mailto:|#)/iu.test(target);
+}
+
+async function docCheck(flags) {
+  const root = resolveRoot(flags);
+  await assertReadableDirectory(root);
+  const maxItems = numberFlag(flags, "max-items", DEFAULT_MAX_ITEMS);
+  const brokenLinks = [];
+  const headingCounts = new Map();
+  const veryLongSections = [];
+  const maxSectionChars = numberFlag(flags, "max-section-chars", 4000);
+
+  await walk(root, flags, async ({ fullPath, relativePath, entry }) => {
+    if (!entry.isFile() || !/\.(md|mdx)$/iu.test(relativePath)) {
+      return;
+    }
+    const text = await readBoundedTextFile(fullPath);
+    const headings = extractMarkdownHeadings(text);
+    for (const heading of headings) {
+      const key = heading.text.toLowerCase();
+      const current = headingCounts.get(key) ?? {
+        heading: heading.text,
+        count: 0,
+        locations: []
+      };
+      current.count += 1;
+      current.locations.push({ path: relativePath, line: heading.line });
+      headingCounts.set(key, current);
+    }
+
+    for (const link of extractMarkdownLinks(text)) {
+      const targetWithoutHash = link.target.split("#")[0];
+      if (isExternalLink(link.target) || targetWithoutHash.length === 0) {
+        continue;
+      }
+      const targetPath = path.resolve(path.dirname(fullPath), targetWithoutHash);
+      try {
+        await access(targetPath, constants.R_OK);
+      } catch {
+        brokenLinks.push({
+          path: relativePath,
+          line: link.line,
+          target: link.target
+        });
+      }
+    }
+
+    const lines = text.split(/\r?\n/u);
+    for (let headingIndex = 0; headingIndex < headings.length; headingIndex += 1) {
+      const heading = headings[headingIndex];
+      const nextHeading = headings[headingIndex + 1];
+      const startLine = heading.line;
+      const endLine = nextHeading ? nextHeading.line - 1 : lines.length;
+      const sectionText = lines.slice(startLine - 1, endLine).join("\n");
+      if (sectionText.length > maxSectionChars) {
+        veryLongSections.push({
+          path: relativePath,
+          heading: heading.text,
+          lines: lineRange(startLine, endLine),
+          char_count: sectionText.length
+        });
+      }
+    }
+  });
+
+  return baseEnvelope("doc-check", root, {
+    broken_links: brokenLinks.sort((left, right) => left.path.localeCompare(right.path) || left.line - right.line).slice(0, maxItems),
+    duplicate_headings: Array.from(headingCounts.values())
+      .filter((heading) => heading.count > 1)
+      .sort((left, right) => right.count - left.count || left.heading.localeCompare(right.heading))
+      .slice(0, maxItems),
+    very_long_sections: veryLongSections.sort((left, right) => right.char_count - left.char_count).slice(0, maxItems)
+  });
+}
+
+function classifyCleanupCandidate(relativePath, fileSizeBytes) {
+  const normalized = relativePath.replace(/\\/gu, "/");
+  const fileName = path.basename(normalized).toLowerCase();
+  const extension = path.extname(fileName).toLowerCase();
+  if (/^(tmp|temp|cache)\//iu.test(normalized) || [".tmp", ".temp", ".bak"].includes(extension)) {
+    return {
+      group: "safe_candidates",
+      reason: "temporary_or_cache_file",
+      path: normalized,
+      size_bytes: fileSizeBytes
+    };
+  }
+  if ([".log", ".old", ".orig"].includes(extension)) {
+    return {
+      group: "review_required",
+      reason: "review_before_cleanup",
+      path: normalized,
+      size_bytes: fileSizeBytes
+    };
+  }
+  return null;
+}
+
+async function cleanupCandidates(flags) {
+  const root = resolveRoot(flags);
+  await assertReadableDirectory(root);
+  const maxItems = numberFlag(flags, "max-items", DEFAULT_MAX_ITEMS);
+  const safeCandidates = [];
+  const reviewRequired = [];
+
+  await walk(root, flags, async ({ fullPath, relativePath, entry }) => {
+    if (!entry.isFile()) {
+      return;
+    }
+    const fileStat = await stat(fullPath);
+    const candidate = classifyCleanupCandidate(relativePath, fileStat.size);
+    if (!candidate) {
+      return;
+    }
+    if (candidate.group === "safe_candidates") {
+      safeCandidates.push(candidate);
+    } else {
+      reviewRequired.push(candidate);
+    }
+  });
+
+  const byPath = (left, right) => left.path.localeCompare(right.path);
+  return baseEnvelope("cleanup-candidates", root, {
+    dry_run: true,
+    deleted_files: 0,
+    safe_candidates: safeCandidates.sort(byPath).slice(0, maxItems).map(({ group, ...candidate }) => candidate),
+    review_required: reviewRequired.sort(byPath).slice(0, maxItems).map(({ group, ...candidate }) => candidate),
+    never_delete: [".git", "node_modules", "state", "vault"]
+  });
+}
+
 function toMarkdown(payload) {
   const lines = [`# ${payload.tool}`, "", `Root: ${payload.root}`, ""];
   if (Array.isArray(payload.data.tools)) {
@@ -730,7 +1001,7 @@ async function run() {
   if (!command || command === "help" || command === "--help") {
     return baseEnvelope("help", process.cwd(), {
       usage: "node \"AI tools/scripts/ai-tools.mjs\" <command> [args] [--json]",
-      commands: ["list-tools", "file-inventory", "tree-lite", "smart-search", "chunk-file", "log-summary", "diff-summary", "command-index", "config-map"]
+      commands: ["list-tools", "file-inventory", "tree-lite", "smart-search", "chunk-file", "log-summary", "diff-summary", "command-index", "config-map", "csv-profile", "extract-headings", "doc-check", "cleanup-candidates"]
     });
   }
 
@@ -760,6 +1031,18 @@ async function run() {
   }
   if (command === "config-map") {
     return configMap(flags);
+  }
+  if (command === "csv-profile") {
+    return csvProfile(flags, positional);
+  }
+  if (command === "extract-headings") {
+    return extractHeadings(flags, positional);
+  }
+  if (command === "doc-check") {
+    return docCheck(flags);
+  }
+  if (command === "cleanup-candidates") {
+    return cleanupCandidates(flags);
   }
 
   return baseEnvelope(command, resolveRoot(flags), {}, [], [`Unknown command: ${command}`]);

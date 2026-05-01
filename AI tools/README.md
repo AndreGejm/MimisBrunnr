@@ -50,6 +50,13 @@ Available read-only commands:
   metadata.
 - `config-map`: summarize config files and environment-variable references
   without exposing secret values.
+- `csv-profile`: profile CSV rows, columns, missing values, inferred types, and
+  duplicate rows.
+- `extract-headings`: extract a compact Markdown heading outline with levels and
+  line numbers.
+- `doc-check`: check Markdown files for broken local links, duplicate headings,
+  and long sections without dumping document bodies.
+- `cleanup-candidates`: dry-run temporary, cache, and log cleanup candidates.
 
 Examples:
 
@@ -63,6 +70,10 @@ node "AI tools/scripts/ai-tools.mjs" log-summary build.log --max-items 20 --json
 node "AI tools/scripts/ai-tools.mjs" diff-summary --staged --json
 node "AI tools/scripts/ai-tools.mjs" command-index --root . --json
 node "AI tools/scripts/ai-tools.mjs" config-map --root . --json
+node "AI tools/scripts/ai-tools.mjs" csv-profile data.csv --json
+node "AI tools/scripts/ai-tools.mjs" extract-headings README.md --json
+node "AI tools/scripts/ai-tools.mjs" doc-check --root docs --json
+node "AI tools/scripts/ai-tools.mjs" cleanup-candidates --root . --json
 ```
 
 ## Tool Categories

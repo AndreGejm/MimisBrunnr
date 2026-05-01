@@ -58,6 +58,10 @@ test("ai-tools list-tools returns machine-readable tool metadata", async () => {
   assert.ok(payload.data.tools.some((tool) => tool.name === "smart-search"));
   assert.ok(payload.data.tools.some((tool) => tool.name === "chunk-file"));
   assert.ok(payload.data.tools.some((tool) => tool.name === "command-index"));
+  assert.ok(payload.data.tools.some((tool) => tool.name === "csv-profile"));
+  assert.ok(payload.data.tools.some((tool) => tool.name === "doc-check"));
+  assert.ok(payload.data.tools.some((tool) => tool.name === "cleanup-candidates"));
+  assert.ok(payload.data.tools.some((tool) => tool.name === "extract-headings"));
 });
 
 test("ai-tools file-inventory summarizes a workspace without dependency folders", async (t) => {
@@ -282,4 +286,112 @@ test("ai-tools config-map reports env references without exposing secret file va
   assert.ok(payload.data.env_vars_referenced.some((envVar) => envVar.name === "SECRET_TOKEN" && envVar.required === true));
   assert.ok(payload.data.env_vars_referenced.some((envVar) => envVar.name === "API_URL" && envVar.has_default === true));
   assert.equal(JSON.stringify(payload).includes("do-not-print"), false);
+});
+
+test("ai-tools csv-profile summarizes rows, columns, missing values, types, and duplicates", async (t) => {
+  const root = await createFixtureRoot(t);
+  const csvPath = path.join(root, "measurements.csv");
+  await writeFile(
+    csvPath,
+    [
+      "id,amount,status",
+      "1,10,ok",
+      "2,,missing",
+      "2,,missing",
+      "3,12.5,ok"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const result = await runAiTool(["csv-profile", csvPath, "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "csv-profile");
+  assert.equal(payload.errors.length, 0);
+  assert.equal(payload.data.rows, 4);
+  assert.deepEqual(payload.data.columns, ["id", "amount", "status"]);
+  assert.equal(payload.data.missing_values.amount, 2);
+  assert.equal(payload.data.detected_types.id, "number");
+  assert.equal(payload.data.detected_types.status, "string");
+  assert.equal(payload.data.duplicates, 1);
+});
+
+test("ai-tools extract-headings returns Markdown heading outline", async (t) => {
+  const root = await createFixtureRoot(t);
+  const docPath = path.join(root, "docs", "outline.md");
+  await writeFile(
+    docPath,
+    [
+      "# Title",
+      "",
+      "## Setup",
+      "",
+      "### Windows",
+      "",
+      "## Usage"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const result = await runAiTool(["extract-headings", docPath, "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "extract-headings");
+  assert.equal(payload.errors.length, 0);
+  assert.deepEqual(payload.data.headings.map((heading) => heading.text), ["Title", "Setup", "Windows", "Usage"]);
+  assert.deepEqual(payload.data.headings.map((heading) => heading.level), [1, 2, 3, 2]);
+  assert.equal(payload.data.headings[2].line, 5);
+});
+
+test("ai-tools doc-check reports broken links and duplicate headings without dumping documents", async (t) => {
+  const root = await createFixtureRoot(t);
+  await writeFile(
+    path.join(root, "docs", "quality.md"),
+    [
+      "# Guide",
+      "",
+      "See [missing](missing.md) and [web](https://example.com).",
+      "",
+      "## Repeat",
+      "",
+      "Short text.",
+      "",
+      "## Repeat",
+      "",
+      "This section is intentionally compact."
+    ].join("\n"),
+    "utf8"
+  );
+
+  const result = await runAiTool(["doc-check", "--root", root, "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "doc-check");
+  assert.equal(payload.errors.length, 0);
+  assert.ok(payload.data.broken_links.some((link) => link.path === "docs/quality.md" && link.target === "missing.md"));
+  assert.ok(payload.data.duplicate_headings.some((heading) => heading.heading === "Repeat" && heading.count === 2));
+  assert.equal(JSON.stringify(payload).includes("This section is intentionally compact"), false);
+});
+
+test("ai-tools cleanup-candidates stays dry-run and classifies temporary files", async (t) => {
+  const root = await createFixtureRoot(t);
+  await mkdir(path.join(root, "tmp"), { recursive: true });
+  const tempPath = path.join(root, "tmp", "scratch.tmp");
+  const logPath = path.join(root, "debug.log");
+  await writeFile(tempPath, "temporary", "utf8");
+  await writeFile(logPath, "log output", "utf8");
+
+  const result = await runAiTool(["cleanup-candidates", "--root", root, "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "cleanup-candidates");
+  assert.equal(payload.errors.length, 0);
+  assert.equal(payload.data.dry_run, true);
+  assert.ok(payload.data.safe_candidates.some((candidate) => candidate.path === "tmp/scratch.tmp"));
+  assert.ok(payload.data.review_required.some((candidate) => candidate.path === "debug.log"));
+  assert.equal(payload.data.deleted_files, 0);
 });

@@ -18,6 +18,10 @@ node "AI tools/scripts/ai-tools.mjs" log-summary build.log --json
 node "AI tools/scripts/ai-tools.mjs" diff-summary --staged --json
 node "AI tools/scripts/ai-tools.mjs" command-index --root . --json
 node "AI tools/scripts/ai-tools.mjs" config-map --root . --json
+node "AI tools/scripts/ai-tools.mjs" csv-profile data.csv --json
+node "AI tools/scripts/ai-tools.mjs" extract-headings README.md --json
+node "AI tools/scripts/ai-tools.mjs" doc-check --root docs --json
+node "AI tools/scripts/ai-tools.mjs" cleanup-candidates --root . --json
 ```
 
 When using or adding tools:

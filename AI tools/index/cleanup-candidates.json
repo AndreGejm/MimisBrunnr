@@ -1,0 +1,13 @@
+{
+  "name": "cleanup-candidates",
+  "purpose": "Dry-run temporary, cache, and log cleanup candidates with safe and review-required buckets.",
+  "script": "scripts/ai-tools.mjs",
+  "schema_version": "1.0",
+  "status": "draft",
+  "safe": true,
+  "mutates_files": false,
+  "requires_network": false,
+  "reads_secrets": false,
+  "default_output": "json",
+  "example": "node \"AI tools/scripts/ai-tools.mjs\" cleanup-candidates --root . --json"
+}
