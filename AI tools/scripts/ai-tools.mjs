@@ -4,11 +4,10 @@ import { constants } from "node:fs";
 import { access, readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { fileURLToPath } from "node:url";
+import { fileInventory as workspaceFileInventory, treeLite as workspaceTreeLite, workspaceCommands } from "./toolbox/families/workspace.mjs";
+import { findToolByFamilyAndName, findToolById, readToolMetadata } from "./toolbox/registry.mjs";
 
 const execFileAsync = promisify(execFile);
-const TOOL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const INDEX_ROOT = path.join(TOOL_ROOT, "index");
 const DEFAULT_IGNORES = [
   ".git",
   ".pnpm-store",
@@ -22,6 +21,28 @@ const DEFAULT_IGNORES = [
 const DEFAULT_MAX_ITEMS = 50;
 const DEFAULT_MAX_CHARS = 240;
 const DEFAULT_MAX_DEPTH = 4;
+const COMMANDS = [
+  "list-tools",
+  "describe",
+  "run",
+  "workspace tree-lite",
+  "workspace file-inventory",
+  "file-inventory",
+  "tree-lite",
+  "smart-search",
+  "chunk-file",
+  "log-summary",
+  "diff-summary",
+  "command-index",
+  "config-map",
+  "csv-profile",
+  "extract-headings",
+  "doc-check",
+  "cleanup-candidates",
+  "extract-text",
+  "extract-links",
+  "media-info"
+];
 const MAX_TEXT_FILE_BYTES = 1024 * 1024;
 const SECRET_FILE_NAMES = new Set([
   ".env",
@@ -166,101 +187,29 @@ async function walk(root, flags, visitor) {
 }
 
 async function readToolIndex() {
-  const entries = await readdir(INDEX_ROOT, { withFileTypes: true });
-  const tools = [];
-  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
-    if (!entry.isFile() || !entry.name.endsWith(".json") || entry.name === "tool-template.json") {
-      continue;
-    }
-
-    const fullPath = path.join(INDEX_ROOT, entry.name);
-    const parsed = JSON.parse(await readFile(fullPath, "utf8"));
-    tools.push({
-      name: parsed.name,
-      purpose: parsed.purpose,
-      safe: parsed.safe,
-      mutates_files: parsed.mutates_files,
-      requires_network: parsed.requires_network,
-      reads_secrets: parsed.reads_secrets,
-      example: parsed.example,
-      status: parsed.status
-    });
-  }
-  return tools;
+  return (await readToolMetadata()).map((tool) => ({
+    id: tool.id,
+    family: tool.family,
+    name: tool.name,
+    purpose: tool.purpose,
+    description: tool.description,
+    safe: tool.safe,
+    mutates_files: tool.mutates_files,
+    requires_git: tool.requires_git,
+    requires_external_binaries: tool.requires_external_binaries,
+    requires_network: tool.requires_network,
+    reads_secrets: tool.reads_secrets,
+    safety_level: tool.safety_level,
+    stable_for_agent_use: tool.stable_for_agent_use,
+    example: tool.example,
+    status: tool.status
+  }));
 }
 
 async function listTools(flags) {
   const root = resolveRoot(flags);
   return baseEnvelope("list-tools", root, {
     tools: await readToolIndex()
-  });
-}
-
-async function fileInventory(flags) {
-  const root = resolveRoot(flags);
-  await assertReadableDirectory(root);
-  const maxItems = numberFlag(flags, "max-items", DEFAULT_MAX_ITEMS);
-  const extensions = new Map();
-  const files = [];
-  let totalSizeBytes = 0;
-
-  const ignoredDirs = await walk(root, flags, async ({ fullPath, relativePath, entry }) => {
-    if (!entry.isFile()) {
-      return;
-    }
-
-    const fileStat = await stat(fullPath);
-    totalSizeBytes += fileStat.size;
-    const extension = path.extname(entry.name).toLowerCase() || "[none]";
-    extensions.set(extension, (extensions.get(extension) ?? 0) + 1);
-    files.push({
-      path: relativePath,
-      size_bytes: fileStat.size,
-      modified_at: fileStat.mtime.toISOString()
-    });
-  });
-
-  const topExtensions = Object.fromEntries(
-    Array.from(extensions.entries()).sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
-  );
-
-  return baseEnvelope("file-inventory", root, {
-    total_files: files.length,
-    total_size_bytes: totalSizeBytes,
-    total_size_mb: Number((totalSizeBytes / 1024 / 1024).toFixed(3)),
-    top_extensions: topExtensions,
-    largest_files: [...files].sort((left, right) => right.size_bytes - left.size_bytes || left.path.localeCompare(right.path)).slice(0, maxItems),
-    recently_modified: [...files].sort((left, right) => right.modified_at.localeCompare(left.modified_at) || left.path.localeCompare(right.path)).slice(0, maxItems),
-    ignored_dirs: ignoredDirs
-  });
-}
-
-async function treeLite(flags) {
-  const root = resolveRoot(flags);
-  await assertReadableDirectory(root);
-  const maxItems = numberFlag(flags, "max-items", DEFAULT_MAX_ITEMS);
-  const entries = [];
-
-  const ignoredDirs = await walk(root, flags, async ({ fullPath, relativePath, entry, depth }) => {
-    if (entries.length >= maxItems) {
-      return;
-    }
-
-    const item = {
-      path: relativePath,
-      type: entry.isDirectory() ? "directory" : "file",
-      depth
-    };
-    if (entry.isFile()) {
-      item.size_bytes = (await stat(fullPath)).size;
-    }
-    entries.push(item);
-  });
-
-  return baseEnvelope("tree-lite", root, {
-    entries,
-    truncated: entries.length >= maxItems,
-    ignored_dirs: ignoredDirs
   });
 }
 
@@ -1175,23 +1124,15 @@ function toMarkdown(payload) {
   return `${lines.join("\n")}\n`;
 }
 
-async function run() {
-  const { command, flags, positional } = parseArgs(process.argv.slice(2));
-  if (!command || command === "help" || command === "--help") {
-    return baseEnvelope("help", process.cwd(), {
-      usage: "node \"AI tools/scripts/ai-tools.mjs\" <command> [args] [--json]",
-      commands: ["list-tools", "file-inventory", "tree-lite", "smart-search", "chunk-file", "log-summary", "diff-summary", "command-index", "config-map", "csv-profile", "extract-headings", "doc-check", "cleanup-candidates", "extract-text", "extract-links", "media-info"]
-    });
-  }
-
+async function dispatchToolCommand(command, flags, positional) {
   if (command === "list-tools") {
     return listTools(flags);
   }
   if (command === "file-inventory") {
-    return fileInventory(flags);
+    return workspaceFileInventory(flags);
   }
   if (command === "tree-lite") {
-    return treeLite(flags);
+    return workspaceTreeLite(flags);
   }
   if (command === "smart-search") {
     return smartSearch(flags, positional);
@@ -1231,6 +1172,87 @@ async function run() {
   }
   if (command === "media-info") {
     return mediaInfo(flags, positional);
+  }
+  return null;
+}
+
+async function dispatchFamilyCommand(command, flags, positional) {
+  if (command !== "workspace") {
+    return null;
+  }
+
+  const [toolName, ...toolPositional] = positional;
+  if (!toolName) {
+    return baseEnvelope("workspace", resolveRoot(flags), {
+      tools: Object.keys(workspaceCommands).sort()
+    }, [], ["Missing workspace tool name"]);
+  }
+
+  const handler = workspaceCommands[toolName];
+  if (!handler) {
+    return baseEnvelope("workspace", resolveRoot(flags), {}, [], [`Unknown workspace tool: ${toolName}`]);
+  }
+  return handler(flags, toolPositional);
+}
+
+async function describeTool(flags, positional) {
+  const root = resolveRoot(flags);
+  const tool = positional.length >= 2
+    ? await findToolByFamilyAndName(positional[0], positional[1])
+    : await findToolById(positional[0]);
+
+  if (!tool) {
+    const lookup = positional.join(" ");
+    return baseEnvelope("describe", root, {}, [], [`Unknown tool: ${lookup}`]);
+  }
+
+  return baseEnvelope("describe", root, {
+    tool
+  });
+}
+
+async function runRegisteredTool(flags, positional) {
+  const [toolId, ...toolPositional] = positional;
+  if (!toolId) {
+    return baseEnvelope("run", resolveRoot(flags), {}, [], ["Missing tool id"]);
+  }
+
+  const tool = await findToolById(toolId);
+  if (!tool) {
+    return baseEnvelope("run", resolveRoot(flags), {}, [], [`Unknown tool: ${toolId}`]);
+  }
+
+  const result = await dispatchToolCommand(tool.name, flags, toolPositional);
+  if (!result) {
+    return baseEnvelope("run", resolveRoot(flags), {}, [], [`Registered tool has no launcher handler: ${toolId}`]);
+  }
+  return result;
+}
+
+async function run() {
+  const { command, flags, positional } = parseArgs(process.argv.slice(2));
+  if (!command || command === "help" || command === "--help") {
+    return baseEnvelope("help", process.cwd(), {
+      usage: "node \"AI tools/scripts/ai-tools.mjs\" <command> [args] [--json]",
+      commands: COMMANDS
+    });
+  }
+
+  if (command === "describe") {
+    return describeTool(flags, positional);
+  }
+  if (command === "run") {
+    return runRegisteredTool(flags, positional);
+  }
+
+  const familyResult = await dispatchFamilyCommand(command, flags, positional);
+  if (familyResult) {
+    return familyResult;
+  }
+
+  const commandResult = await dispatchToolCommand(command, flags, positional);
+  if (commandResult) {
+    return commandResult;
   }
 
   return baseEnvelope(command, resolveRoot(flags), {}, [], [`Unknown command: ${command}`]);

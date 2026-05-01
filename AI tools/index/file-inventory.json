@@ -1,13 +1,30 @@
 {
+  "id": "workspace.file-inventory",
+  "family": "workspace",
   "name": "file-inventory",
+  "description": "Summarize file counts, sizes, extensions, largest files, and recent files without reading dependency folders.",
   "purpose": "Summarize file counts, sizes, extensions, largest files, and recent files without reading dependency folders.",
   "script": "scripts/ai-tools.mjs",
   "schema_version": "1.0",
   "status": "draft",
   "safe": true,
   "mutates_files": false,
+  "requires_git": false,
+  "requires_external_binaries": [],
   "requires_network": false,
   "reads_secrets": false,
+  "safety_level": "read_only",
+  "side_effects": "none",
+  "stable_for_agent_use": true,
+  "input_parameters": [
+    "root",
+    "max-items",
+    "max-depth",
+    "ignore",
+    "json",
+    "markdown"
+  ],
   "default_output": "json",
+  "output_format": "json",
   "example": "node \"AI tools/scripts/ai-tools.mjs\" file-inventory --root . --json"
 }

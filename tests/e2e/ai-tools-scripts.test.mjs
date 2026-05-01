@@ -121,6 +121,45 @@ test("ai-tools tree-lite returns a bounded tree with ignored directories marked"
   );
 });
 
+test("ai-tools workspace family routes tree-lite through the same CLI contract", async (t) => {
+  const root = await createFixtureRoot(t);
+  const result = await runAiTool(["workspace", "tree-lite", "--root", root, "--max-items", "10", "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "tree-lite");
+  assert.equal(payload.errors.length, 0);
+  assert.ok(payload.data.entries.some((entry) => entry.path === "README.md"));
+  assert.equal(
+    payload.data.entries.some((entry) => entry.path.includes("node_modules/ignored")),
+    false
+  );
+});
+
+test("ai-tools run dispatches migrated tools by flat id", async (t) => {
+  const root = await createFixtureRoot(t);
+  const result = await runAiTool(["run", "file-inventory", "--root", root, "--max-items", "5", "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "file-inventory");
+  assert.equal(payload.errors.length, 0);
+  assert.equal(payload.data.total_files, 3);
+});
+
+test("ai-tools describe reports registry metadata for migrated workspace tools", async () => {
+  const result = await runAiTool(["describe", "workspace", "tree-lite", "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "describe");
+  assert.equal(payload.errors.length, 0);
+  assert.equal(payload.data.tool.name, "tree-lite");
+  assert.equal(payload.data.tool.family, "workspace");
+  assert.equal(payload.data.tool.safety_level, "read_only");
+  assert.equal(payload.data.tool.mutates_files, false);
+});
+
 test("ai-tools smart-search ranks bounded matches and ignores generated folders", async (t) => {
   const root = await createFixtureRoot(t);
   await writeFile(path.join(root, ".env"), "SECRET_TIMEOUT=timeout\n", "utf8");
