@@ -1,0 +1,36 @@
+{
+  "name": "example-tool",
+  "purpose": "One sentence describing the compact fact this tool produces for agents.",
+  "script": "scripts/example-tool.ps1",
+  "schema_version": "1.0",
+  "status": "draft",
+  "safe": true,
+  "mutates_files": false,
+  "requires_network": false,
+  "reads_secrets": false,
+  "default_output": "json",
+  "common_flags": [
+    "--json",
+    "--markdown",
+    "--max-items",
+    "--max-chars",
+    "--ignore",
+    "--include",
+    "--root",
+    "--dry-run"
+  ],
+  "example": "pwsh -File \"AI tools/scripts/example-tool.ps1\" --root . --json",
+  "output_contract": {
+    "tool": "example-tool",
+    "schema_version": "1.0",
+    "root": "C:/example/project",
+    "generated_at": "2026-05-01T12:00:00Z",
+    "data": {},
+    "warnings": [],
+    "errors": []
+  },
+  "notes": [
+    "Keep output bounded and deterministic.",
+    "Document any mutation or network behavior before using the tool in agent workflows."
+  ]
+}
