@@ -1,0 +1,13 @@
+{
+  "name": "chunk-file",
+  "purpose": "Split a text or Markdown file into bounded chunks with line ranges, headings, token estimates, and previews.",
+  "script": "scripts/ai-tools.mjs",
+  "schema_version": "1.0",
+  "status": "draft",
+  "safe": true,
+  "mutates_files": false,
+  "requires_network": false,
+  "reads_secrets": false,
+  "default_output": "json",
+  "example": "node \"AI tools/scripts/ai-tools.mjs\" chunk-file README.md --max-chars 800 --json"
+}

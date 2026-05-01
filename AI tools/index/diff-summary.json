@@ -1,0 +1,13 @@
+{
+  "name": "diff-summary",
+  "purpose": "Summarize a git diff or patch file by changed files, line counts, categories, and risky files.",
+  "script": "scripts/ai-tools.mjs",
+  "schema_version": "1.0",
+  "status": "draft",
+  "safe": true,
+  "mutates_files": false,
+  "requires_network": false,
+  "reads_secrets": false,
+  "default_output": "json",
+  "example": "node \"AI tools/scripts/ai-tools.mjs\" diff-summary --staged --json"
+}

@@ -40,6 +40,16 @@ Available read-only commands:
 - `smart-search`: return ranked, bounded text matches while ignoring generated
   and dependency folders. Content search also skips common secret-looking files
   such as `.env`, private-key extensions, and package-manager credential files.
+- `chunk-file`: split a text or Markdown file into chunks with line ranges,
+  headings, token estimates, and bounded previews.
+- `log-summary`: collapse a log into counts, first errors, warnings, repeated
+  lines, and referenced files.
+- `diff-summary`: summarize a git diff or patch file by changed files, line
+  counts, categories, and risky files.
+- `command-index`: list package scripts with simple mutation and network safety
+  metadata.
+- `config-map`: summarize config files and environment-variable references
+  without exposing secret values.
 
 Examples:
 
@@ -48,6 +58,11 @@ node "AI tools/scripts/ai-tools.mjs" list-tools --json
 node "AI tools/scripts/ai-tools.mjs" file-inventory --root . --max-items 20 --json
 node "AI tools/scripts/ai-tools.mjs" tree-lite --root . --max-depth 3 --max-items 100 --json
 node "AI tools/scripts/ai-tools.mjs" smart-search "timeout" --root . --max-items 10 --max-chars 180 --json
+node "AI tools/scripts/ai-tools.mjs" chunk-file README.md --max-chars 800 --json
+node "AI tools/scripts/ai-tools.mjs" log-summary build.log --max-items 20 --json
+node "AI tools/scripts/ai-tools.mjs" diff-summary --staged --json
+node "AI tools/scripts/ai-tools.mjs" command-index --root . --json
+node "AI tools/scripts/ai-tools.mjs" config-map --root . --json
 ```
 
 ## Tool Categories

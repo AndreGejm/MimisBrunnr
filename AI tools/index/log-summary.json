@@ -1,0 +1,13 @@
+{
+  "name": "log-summary",
+  "purpose": "Collapse a log into counts, first errors, warnings, repeated lines, and referenced files.",
+  "script": "scripts/ai-tools.mjs",
+  "schema_version": "1.0",
+  "status": "draft",
+  "safe": true,
+  "mutates_files": false,
+  "requires_network": false,
+  "reads_secrets": false,
+  "default_output": "json",
+  "example": "node \"AI tools/scripts/ai-tools.mjs\" log-summary build.log --max-items 20 --json"
+}

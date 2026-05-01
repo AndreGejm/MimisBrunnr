@@ -13,6 +13,11 @@ node "AI tools/scripts/ai-tools.mjs" list-tools --json
 node "AI tools/scripts/ai-tools.mjs" file-inventory --root . --json
 node "AI tools/scripts/ai-tools.mjs" tree-lite --root . --json
 node "AI tools/scripts/ai-tools.mjs" smart-search "search terms" --root . --json
+node "AI tools/scripts/ai-tools.mjs" chunk-file README.md --json
+node "AI tools/scripts/ai-tools.mjs" log-summary build.log --json
+node "AI tools/scripts/ai-tools.mjs" diff-summary --staged --json
+node "AI tools/scripts/ai-tools.mjs" command-index --root . --json
+node "AI tools/scripts/ai-tools.mjs" config-map --root . --json
 ```
 
 When using or adding tools:

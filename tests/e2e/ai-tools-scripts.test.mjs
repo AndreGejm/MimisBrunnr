@@ -56,6 +56,8 @@ test("ai-tools list-tools returns machine-readable tool metadata", async () => {
   assert.equal(payload.errors.length, 0);
   assert.ok(payload.data.tools.some((tool) => tool.name === "file-inventory"));
   assert.ok(payload.data.tools.some((tool) => tool.name === "smart-search"));
+  assert.ok(payload.data.tools.some((tool) => tool.name === "chunk-file"));
+  assert.ok(payload.data.tools.some((tool) => tool.name === "command-index"));
 });
 
 test("ai-tools file-inventory summarizes a workspace without dependency folders", async (t) => {
@@ -120,4 +122,164 @@ test("ai-tools smart-search ranks bounded matches and ignores generated folders"
   );
   assert.ok(payload.data.matches[0].score >= payload.data.matches[1].score);
   assert.ok(payload.data.matches.every((match) => match.context.length <= 80));
+});
+
+test("ai-tools chunk-file splits markdown into bounded heading chunks", async (t) => {
+  const root = await createFixtureRoot(t);
+  const manualPath = path.join(root, "docs", "manual.md");
+  await writeFile(
+    manualPath,
+    [
+      "# Manual",
+      "",
+      "Intro text.",
+      "",
+      "## Install",
+      "",
+      "Install step one.",
+      "Install step two.",
+      "",
+      "## Troubleshooting",
+      "",
+      "Timeout error details.",
+      "Retry instructions."
+    ].join("\n"),
+    "utf8"
+  );
+
+  const result = await runAiTool([
+    "chunk-file",
+    manualPath,
+    "--max-chars",
+    "80",
+    "--json"
+  ]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "chunk-file");
+  assert.equal(payload.errors.length, 0);
+  assert.equal(payload.data.source_path, manualPath);
+  assert.ok(payload.data.chunks.length >= 3);
+  assert.deepEqual(
+    payload.data.chunks.map((chunk) => chunk.id),
+    payload.data.chunks.map((_, index) => `chunk-${String(index + 1).padStart(3, "0")}`)
+  );
+  assert.ok(payload.data.chunks.every((chunk) => chunk.preview.length <= 80));
+  assert.ok(payload.data.chunks.some((chunk) => chunk.heading === "Install"));
+});
+
+test("ai-tools log-summary collapses errors, warnings, repeated lines, and referenced files", async (t) => {
+  const root = await createFixtureRoot(t);
+  const logPath = path.join(root, "build.log");
+  await writeFile(
+    logPath,
+    [
+      "src/app.js:10: warning: unused value",
+      "src/app.js:10: warning: unused value",
+      "ERROR Failed to compile src/app.js: timeout",
+      "Error: timeout while loading config",
+      "docs/guide.md: warning: stale doc"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const result = await runAiTool(["log-summary", logPath, "--max-items", "5", "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "log-summary");
+  assert.equal(payload.errors.length, 0);
+  assert.equal(payload.data.total_lines, 5);
+  assert.equal(payload.data.error_count, 2);
+  assert.equal(payload.data.warning_count, 3);
+  assert.equal(payload.data.first_error.line, 3);
+  assert.ok(payload.data.repeated_lines.some((line) => line.count === 2));
+  assert.ok(payload.data.files_referenced.includes("src/app.js"));
+});
+
+test("ai-tools diff-summary categorizes patch content without dumping full diff", async (t) => {
+  const root = await createFixtureRoot(t);
+  const diffPath = path.join(root, "changes.diff");
+  await writeFile(
+    diffPath,
+    [
+      "diff --git a/src/app.js b/src/app.js",
+      "index 1111111..2222222 100644",
+      "--- a/src/app.js",
+      "+++ b/src/app.js",
+      "@@ -1 +1,2 @@",
+      "-old line",
+      "+new line",
+      "+extra line",
+      "diff --git a/docs/guide.md b/docs/guide.md",
+      "--- a/docs/guide.md",
+      "+++ b/docs/guide.md",
+      "@@ -1 +1 @@",
+      "-old docs",
+      "+new docs"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const result = await runAiTool(["diff-summary", "--input", diffPath, "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "diff-summary");
+  assert.equal(payload.errors.length, 0);
+  assert.equal(payload.data.files_changed, 2);
+  assert.equal(payload.data.added_lines, 3);
+  assert.equal(payload.data.removed_lines, 2);
+  assert.deepEqual(payload.data.categories.source, ["src/app.js"]);
+  assert.deepEqual(payload.data.categories.docs, ["docs/guide.md"]);
+});
+
+test("ai-tools command-index reports package scripts with safety metadata", async (t) => {
+  const root = await createFixtureRoot(t);
+  await writeFile(
+    path.join(root, "package.json"),
+    JSON.stringify({
+      scripts: {
+        test: "node --test",
+        build: "tsc -b",
+        deploy: "node deploy.js --push"
+      }
+    }),
+    "utf8"
+  );
+
+  const result = await runAiTool(["command-index", "--root", root, "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "command-index");
+  assert.equal(payload.errors.length, 0);
+  assert.ok(payload.data.commands.some((command) => command.name === "test" && command.mutates_files === false));
+  assert.ok(payload.data.commands.some((command) => command.name === "build" && command.mutates_files === true));
+  assert.ok(payload.data.commands.some((command) => command.name === "deploy" && command.requires_network === true));
+});
+
+test("ai-tools config-map reports env references without exposing secret file values", async (t) => {
+  const root = await createFixtureRoot(t);
+  await writeFile(path.join(root, ".env"), "SECRET_TOKEN=do-not-print\nVISIBLE_MODE=local\n", "utf8");
+  await writeFile(
+    path.join(root, "src", "config.js"),
+    [
+      "const token = process.env.SECRET_TOKEN;",
+      "const url = process.env.API_URL ?? 'http://localhost';"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const result = await runAiTool(["config-map", "--root", root, "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "config-map");
+  assert.equal(payload.errors.length, 0);
+  assert.ok(payload.data.config_files.includes(".env"));
+  assert.ok(payload.data.env_vars_referenced.some((envVar) => envVar.name === "SECRET_TOKEN" && envVar.required === true));
+  assert.ok(payload.data.env_vars_referenced.some((envVar) => envVar.name === "API_URL" && envVar.has_default === true));
+  assert.equal(JSON.stringify(payload).includes("do-not-print"), false);
 });
