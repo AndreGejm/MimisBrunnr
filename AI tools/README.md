@@ -23,6 +23,33 @@ AI tools/
 Use `scripts/` for runnable helpers. Use `index/` for concise metadata that an
 agent can read before deciding whether a script is relevant.
 
+## Launcher
+
+The first shared launcher is:
+
+```bash
+node "AI tools/scripts/ai-tools.mjs" <command> [options]
+```
+
+Available read-only commands:
+
+- `list-tools`: emit machine-readable metadata for the tools in `index/`.
+- `tree-lite`: emit a bounded tree with generated and dependency folders omitted.
+- `file-inventory`: summarize file counts, sizes, extensions, largest files, and
+  recent files.
+- `smart-search`: return ranked, bounded text matches while ignoring generated
+  and dependency folders. Content search also skips common secret-looking files
+  such as `.env`, private-key extensions, and package-manager credential files.
+
+Examples:
+
+```bash
+node "AI tools/scripts/ai-tools.mjs" list-tools --json
+node "AI tools/scripts/ai-tools.mjs" file-inventory --root . --max-items 20 --json
+node "AI tools/scripts/ai-tools.mjs" tree-lite --root . --max-depth 3 --max-items 100 --json
+node "AI tools/scripts/ai-tools.mjs" smart-search "timeout" --root . --max-items 10 --max-chars 180 --json
+```
+
 ## Tool Categories
 
 Good first tools:
@@ -86,6 +113,7 @@ file, full dependency tree, full dataset, or full log unless explicitly asked.
   `node_modules`, `dist`, `target`, `.pnpm-store`, `coverage`, `.venv`, and
   `__pycache__`.
 - Prefer deterministic output and stable ordering so agents can compare runs.
+- Do not scan secret-looking files for text content by default.
 - Keep scripts small and composable. If a tool becomes a product surface, promote
   it intentionally into the normal Mimir toolbox or Docker AI tool registry.
 

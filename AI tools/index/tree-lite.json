@@ -1,0 +1,13 @@
+{
+  "name": "tree-lite",
+  "purpose": "Emit a bounded workspace tree with generated and dependency folders omitted.",
+  "script": "scripts/ai-tools.mjs",
+  "schema_version": "1.0",
+  "status": "draft",
+  "safe": true,
+  "mutates_files": false,
+  "requires_network": false,
+  "reads_secrets": false,
+  "default_output": "json",
+  "example": "node \"AI tools/scripts/ai-tools.mjs\" tree-lite --root . --max-items 100 --json"
+}

@@ -1,0 +1,13 @@
+{
+  "name": "file-inventory",
+  "purpose": "Summarize file counts, sizes, extensions, largest files, and recent files without reading dependency folders.",
+  "script": "scripts/ai-tools.mjs",
+  "schema_version": "1.0",
+  "status": "draft",
+  "safe": true,
+  "mutates_files": false,
+  "requires_network": false,
+  "reads_secrets": false,
+  "default_output": "json",
+  "example": "node \"AI tools/scripts/ai-tools.mjs\" file-inventory --root . --json"
+}
