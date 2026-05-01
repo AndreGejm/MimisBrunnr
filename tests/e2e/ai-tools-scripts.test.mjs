@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -89,6 +89,60 @@ test("ai-tools CLI formatter renders Markdown without invoking the launcher", as
   assert.match(markdown, /^# command-index/u);
   assert.match(markdown, /Root: C:\/repo/u);
   assert.match(markdown, /- test: node --test/u);
+});
+
+test("ai-tools metadata files expose the complete agent discovery contract", async () => {
+  const indexRoot = path.join(process.cwd(), "AI tools", "index");
+  const entries = (await readdir(indexRoot)).filter((entry) => entry.endsWith(".json") && entry !== "tool-template.json").sort();
+
+  assert.ok(entries.length > 0);
+  for (const entry of entries) {
+    const metadata = JSON.parse(await readFile(path.join(indexRoot, entry), "utf8"));
+    assert.equal(typeof metadata.id, "string", `${entry} missing id`);
+    assert.equal(typeof metadata.family, "string", `${entry} missing family`);
+    assert.equal(metadata.id, `${metadata.family}.${metadata.name}`, `${entry} id must match family.name`);
+    assert.equal(typeof metadata.description, "string", `${entry} missing description`);
+    assert.equal(metadata.schema_version, "1.0", `${entry} schema_version must be 1.0`);
+    assert.equal(typeof metadata.safety_level, "string", `${entry} missing safety_level`);
+    assert.equal(typeof metadata.side_effects, "string", `${entry} missing side_effects`);
+    assert.equal(typeof metadata.stable_for_agent_use, "boolean", `${entry} missing stable_for_agent_use`);
+    assert.equal(typeof metadata.requires_git, "boolean", `${entry} missing requires_git`);
+    assert.ok(Array.isArray(metadata.requires_external_binaries), `${entry} missing requires_external_binaries`);
+    assert.ok(Array.isArray(metadata.input_parameters), `${entry} missing input_parameters`);
+    assert.equal(metadata.output_format, "json", `${entry} output_format must be json`);
+  }
+});
+
+test("ai-tools template documents the current metadata contract", async () => {
+  const template = JSON.parse(await readFile(path.join(process.cwd(), "AI tools", "index", "tool-template.json"), "utf8"));
+  const requiredFields = [
+    "id",
+    "family",
+    "name",
+    "description",
+    "purpose",
+    "script",
+    "schema_version",
+    "status",
+    "safe",
+    "mutates_files",
+    "requires_git",
+    "requires_external_binaries",
+    "requires_network",
+    "reads_secrets",
+    "safety_level",
+    "side_effects",
+    "stable_for_agent_use",
+    "input_parameters",
+    "output_format",
+    "example"
+  ];
+
+  for (const field of requiredFields) {
+    assert.ok(Object.hasOwn(template, field), `template missing ${field}`);
+  }
+  assert.ok(Array.isArray(template.input_parameters));
+  assert.ok(Array.isArray(template.requires_external_binaries));
 });
 
 test("ai-tools list-tools returns machine-readable tool metadata", async () => {

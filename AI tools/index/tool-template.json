@@ -1,14 +1,29 @@
 {
+  "id": "family.example-tool",
+  "family": "family",
   "name": "example-tool",
+  "description": "One sentence describing the compact fact this tool produces for agents.",
   "purpose": "One sentence describing the compact fact this tool produces for agents.",
-  "script": "scripts/example-tool.ps1",
+  "script": "scripts/ai-tools.mjs",
   "schema_version": "1.0",
   "status": "draft",
   "safe": true,
   "mutates_files": false,
+  "requires_git": false,
+  "requires_external_binaries": [],
   "requires_network": false,
   "reads_secrets": false,
+  "safety_level": "read_only",
+  "side_effects": "none",
+  "stable_for_agent_use": true,
+  "input_parameters": [
+    "root",
+    "max-items",
+    "json",
+    "markdown"
+  ],
   "default_output": "json",
+  "output_format": "json",
   "common_flags": [
     "--json",
     "--markdown",
@@ -19,7 +34,7 @@
     "--root",
     "--dry-run"
   ],
-  "example": "pwsh -File \"AI tools/scripts/example-tool.ps1\" --root . --json",
+  "example": "node \"AI tools/scripts/ai-tools.mjs\" family example-tool --root . --json",
   "output_contract": {
     "tool": "example-tool",
     "schema_version": "1.0",
@@ -30,6 +45,8 @@
     "errors": []
   },
   "notes": [
+    "Set id to '<family>.<name>' for every callable tool.",
+    "Set family to the folder or CLI responsibility group that owns the implementation.",
     "Keep output bounded and deterministic.",
     "Document any mutation or network behavior before using the tool in agent workflows."
   ]
