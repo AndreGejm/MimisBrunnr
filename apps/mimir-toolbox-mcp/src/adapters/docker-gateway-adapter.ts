@@ -19,8 +19,7 @@ export class DockerGatewayToolboxBackendAdapter implements ToolboxBackendAdapter
       command: resolveGatewayExecutable(),
       args: [
         ...resolveGatewayBaseArgs(),
-        "--servers",
-        this.runtimeBinding.catalogServerId
+        ...resolveGatewayScopeArgs(this.runtimeBinding.catalogServerId)
       ],
       workingDirectory: process.cwd(),
       env: resolveGatewayEnv()
@@ -46,6 +45,15 @@ export class DockerGatewayToolboxBackendAdapter implements ToolboxBackendAdapter
   health(): ToolboxBackendHealth {
     return this.delegate.health();
   }
+}
+
+function resolveGatewayScopeArgs(catalogServerId: string): string[] {
+  const profileId = process.env.MAB_TOOLBOX_DOCKER_GATEWAY_PROFILE_ID?.trim();
+  if (profileId) {
+    return ["--profile", profileId];
+  }
+
+  return ["--servers", catalogServerId];
 }
 
 function resolveGatewayExecutable(): string {

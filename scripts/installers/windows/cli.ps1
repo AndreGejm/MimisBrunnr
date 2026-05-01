@@ -503,8 +503,8 @@ switch ($Operation) {
       )
     } else {
       @(
-        "Upgrade or adapt the Docker MCP Toolkit contract before attempting toolbox runtime apply.",
-        "Do not execute the planned Docker commands until the toolkit exposes the required profile surface."
+        "Resolve descriptor-only Docker MCP peer remediation before attempting toolbox runtime apply.",
+        "Do not execute the planned Docker commands until every selected peer has a safe materialized target."
       )
     }
 

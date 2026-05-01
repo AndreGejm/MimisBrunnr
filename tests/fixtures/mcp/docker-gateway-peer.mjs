@@ -97,7 +97,8 @@ function handleMessage(message) {
           ],
           structuredContent: {
             query,
-            source: "docker-gateway-peer-fixture"
+            source: "docker-gateway-peer-fixture",
+            gatewayArgs: process.argv.slice(2)
           },
           isError: false
         }

@@ -5,7 +5,7 @@ workspace-facing tool surface.
 
 ## Current rollout position
 
-As of `2026-04-27`, the repo is strong enough for controlled local use and
+As of `2026-05-01`, the repo is strong enough for controlled local use and
 targeted pilots.
 
 It is not yet ready for broad default rollout of the full toolbox experience
@@ -35,16 +35,21 @@ Current machine-level blockers:
 
 Current causes:
 
-- the installed Docker toolkit does not expose `docker mcp profile`
-- Docker gateway help does not expose `--profile`
-- some selected peers are still `descriptor-only`
+- the installed Docker toolkit exposes profile server listing, and Mimir now
+  audits both the current `docker mcp profile server ls --format json` shape
+  and the older `docker mcp server ls --json` shape
+- broad apply remains blocked because selected peers are still
+  `descriptor-only`
 - live Docker-enabled servers can still exceed the repo-governed contract
+- Docker CLI compatibility, governance cleanliness, and Docker apply safety are
+  separate readiness gates
 
 ### 2. Broker rollout still needs broader validation
 
-The broker is live, but broad rollout still needs:
+The broker is live. Current validation covers Codex, Claude, and Antigravity
+client overlays in bootstrap, activation, list-change notification,
+descriptor-only omission, and contraction flows. Broad rollout still needs:
 
-- more target-client validation beyond the current local path
 - more target-machine validation for reconnect and contraction behavior
 - broader backend parity than the current owned, `local-stdio`, and opt-in
   `docker-catalog` coverage
@@ -53,9 +58,24 @@ The broker is live, but broad rollout still needs:
 
 These remain partial:
 
-- stronger temporal-validity governance beyond the current refresh-draft flow
-- stronger authority-state and namespace follow-through
-- default enablement of hierarchical retrieval
+- lifecycle policy beyond the current temporal governance report and
+  idempotent refresh-draft flow
+- continued authority-state and namespace follow-through as new projection
+  types are added
+- default enablement of hierarchical retrieval; flat retrieval remains the
+  default while shadow/eval metrics are reviewed
+
+## Broad-readiness checklist
+
+Broad rollout requires all of these to be green at the same time:
+
+- Docker CLI compatible
+- Docker governance clean
+- descriptor-only remediation understood for every selected peer
+- broker client matrix green
+- Mimisbrunnr temporal gate green
+- namespace authority gate green
+- hierarchical shadow/eval gate green
 
 ## Gate by rollout mode
 
@@ -85,8 +105,8 @@ these are true:
 1. Docker toolbox rollout readiness is green, or the default path has been
    explicitly narrowed so those Docker blockers no longer matter.
 2. Broker behavior has been validated across the actual target clients.
-3. The remaining `BK-007`, `BK-008`, and `RV-006` follow-through work is
-   materially complete.
+3. The remaining `BK-007`, `BK-008`, and `RV-006` follow-through work is green
+   for the intended rollout mode.
 4. The external-client boundary still holds: Mimir owns memory, retrieval,
    governed writes, and bounded local execution, while client skills and
    subagents stay outside Mimir.

@@ -142,8 +142,10 @@ boundary contract.
 
 These constraints are active in the current repo state:
 
-- the Docker MCP toolkit on this machine does not expose `docker mcp profile`
-- Docker gateway help does not expose `--profile`
+- Docker MCP profile server listing is inspectable through the current CLI, with
+  older CLI fallback retained in the audits
+- Docker apply safety still depends on governance cleanliness and safe
+  materialization for every selected peer
 - several peer servers remain descriptor-only wrappers because the live catalog
   surfaces are broader than the governed policy contract
 - the broker can route owned tools and local-stdio peers today, while

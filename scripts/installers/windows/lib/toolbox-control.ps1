@@ -16,8 +16,21 @@ function Get-InstallerToolboxRolloutRemediationType {
   [CmdletBinding()]
   param(
     [AllowNull()]
+    [string]$ServerId,
+
+    [AllowNull()]
     [string]$BlockedReason
   )
+
+  switch ($ServerId) {
+    "docker-read" { return "wrapper_required" }
+    "dockerhub-read" { return "wrapper_required" }
+    "grafana-observe" { return "wrapper_required" }
+    "kubernetes-read" { return "wrapper_required" }
+    "github-read" { return "catalog_entry_required" }
+    "docker-admin" { return "vetting_required" }
+    "github-write" { return "vetting_required" }
+  }
 
   $reason = if ([string]::IsNullOrWhiteSpace($BlockedReason)) {
     ""
@@ -93,7 +106,7 @@ function Get-InstallerToolboxRolloutRemediationPlan {
         [pscustomobject]@{
           id = $_.id
           blockedReason = $_.blockedReason
-          remediationType = Get-InstallerToolboxRolloutRemediationType -BlockedReason $_.blockedReason
+          remediationType = Get-InstallerToolboxRolloutRemediationType -ServerId $_.id -BlockedReason $_.blockedReason
         }
       }
   )
@@ -445,7 +458,11 @@ function Invoke-InstallerToolboxRolloutReadinessAudit {
     }
   }
   if (-not [bool]$applyPlan.report.compatibleWithCurrentToolkit) {
-    $action = "Upgrade or adapt the Docker MCP Toolkit contract before attempting toolbox runtime apply."
+    $action = if (@($applyPlan.report.blockedServers).Count -gt 0) {
+      "Resolve descriptor-only Docker MCP peer remediation before attempting toolbox runtime apply."
+    } else {
+      "Confirm Docker MCP profile support before attempting toolbox runtime apply."
+    }
     if (@($nextActions) -notcontains $action) {
       $nextActions += $action
     }
@@ -474,8 +491,10 @@ function Invoke-InstallerToolboxRolloutReadinessAudit {
         bootstrapSession = ($activeSession.report.workflow.sessionMode -eq "toolbox-bootstrap")
         clientHandoffReady = ($clientHandoff.report.status -eq "success")
         runtimeClientMatchesSelectedClient = [bool]$clientHandoff.report.readiness.clientMatchesRuntime
+        dockerCliCompatible = ($governanceStatus -ne "unavailable")
         dockerGovernanceStatus = $governanceStatus
         dockerGovernanceClean = ($governanceStatus -eq "clean")
+        dockerApplySafe = [bool]$applyPlan.report.compatibleWithCurrentToolkit
         dockerApplyCompatible = [bool]$applyPlan.report.compatibleWithCurrentToolkit
         blockedAreas = @($blockedAreas)
       }

@@ -152,8 +152,9 @@ The main remaining blockers are operational, not foundational.
 
 Current blockers:
 
-- the current Docker MCP toolkit build does not expose `docker mcp profile`
-- Docker gateway help does not expose `--profile`
+- Docker MCP profile server listing can be audited with the current CLI, with
+  older CLI fallback retained
+- Docker CLI compatibility is not the same as Docker apply safety
 - descriptor-only peers still lack safe catalog entries or wrappers
 - live Docker-enabled servers can drift from the repo-governed policy
 
@@ -166,17 +167,19 @@ Current doctor-level blocker names on this machine:
 
 Still partial:
 
-- broader temporal-validity governance beyond the current refresh-draft and
-  warning flow
-- stronger authority-state and namespace enforcement follow-through
-- default rollout of hierarchical retrieval; it remains opt-in
+- lifecycle policy beyond the current temporal governance report, refresh-draft,
+  and warning flow
+- continued authority-state and namespace enforcement as projection types expand
+- default rollout of hierarchical retrieval; it remains opt-in and now has
+  flat-vs-hierarchical shadow/eval reporting
 
 ### Broker rollout
 
 Still partial:
 
 - broader peer/backend parity inside the dynamic broker
-- broader target-client validation beyond the current local Codex-oriented path
+- broader target-machine validation beyond the current local Codex, Claude, and
+  Antigravity overlay matrix
 
 ## Intentionally out of the current stack
 

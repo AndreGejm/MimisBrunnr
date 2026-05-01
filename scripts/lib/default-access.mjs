@@ -786,6 +786,9 @@ function evaluateToolboxRolloutReadiness({
       executable: dockerExecutable,
       executableArgs: dockerExecutableArgs
     });
+    const dockerCliCompatible =
+      dockerMcp.profileSupport.supported &&
+      governance.governanceStatus !== "unavailable";
     const dockerApplyCompatible =
       dockerMcp.profileSupport.supported &&
       dockerMcp.gatewayProfileSupport.supported &&
@@ -843,12 +846,18 @@ function evaluateToolboxRolloutReadiness({
         "Fix Docker MCP governance drift evaluation before relying on rollout readiness."
       );
     }
-    if (!dockerApplyCompatible) {
-      nextActions.add(
-        "Upgrade or adapt the Docker MCP Toolkit contract before attempting toolbox runtime apply."
-      );
-    }
     const blockedServers = applyPlan.blockedServers ?? [];
+    if (!dockerApplyCompatible) {
+      if (blockedServers.length > 0) {
+        nextActions.add(
+          "Resolve descriptor-only Docker MCP peer remediation before attempting toolbox runtime apply."
+        );
+      } else {
+        nextActions.add(
+          "Confirm Docker MCP profile and gateway profile support before attempting toolbox runtime apply."
+        );
+      }
+    }
     for (const blockedServer of blockedServers) {
       if (blockedServer?.blockedReason) {
         nextActions.add(blockedServer.blockedReason);
@@ -873,8 +882,10 @@ function evaluateToolboxRolloutReadiness({
         bootstrapSession,
         clientHandoffReady,
         runtimeClientMatchesSelectedClient,
+        dockerCliCompatible,
         dockerGovernanceStatus: governance.governanceStatus,
         dockerGovernanceClean: governance.governanceStatus === "clean",
+        dockerApplySafe: dockerApplyCompatible,
         dockerApplyCompatible,
         blockedAreas
       },
@@ -900,8 +911,10 @@ function evaluateToolboxRolloutReadiness({
         bootstrapSession: false,
         clientHandoffReady: false,
         runtimeClientMatchesSelectedClient: false,
+        dockerCliCompatible: false,
         dockerGovernanceStatus: "unavailable",
         dockerGovernanceClean: false,
+        dockerApplySafe: false,
         dockerApplyCompatible: false,
         blockedAreas: [
           "toolbox_control_surface",
@@ -928,7 +941,7 @@ function evaluateToolboxRolloutReadiness({
       nextActions: [
         "Repair the checked-in toolbox policy manifests before relying on rollout readiness.",
         "Fix Docker MCP governance drift evaluation before relying on rollout readiness.",
-        "Upgrade or adapt the Docker MCP Toolkit contract before attempting toolbox runtime apply."
+        "Resolve Docker MCP apply-safety blockers before attempting toolbox runtime apply."
       ],
       debug: {
         manifestDirectory,
@@ -945,28 +958,12 @@ function evaluateDockerMcpGovernanceDrift({
   executable = "docker",
   executableArgs = []
 }) {
-  const probeCommand = ["mcp", "server", "ls", "--json"];
-  let probe;
-  try {
-    probe = spawnSync(executable, [...executableArgs, ...probeCommand], {
-      encoding: "utf8"
-    });
-  } catch (error) {
-    return {
-      governanceStatus: "unavailable",
-      governanceSummaryCounts: {
-        governedEnabledServerCount: 0,
-        unsafeEnabledServerCount: 0,
-        unmanagedEnabledServerCount: 0
-      },
-      governedEnabledServers: [],
-      unsafeEnabledServers: [],
-      unmanagedEnabledServers: [],
-      governanceUnavailableReason: error instanceof Error ? error.message : String(error)
-    };
-  }
+  const liveServers = readDockerMcpLiveServers({
+    executable,
+    executableArgs
+  });
 
-  if (probe.status !== 0) {
+  if (!liveServers.ok) {
     return {
       governanceStatus: "unavailable",
       governanceSummaryCounts: {
@@ -977,40 +974,7 @@ function evaluateDockerMcpGovernanceDrift({
       governedEnabledServers: [],
       unsafeEnabledServers: [],
       unmanagedEnabledServers: [],
-      governanceUnavailableReason: normalizeTextOutput(probe.stderr) || normalizeTextOutput(probe.stdout) || `docker exited with status ${String(probe.status)}`
-    };
-  }
-
-  let decodedServers;
-  try {
-    decodedServers = JSON.parse(normalizeTextOutput(probe.stdout));
-  } catch (error) {
-    return {
-      governanceStatus: "unavailable",
-      governanceSummaryCounts: {
-        governedEnabledServerCount: 0,
-        unsafeEnabledServerCount: 0,
-        unmanagedEnabledServerCount: 0
-      },
-      governedEnabledServers: [],
-      unsafeEnabledServers: [],
-      unmanagedEnabledServers: [],
-      governanceUnavailableReason: error instanceof Error ? error.message : String(error)
-    };
-  }
-
-  if (!Array.isArray(decodedServers)) {
-    return {
-      governanceStatus: "unavailable",
-      governanceSummaryCounts: {
-        governedEnabledServerCount: 0,
-        unsafeEnabledServerCount: 0,
-        unmanagedEnabledServerCount: 0
-      },
-      governedEnabledServers: [],
-      unsafeEnabledServers: [],
-      unmanagedEnabledServers: [],
-      governanceUnavailableReason: "Docker MCP server list did not return an array."
+      governanceUnavailableReason: liveServers.reason
     };
   }
 
@@ -1048,7 +1012,7 @@ function evaluateDockerMcpGovernanceDrift({
   const unsafeEnabledServers = [];
   const unmanagedEnabledServers = [];
 
-  for (const liveServer of [...decodedServers].sort((left, right) =>
+  for (const liveServer of [...liveServers.servers].sort((left, right) =>
     String(left?.name ?? "").localeCompare(String(right?.name ?? ""))
   )) {
     const name = typeof liveServer?.name === "string" ? liveServer.name.trim() : "";
@@ -1099,6 +1063,170 @@ function evaluateDockerMcpGovernanceDrift({
   };
 }
 
+function readDockerMcpLiveServers({
+  executable = "docker",
+  executableArgs = []
+}) {
+  const probes = [
+    {
+      label: "profile-server-list",
+      command: ["mcp", "profile", "server", "ls", "--format", "json"]
+    },
+    {
+      label: "legacy-server-list",
+      command: ["mcp", "server", "ls", "--json"]
+    }
+  ];
+  const failures = [];
+
+  for (const probeSpec of probes) {
+    let probe;
+    try {
+      probe = spawnSync(executable, [...executableArgs, ...probeSpec.command], {
+        encoding: "utf8"
+      });
+    } catch (error) {
+      failures.push(
+        `${probeSpec.label}: ${error instanceof Error ? error.message : String(error)}`
+      );
+      continue;
+    }
+
+    if (probe.status !== 0) {
+      failures.push(
+        `${probeSpec.label}: ${
+          normalizeTextOutput(probe.stderr) ||
+          normalizeTextOutput(probe.stdout) ||
+          `docker exited with status ${String(probe.status)}`
+        }`
+      );
+      continue;
+    }
+
+    let decodedServers;
+    try {
+      decodedServers = JSON.parse(normalizeTextOutput(probe.stdout));
+    } catch (error) {
+      failures.push(
+        `${probeSpec.label}: ${error instanceof Error ? error.message : String(error)}`
+      );
+      continue;
+    }
+
+    const normalizedServers = normalizeDockerMcpLiveServers(decodedServers);
+    if (!normalizedServers) {
+      failures.push(`${probeSpec.label}: Docker MCP server list did not return an array.`);
+      continue;
+    }
+
+    return {
+      ok: true,
+      source: probeSpec.label,
+      servers: normalizedServers
+    };
+  }
+
+  return {
+    ok: false,
+    reason: failures.join(" | ") || "Docker MCP server list was unavailable."
+  };
+}
+
+function normalizeDockerMcpLiveServers(value) {
+  const normalizedServers = [];
+  const sawServerList = collectDockerMcpLiveServers(value, undefined, normalizedServers);
+  if (!sawServerList) {
+    return undefined;
+  }
+
+  return normalizedServers;
+}
+
+function collectDockerMcpLiveServers(value, inheritedProfileName, normalizedServers) {
+  if (Array.isArray(value)) {
+    let sawServerList = true;
+    for (const item of value) {
+      const itemHadNestedList = collectDockerMcpLiveServers(
+        item,
+        inheritedProfileName,
+        normalizedServers
+      );
+      if (!itemHadNestedList) {
+        addDockerMcpLiveServer(item, inheritedProfileName, normalizedServers);
+      }
+    }
+    return sawServerList;
+  }
+
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  let sawServerList = false;
+  if (Array.isArray(value.profiles)) {
+    sawServerList = true;
+    for (const profile of value.profiles) {
+      collectDockerMcpLiveServers(profile, inheritedProfileName, normalizedServers);
+    }
+  }
+
+  if (Array.isArray(value.servers)) {
+    sawServerList = true;
+    const profileName = getDockerMcpStringProperty(
+      value,
+      ["profileName", "profile", "name", "id"]
+    ) ?? inheritedProfileName;
+    for (const server of value.servers) {
+      addDockerMcpLiveServer(server, profileName, normalizedServers);
+    }
+  }
+
+  if (Array.isArray(value.items)) {
+    sawServerList = true;
+    for (const item of value.items) {
+      const itemHadNestedList = collectDockerMcpLiveServers(
+        item,
+        inheritedProfileName,
+        normalizedServers
+      );
+      if (!itemHadNestedList) {
+        addDockerMcpLiveServer(item, inheritedProfileName, normalizedServers);
+      }
+    }
+  }
+
+  return sawServerList;
+}
+
+function addDockerMcpLiveServer(server, inheritedProfileName, normalizedServers) {
+  const name = getDockerMcpStringProperty(server, ["name", "id"]);
+  if (!name) {
+    return;
+  }
+
+  normalizedServers.push({
+    name,
+    description:
+      typeof server?.description === "string" ? server.description : undefined,
+    secrets: server?.secrets,
+    config: server?.config,
+    oauth: server?.oauth,
+    profileName:
+      getDockerMcpStringProperty(server, ["profileName", "profile"]) ??
+      inheritedProfileName
+  });
+}
+
+function getDockerMcpStringProperty(value, propertyNames) {
+  for (const propertyName of propertyNames) {
+    const propertyValue = value?.[propertyName];
+    if (typeof propertyValue === "string" && propertyValue.trim()) {
+      return propertyValue.trim();
+    }
+  }
+  return undefined;
+}
+
 function buildToolboxRolloutRemediationPlan({
   governance,
   blockedServers
@@ -1128,7 +1256,7 @@ function buildToolboxRolloutRemediationPlan({
     .map((server) => ({
       id: server.id,
       blockedReason: server.blockedReason,
-      remediationType: classifyBlockedPolicyServerRemediation(server.blockedReason)
+      remediationType: classifyBlockedPolicyServerRemediation(server.blockedReason, server.id)
     }))
     .sort((left, right) => left.id.localeCompare(right.id));
 
@@ -1139,7 +1267,20 @@ function buildToolboxRolloutRemediationPlan({
   };
 }
 
-function classifyBlockedPolicyServerRemediation(blockedReason) {
+function classifyBlockedPolicyServerRemediation(blockedReason, serverId = "") {
+  const explicitByServerId = new Map([
+    ["docker-read", "wrapper_required"],
+    ["dockerhub-read", "wrapper_required"],
+    ["grafana-observe", "wrapper_required"],
+    ["kubernetes-read", "wrapper_required"],
+    ["github-read", "catalog_entry_required"],
+    ["docker-admin", "vetting_required"],
+    ["github-write", "vetting_required"]
+  ]);
+  if (explicitByServerId.has(serverId)) {
+    return explicitByServerId.get(serverId);
+  }
+
   const reason = typeof blockedReason === "string" ? blockedReason.toLowerCase() : "";
   if (reason.includes("vetted")) {
     return "vetting_required";

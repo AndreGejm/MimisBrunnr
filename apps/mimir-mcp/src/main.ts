@@ -2,7 +2,8 @@
 
 import { randomUUID } from "node:crypto";
 import process from "node:process";
-import { toCliCommandName } from "@mimir/contracts";import type {
+import { toCliCommandName } from "@mimir/contracts";
+import type {
   ActorContext,
   AssembleAgentContextRequest,
   CheckAiToolsRequest,
@@ -30,15 +31,18 @@ import {
   ActorAuthorizationError,
   buildServiceContainer,
   dispatchRuntimeCommand,
+  getAdministrativeFreshnessStatus,
   type ServiceContainer,
   loadEnvironment,
   TransportValidationError,
+  validateAdministrativeFreshnessStatusRequest,
   validateTransportRequest
 } from "@mimir/infrastructure";
 import { MCP_TOOL_DEFINITIONS, getToolDefinition } from "./tool-definitions.js";
 
 type JsonRpcId = string | number | null;
 type JsonRecord = Record<string, unknown>;
+type StdioFraming = "content-length" | "line";
 
 interface JsonRpcRequest {
   jsonrpc: "2.0";
@@ -49,7 +53,7 @@ interface JsonRpcRequest {
 
 class ContentLengthTransport {
   private buffer = Buffer.alloc(0);
-  private readonly listeners: Array<(message: unknown) => void> = [];
+  private readonly listeners: Array<(message: unknown, framing: StdioFraming) => void> = [];
 
   constructor(
     input: NodeJS.ReadableStream,
@@ -64,12 +68,17 @@ class ContentLengthTransport {
     });
   }
 
-  onMessage(listener: (message: unknown) => void): void {
+  onMessage(listener: (message: unknown, framing: StdioFraming) => void): void {
     this.listeners.push(listener);
   }
 
-  send(message: unknown): void {
+  send(message: unknown, framing: StdioFraming = "content-length"): void {
     const body = JSON.stringify(message);
+    if (framing === "line") {
+      this.output.write(`${body}\n`);
+      return;
+    }
+
     this.output.write(`Content-Length: ${Buffer.byteLength(body, "utf8")}\r\n\r\n${body}`);
   }
 
@@ -98,7 +107,7 @@ class ContentLengthTransport {
           this.buffer.subarray(separator + 4, totalLength).toString("utf8")
         ) as unknown;
         this.buffer = this.buffer.subarray(totalLength);
-        this.emit(parsed);
+        this.emit(parsed, "content-length");
         continue;
       }
 
@@ -111,13 +120,13 @@ class ContentLengthTransport {
       this.buffer = this.buffer.subarray(lineBreakIndex + 1);
       const parsed = JSON.parse(line) as unknown;
 
-      this.emit(parsed);
+      this.emit(parsed, "line");
     }
   }
 
-  private emit(message: unknown): void {
+  private emit(message: unknown, framing: StdioFraming): void {
     for (const listener of this.listeners) {
-      void listener(message);
+      void listener(message, framing);
     }
   }
 }
@@ -147,7 +156,7 @@ let container: ServiceContainer | undefined;
 const transport = new ContentLengthTransport(process.stdin, process.stdout);
 const defaultSessionActor = loadDefaultSessionActor();
 
-transport.onMessage(async (message) => {
+transport.onMessage(async (message, framing) => {
   if (!isJsonRpcRequest(message)) {
     return;
   }
@@ -161,16 +170,19 @@ transport.onMessage(async (message) => {
 
   try {
     const response = await handleRequest(message);
-    transport.send(response);
+    transport.send(response, framing);
   } catch (error) {
-    transport.send({
-      jsonrpc: "2.0",
-      id: message.id ?? null,
-      error: {
-        code: -32603,
-        message: error instanceof Error ? error.message : String(error)
-      }
-    });
+    transport.send(
+      {
+        jsonrpc: "2.0",
+        id: message.id ?? null,
+        error: {
+          code: -32603,
+          message: error instanceof Error ? error.message : String(error)
+        }
+      },
+      framing
+    );
   }
 });
 
@@ -255,6 +267,31 @@ async function callTool(name: string, args: JsonRecord): Promise<unknown> {
   }
 
   try {
+    if (name === "freshness_status") {
+      const result = await getAdministrativeFreshnessStatus(
+        getContainer(),
+        buildActorContext(
+          "view_freshness_status",
+          tool.defaultActorRole,
+          args.actor
+        ),
+        validateAdministrativeFreshnessStatusRequest(args, {
+          allowCorpusAliases: true
+        })
+      );
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2)
+          }
+        ],
+        structuredContent: result,
+        isError: isToolError(result)
+      };
+    }
+
     const validatedArgs = validateTransportRequest(tool.name, args);
     const request = {
       ...validatedArgs,

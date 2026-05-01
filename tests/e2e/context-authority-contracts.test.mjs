@@ -191,3 +191,39 @@ test("context node descriptors reject authority-state invariants that cross sour
     /authority.*supersession/i
   );
 });
+
+test("context node descriptors preserve derived projection authority without blurring lifecycle state", () => {
+  const derivedDescriptor = parseContextNodeDescriptor({
+    uri: "mimir://mimisbrunnr/instruction/derived-rollup",
+    ownerScope: "mimisbrunnr",
+    contextKind: "instruction",
+    authorityState: "derived",
+    sourceType: "derived_projection",
+    sourceRef: "rollup:namespace-risk",
+    freshness: {
+      validFrom: "2026-04-19T00:00:00.000Z",
+      validUntil: "2026-05-19T00:00:00.000Z",
+      freshnessClass: "current",
+      freshnessReason: "Derived projection inherits freshness from selected canonical evidence."
+    },
+    representationAvailability: { L0: false, L1: true, L2: true },
+    promotionStatus: "not_applicable",
+    supersessionStatus: "active",
+    createdAt: "2026-04-19T00:00:00.000Z",
+    updatedAt: "2026-04-19T00:00:00.000Z"
+  });
+
+  assert.equal(derivedDescriptor.authorityState, "derived");
+  assert.equal(derivedDescriptor.sourceType, "derived_projection");
+  assert.equal(derivedDescriptor.promotionStatus, "not_applicable");
+  assert.equal(derivedDescriptor.supersessionStatus, "active");
+
+  assert.throws(
+    () =>
+      parseContextNodeDescriptor({
+        ...derivedDescriptor,
+        sourceType: "canonical_note"
+      }),
+    /authority.*source/i
+  );
+});

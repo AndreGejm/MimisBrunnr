@@ -16,10 +16,7 @@ function Invoke-InstallerDockerMcpToolkitAudit {
     -Arguments @("mcp", "version") `
     -WorkingDirectory $RepoRoot
 
-  $serversResult = Invoke-ProcessCaptureAdapter `
-    -ExecutableName "docker" `
-    -Arguments @("mcp", "server", "ls", "--json") `
-    -WorkingDirectory $RepoRoot
+  $serverList = Invoke-InstallerDockerMcpLiveServerList -RepoRoot $RepoRoot
 
   $clientsResult = Invoke-ProcessCaptureAdapter `
     -ExecutableName "docker" `
@@ -36,18 +33,7 @@ function Invoke-InstallerDockerMcpToolkitAudit {
     -Arguments @("mcp", "feature", "ls") `
     -WorkingDirectory $RepoRoot
 
-  $decodedServers = $serversResult.stdout | ConvertFrom-Json
-  $servers = @(
-    foreach ($server in $decodedServers) {
-      [pscustomobject]@{
-        name = $server.name
-        description = $server.description
-        secrets = $server.secrets
-        config = $server.config
-        oauth = $server.oauth
-      }
-    }
-  )
+  $servers = @($serverList.servers)
   $clientMap = $clientsResult.stdout | ConvertFrom-Json
   $clients = @(
     foreach ($property in $clientMap.PSObject.Properties) {
@@ -72,16 +58,17 @@ function Invoke-InstallerDockerMcpToolkitAudit {
   $governance = $governanceReport.report
 
   return [pscustomobject]@{
-    commands = @(
-      $versionResult.command,
-      $serversResult.command,
-      $clientsResult.command,
-      $configResult.command,
-      $featureResult.command
-    ) + @($governanceCommands)
+    commands =
+      @($versionResult.command) +
+      @($serverList.commands) +
+      @($clientsResult.command) +
+      @($configResult.command) +
+      @($featureResult.command) +
+      @($governanceCommands)
     report = [pscustomobject]@{
       available = $true
       version = $versionResult.stdout.Trim()
+      liveServerListSource = $serverList.source
       enabledServerCount = @($servers).Count
       configuredClientCount = @($clients | Where-Object { $_.isConfigured }).Count
       connectedClientCount = @($clients | Where-Object { $_.dockerMCPCatalogConnected }).Count
@@ -97,6 +84,238 @@ function Invoke-InstallerDockerMcpToolkitAudit {
       governanceUnavailableReason = $governance.governanceUnavailableReason
     }
   }
+}
+
+function Invoke-InstallerDockerMcpLiveServerList {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$RepoRoot
+  )
+
+  $probeSpecs = @(
+    [pscustomobject]@{
+      source = "profile-server-list"
+      arguments = @("mcp", "profile", "server", "ls", "--format", "json")
+    },
+    [pscustomobject]@{
+      source = "legacy-server-list"
+      arguments = @("mcp", "server", "ls", "--json")
+    }
+  )
+
+  $commands = @()
+  $failures = @()
+  foreach ($probeSpec in $probeSpecs) {
+    $result = Invoke-ProcessCaptureAdapter `
+      -ExecutableName "docker" `
+      -Arguments @($probeSpec.arguments) `
+      -WorkingDirectory $RepoRoot `
+      -IgnoreExitCode
+    $commands += $result.command
+
+    if ($result.command.exitCode -ne 0) {
+      $reason = if (-not [string]::IsNullOrWhiteSpace($result.stderr)) {
+        $result.stderr.Trim()
+      } elseif (-not [string]::IsNullOrWhiteSpace($result.stdout)) {
+        $result.stdout.Trim()
+      } else {
+        "docker exited with status $($result.command.exitCode)"
+      }
+      $failures += "$($probeSpec.source): $reason"
+      continue
+    }
+
+    try {
+      $decodedServers = $result.stdout | ConvertFrom-Json
+      $servers = ConvertTo-InstallerDockerMcpLiveServers -DecodedServers $decodedServers
+      return [pscustomobject]@{
+        source = $probeSpec.source
+        commands = @($commands)
+        servers = @($servers)
+      }
+    } catch {
+      $failures += "$($probeSpec.source): $($_.Exception.Message)"
+      continue
+    }
+  }
+
+  throw "Docker MCP server list was unavailable. $($failures -join ' | ')".Trim()
+}
+
+function ConvertTo-InstallerDockerMcpLiveServers {
+  [CmdletBinding()]
+  param(
+    [AllowNull()]
+    [object]$DecodedServers
+  )
+
+  if ($null -eq $DecodedServers) {
+    return @()
+  }
+
+  $servers = [System.Collections.ArrayList]::new()
+  $sawServerList = Add-InstallerDockerMcpLiveServerEntries `
+    -DecodedServers $DecodedServers `
+    -Servers $servers
+
+  if (-not $sawServerList) {
+    throw "Docker MCP server list did not return an array."
+  }
+
+  return @($servers)
+}
+
+function Add-InstallerDockerMcpLiveServerEntries {
+  [CmdletBinding()]
+  param(
+    [AllowNull()]
+    [object]$DecodedServers,
+
+    [AllowNull()]
+    [string]$InheritedProfileName = $null,
+
+    [Parameter(Mandatory = $true)]
+    [AllowEmptyCollection()]
+    [System.Collections.ArrayList]$Servers
+  )
+
+  if ($null -eq $DecodedServers) {
+    return $false
+  }
+
+  if ($DecodedServers -is [array]) {
+    foreach ($item in @($DecodedServers)) {
+      $itemHadNestedList = Add-InstallerDockerMcpLiveServerEntries `
+        -DecodedServers $item `
+        -InheritedProfileName $InheritedProfileName `
+        -Servers $Servers
+      if (-not $itemHadNestedList) {
+        Add-InstallerDockerMcpLiveServer `
+          -Server $item `
+          -InheritedProfileName $InheritedProfileName `
+          -Servers $Servers
+      }
+    }
+    return $true
+  }
+
+  $propertyNames = @($DecodedServers.PSObject.Properties.Name)
+  $sawServerList = $false
+
+  if ($propertyNames -contains "profiles" -and $null -ne $DecodedServers.profiles) {
+    $sawServerList = $true
+    foreach ($profile in @($DecodedServers.profiles)) {
+      [void](Add-InstallerDockerMcpLiveServerEntries `
+        -DecodedServers $profile `
+        -InheritedProfileName $InheritedProfileName `
+        -Servers $Servers)
+    }
+  }
+
+  if ($propertyNames -contains "servers" -and $null -ne $DecodedServers.servers) {
+    $sawServerList = $true
+    $profileName = Get-InstallerDockerMcpStringProperty `
+      -InputObject $DecodedServers `
+      -PropertyNames @("profileName", "profile", "name", "id")
+    if ([string]::IsNullOrWhiteSpace($profileName)) {
+      $profileName = $InheritedProfileName
+    }
+    foreach ($server in @($DecodedServers.servers)) {
+      Add-InstallerDockerMcpLiveServer `
+        -Server $server `
+        -InheritedProfileName $profileName `
+        -Servers $Servers
+    }
+  }
+
+  if ($propertyNames -contains "items" -and $null -ne $DecodedServers.items) {
+    $sawServerList = $true
+    foreach ($item in @($DecodedServers.items)) {
+      $itemHadNestedList = Add-InstallerDockerMcpLiveServerEntries `
+        -DecodedServers $item `
+        -InheritedProfileName $InheritedProfileName `
+        -Servers $Servers
+      if (-not $itemHadNestedList) {
+        Add-InstallerDockerMcpLiveServer `
+          -Server $item `
+          -InheritedProfileName $InheritedProfileName `
+          -Servers $Servers
+      }
+    }
+  }
+
+  return $sawServerList
+}
+
+function Add-InstallerDockerMcpLiveServer {
+  [CmdletBinding()]
+  param(
+    [AllowNull()]
+    [object]$Server,
+
+    [AllowNull()]
+    [string]$InheritedProfileName = $null,
+
+    [Parameter(Mandatory = $true)]
+    [AllowEmptyCollection()]
+    [System.Collections.ArrayList]$Servers
+  )
+
+  if ($null -eq $Server) {
+    return
+  }
+
+  $propertyNames = @($Server.PSObject.Properties.Name)
+  $name = Get-InstallerDockerMcpStringProperty `
+    -InputObject $Server `
+    -PropertyNames @("name", "id")
+  if ([string]::IsNullOrWhiteSpace($name)) {
+    return
+  }
+
+  $profileName = Get-InstallerDockerMcpStringProperty `
+    -InputObject $Server `
+    -PropertyNames @("profileName", "profile")
+  if ([string]::IsNullOrWhiteSpace($profileName)) {
+    $profileName = $InheritedProfileName
+  }
+
+  [void]$Servers.Add([pscustomobject]@{
+    name = $name.Trim()
+    description = if ($propertyNames -contains "description") { $Server.description } else { $null }
+    secrets = if ($propertyNames -contains "secrets") { $Server.secrets } else { $null }
+    config = if ($propertyNames -contains "config") { $Server.config } else { $null }
+    oauth = if ($propertyNames -contains "oauth") { $Server.oauth } else { $null }
+    profileName = $profileName
+  })
+}
+
+function Get-InstallerDockerMcpStringProperty {
+  [CmdletBinding()]
+  param(
+    [AllowNull()]
+    [object]$InputObject,
+
+    [Parameter(Mandatory = $true)]
+    [string[]]$PropertyNames
+  )
+
+  if ($null -eq $InputObject) {
+    return $null
+  }
+
+  $inputPropertyNames = @($InputObject.PSObject.Properties.Name)
+  foreach ($propertyName in $PropertyNames) {
+    if ($inputPropertyNames -contains $propertyName) {
+      $value = [string]$InputObject.$propertyName
+      if (-not [string]::IsNullOrWhiteSpace($value)) {
+        return $value.Trim()
+      }
+    }
+  }
+
+  return $null
 }
 
 function Get-InstallerDockerMcpGovernanceDriftReport {

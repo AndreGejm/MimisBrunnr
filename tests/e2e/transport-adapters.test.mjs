@@ -962,6 +962,13 @@ test("mimir-cli lists and reads namespace nodes through the shared context names
         node.authorityState === "staging"
     )
   );
+  const cliCanonicalNode = listPayload.data.nodes.find(
+    (node) => node.uri === `mimir://mimisbrunnr/note/${canonical.noteId}`
+  );
+  assert.equal(cliCanonicalNode.sourceType, "canonical_note");
+  assert.equal(cliCanonicalNode.promotionStatus, "promoted");
+  assert.equal(cliCanonicalNode.supersessionStatus, "active");
+  assert.ok(["current", "expiring_soon"].includes(cliCanonicalNode.freshness.freshnessClass));
 
   const readResult = await runNodeCommand(
     path.join(process.cwd(), "apps", "mimir-cli", "dist", "main.js"),
@@ -981,6 +988,9 @@ test("mimir-cli lists and reads namespace nodes through the shared context names
   assert.equal(readPayload.data.node.uri, `mimir://mimisbrunnr/note/${canonical.noteId}`);
   assert.equal(readPayload.data.node.authorityState, "canonical");
   assert.equal(readPayload.data.node.sourceType, "canonical_note");
+  assert.equal(readPayload.data.node.promotionStatus, "promoted");
+  assert.equal(readPayload.data.node.supersessionStatus, "active");
+  assert.ok(["current", "expiring_soon"].includes(readPayload.data.node.freshness.freshnessClass));
   assert.equal(readPayload.data.node.ownerScope, "mimisbrunnr");
 });
 
@@ -1010,6 +1020,12 @@ test("mimir-cli exposes temporal freshness status and refresh candidates for ope
   assert.equal(payload.freshness.expiredCurrentStateNotes, 1);
   assert.equal(payload.freshness.expiredCurrentState[0].noteId, "expired-cli-freshness-note");
   assert.equal(payload.freshness.expiredCurrentState[0].state, "expired");
+  assert.equal(payload.governance.status, "action_required");
+  assert.equal(payload.governance.summary.temporalCandidateCount, 1);
+  assert.equal(payload.governance.summary.refreshNeededCount, 1);
+  assert.equal(payload.governance.summary.refreshDraftOpenCount, 0);
+  assert.equal(payload.governance.candidates[0].noteId, "expired-cli-freshness-note");
+  assert.equal(payload.governance.candidates[0].refreshStatus, "refresh_needed");
 });
 
 test("mimir-cli creates governed refresh drafts for expired current-state notes", async (t) => {
@@ -3267,6 +3283,11 @@ test("mimir-api exposes temporal freshness reports through the system freshness 
     "expiring-api-freshness-note"
   );
   assert.equal(payload.freshness.expiringSoonCurrentState[0].state, "expiring_soon");
+  assert.equal(payload.governance.status, "action_required");
+  assert.equal(payload.governance.summary.temporalCandidateCount, 1);
+  assert.equal(payload.governance.summary.refreshNeededCount, 1);
+  assert.equal(payload.governance.candidates[0].noteId, "expiring-api-freshness-note");
+  assert.equal(payload.governance.candidates[0].refreshStatus, "refresh_needed");
 });
 
 test("mimir-api creates governed refresh drafts through the temporal freshness route", async (t) => {
@@ -3967,6 +3988,13 @@ test("mimir-api lists and reads namespace nodes through the shared context names
         node.authorityState === "staging"
     )
   );
+  const apiCanonicalNode = treePayload.data.nodes.find(
+    (node) => node.uri === `mimir://mimisbrunnr/note/${canonical.noteId}`
+  );
+  assert.equal(apiCanonicalNode.sourceType, "canonical_note");
+  assert.equal(apiCanonicalNode.promotionStatus, "promoted");
+  assert.equal(apiCanonicalNode.supersessionStatus, "active");
+  assert.ok(["current", "expiring_soon"].includes(apiCanonicalNode.freshness.freshnessClass));
 
   const nodeResponse = await fetch(`${baseUrl}/v1/context/node`, {
     method: "POST",
@@ -3983,6 +4011,10 @@ test("mimir-api lists and reads namespace nodes through the shared context names
   assert.equal(nodePayload.ok, true);
   assert.equal(nodePayload.data.node.uri, `mimir://mimisbrunnr/note/${canonical.noteId}`);
   assert.equal(nodePayload.data.node.authorityState, "canonical");
+  assert.equal(nodePayload.data.node.sourceType, "canonical_note");
+  assert.equal(nodePayload.data.node.promotionStatus, "promoted");
+  assert.equal(nodePayload.data.node.supersessionStatus, "active");
+  assert.ok(["current", "expiring_soon"].includes(nodePayload.data.node.freshness.freshnessClass));
 });
 
 test("mimir-api exposes coding execution through the root orchestrator", async (t) => {

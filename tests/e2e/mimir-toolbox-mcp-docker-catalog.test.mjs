@@ -500,6 +500,49 @@ test("mimir-toolbox-mcp exposes and routes a docker-catalog peer through the bro
   );
 });
 
+test("mimir-toolbox-mcp can launch docker gateway peers with a profile-scoped gateway path", async (t) => {
+  await ensureWorkspacePackageLinks();
+  const manifestDirectory = await createDockerCatalogManifestRoot();
+  const gatewayFixturePath = path
+    .resolve("tests", "fixtures", "mcp", "docker-gateway-peer.mjs")
+    .replace(/\\/g, "/");
+  t.after(async () => {
+    await rm(manifestDirectory, { recursive: true, force: true });
+  });
+
+  const child = spawnToolboxBroker({
+    manifestDirectory,
+    activeProfile: "temp-docker-catalog-toolbox",
+    extraEnv: {
+      MAB_TOOLBOX_ENABLE_DOCKER_GATEWAY_ADAPTER: "true",
+      MAB_TOOLBOX_DOCKER_GATEWAY_EXECUTABLE: process.execPath,
+      MAB_TOOLBOX_DOCKER_GATEWAY_ARGS_JSON: JSON.stringify([gatewayFixturePath]),
+      MAB_TOOLBOX_DOCKER_GATEWAY_PROFILE_ID: "temp-docker-catalog-toolbox"
+    }
+  });
+  t.after(async () => {
+    await stopChild(child);
+  });
+
+  const client = createRpcHarness(child.stdout);
+  await initializeMcp(client, child.stdin);
+
+  const peerCall = await client.request(child.stdin, 31, "tools/call", {
+    name: "temp_docker_search",
+    arguments: {
+      query: "profile scoped"
+    }
+  });
+  assert.equal(peerCall.result.isError, false);
+  assert.deepEqual(
+    peerCall.result.structuredContent.gatewayArgs,
+    [
+      "--profile",
+      "temp-docker-catalog-toolbox"
+    ]
+  );
+});
+
 test("mimir-toolbox-mcp survives a bad docker-gateway executable and reports backend failure", async (t) => {
   await ensureWorkspacePackageLinks();
   const manifestDirectory = await createDockerCatalogManifestRoot();

@@ -350,17 +350,19 @@ export async function getAdministrativeFreshnessStatus(
 ): Promise<{
   ok: true;
   freshness: Awaited<ReturnType<ServiceContainer["ports"]["metadataControlStore"]["getTemporalValidityReport"]>>;
+  governance: Awaited<ReturnType<ServiceContainer["services"]["temporalRefreshService"]["getGovernanceReport"]>>["governance"];
 }> {
   container.authPolicy.authorizeAdministrativeAction(
     "view_freshness_status",
     administrativeActor
   );
 
+  const report = await container.services.temporalRefreshService.getGovernanceReport(request);
+
   return {
     ok: true,
-    freshness: await container.ports.metadataControlStore.getTemporalValidityReport(
-      request
-    )
+    freshness: report.freshness,
+    governance: report.governance
   };
 }
 

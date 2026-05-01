@@ -227,6 +227,36 @@ const UNORDERED_MCP_TOOL_DEFINITIONS: ReadonlyArray<McpToolDefinition> = [
     }
   },
   {
+    name: "freshness_status",
+    title: "Freshness Status",
+    description: "Report temporal-validity status and refresh-readiness governance for current-state notes.",
+    defaultActorRole: "operator",
+    inputSchema: {
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        actor: { type: "object" },
+        asOf: { type: "string" },
+        expiringWithinDays: { type: "number" },
+        corpusId: {
+          type: "string",
+          enum: [
+            "mimisbrunnr",
+            "general_notes",
+            "mimir_brunnr",
+            "mimir-brunnr",
+            "mimirbrunnr",
+            "mimirsbrunnr",
+            "mimisbrunnr",
+            "multiagentbrain",
+            "multi-agent-brain"
+          ]
+        },
+        limitPerCategory: { type: "number" }
+      }
+    }
+  },
+  {
     name: "list_context_tree",
     title: "List Context Tree",
     description: "List namespace nodes without mutating authority state.",

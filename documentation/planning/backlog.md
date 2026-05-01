@@ -23,12 +23,12 @@ These are the active items that still matter for broad rollout.
 
 | ID | Item | Current state | Status |
 | --- | --- | --- | --- |
-| `TB-004` | Close Docker toolbox governance drift and apply blockers | `sync-mcp-profiles` and doctor already report the failures, but the current Docker toolkit still lacks `docker mcp profile` and selected peers remain `descriptor-only` | partial |
-| `TB-007` | Validate toolbox rollout across real target client environments | local validation exists, but broader target-machine coverage is still missing for the reconnect and broker paths | partial |
-| `TB-009` | Broaden broker peer/backend parity | owned tools, local-stdio peers, and opt-in `docker-catalog` routing exist; `descriptor-only` peers are still not routable in-session | partial |
-| `BK-007` | Finish stronger temporal-validity governance | validity windows, refresh candidates, and refresh drafts exist; stronger lifecycle policy and automation are still incomplete | partial |
-| `BK-008` | Keep hierarchical retrieval behind explicit rollout review until default enablement is approved | hierarchical retrieval exists, but flat remains the default and packet-diff review is still required before any default change | partial |
-| `RV-006` | Finish authority-state and namespace follow-through | core authority-state and namespace projections exist, but broader enforcement and rollout guardrails are still incomplete | partial |
+| `TB-004` | Close Docker toolbox governance drift and apply blockers | Docker MCP probes now support current profile server listing and the older server listing fallback; selected peers remain `descriptor-only` and Docker apply is still blocked until each has a safe wrapper, catalog target, or vetting decision | partial |
+| `TB-007` | Validate toolbox rollout across real target client environments | codex, claude, and antigravity overlays have local broker-matrix coverage; broader target-machine reconnect coverage is still missing | partial |
+| `TB-009` | Broaden broker peer/backend parity | owned tools, local-stdio peers, opt-in `docker-catalog` routing, and profile-scoped fake Docker gateway coverage exist; `descriptor-only` peers are still diagnostics-only and not routable in-session | partial |
+| `BK-007` | Finish stronger temporal-validity governance | validity windows, freshness reports, temporal governance summaries, and idempotent refresh drafts exist; scheduler automation remains out of scope | partial |
+| `BK-008` | Keep hierarchical retrieval behind explicit rollout review until default enablement is approved | hierarchical retrieval exists and eval now reports flat-vs-hierarchical shadow metrics; flat remains the default until rollout metrics are accepted | partial |
+| `RV-006` | Finish authority-state and namespace follow-through | canonical, staging, imported, session, and derived-like descriptor invariants have coverage across service and transports; continue extending this gate for future projection types | partial |
 
 ## Current toolbox-specific notes
 
@@ -52,7 +52,8 @@ What is already done:
 
 What still blocks default rollout:
 
-- Docker governance drift against repo policy
+- Docker governance drift against repo policy when live servers exceed the
+  governed contract
 - descriptor-only peer apply blockers
 - broader broker validation outside the current local path
 

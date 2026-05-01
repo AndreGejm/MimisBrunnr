@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { parseContextNodeDescriptor } from "../../packages/contracts/dist/index.js";
 import { buildServiceContainer } from "../../packages/infrastructure/dist/index.js";
 
 test("namespace service keeps canonical and staging notes distinct", async (t) => {
@@ -21,6 +22,10 @@ test("namespace service keeps canonical and staging notes distinct", async (t) =
 
   assert.equal(result.ok, true);
   assert.equal(result.data.nodes.length, 2);
+  assert.equal(new Set(result.data.nodes.map((node) => node.uri)).size, 2);
+  for (const node of result.data.nodes) {
+    assertNamespaceNodeCarriesGovernanceFields(node);
+  }
 
   const canonicalNode = result.data.nodes.find((node) => node.authorityState === "canonical");
   const stagingNode = result.data.nodes.find((node) => node.authorityState === "staging");
@@ -31,11 +36,19 @@ test("namespace service keeps canonical and staging notes distinct", async (t) =
   assert.equal(canonicalNode.sourceType, "canonical_note");
   assert.equal(canonicalNode.ownerScope, "mimisbrunnr");
   assert.equal(canonicalNode.uri, `mimir://mimisbrunnr/note/${canonical.noteId}`);
+  assert.equal(canonicalNode.sourceRef, canonical.noteId);
+  assert.equal(canonicalNode.promotionStatus, "promoted");
+  assert.equal(canonicalNode.supersessionStatus, "active");
   assert.equal(stagingNode.contextKind, "note");
   assert.equal(stagingNode.sourceType, "staging_draft");
   assert.equal(stagingNode.ownerScope, "mimisbrunnr");
   assert.equal(stagingNode.uri, `mimir://mimisbrunnr/note/${staging.draftNoteId}`);
+  assert.equal(stagingNode.sourceRef, staging.draftNoteId);
+  assert.equal(stagingNode.promotionStatus, "pending_review");
+  assert.equal(stagingNode.supersessionStatus, "not_applicable");
   assert.notEqual(canonicalNode.authorityState, stagingNode.authorityState);
+  assert.notEqual(canonicalNode.sourceRef, stagingNode.sourceRef);
+  assert.notEqual(canonicalNode.uri, stagingNode.uri);
 });
 
 test("namespace service projects session archives into the sessions scope", async (t) => {
@@ -52,6 +65,7 @@ test("namespace service projects session archives into the sessions scope", asyn
 
   assert.equal(scopedResult.ok, true);
   assert.equal(scopedResult.data.nodes.length, 1);
+  assertNamespaceNodeCarriesGovernanceFields(scopedResult.data.nodes[0]);
   assert.deepEqual(scopedResult.data.nodes[0], {
     uri: archive.uri,
     ownerScope: "sessions",
@@ -97,6 +111,7 @@ test("namespace service projects imported artifacts into the imports scope", asy
 
   assert.equal(scopedResult.ok, true);
   assert.equal(scopedResult.data.nodes.length, 1);
+  assertNamespaceNodeCarriesGovernanceFields(scopedResult.data.nodes[0]);
   assert.deepEqual(scopedResult.data.nodes[0], {
     uri: `mimir://imports/resource/${importJob.importJobId}`,
     ownerScope: "imports",
@@ -207,7 +222,7 @@ async function createStagingDraft(services) {
     actor: actor("writer"),
     targetCorpus: "mimisbrunnr",
     noteType: "reference",
-    title: "Namespace Staging Node",
+    title: "Namespace Canonical Node",
     sourcePrompt: "Draft a staging namespace node for the projection test.",
     supportingSources: [],
     bodyHints: [
@@ -221,6 +236,19 @@ async function createStagingDraft(services) {
 
   assert.equal(result.ok, true);
   return result.data;
+}
+
+function assertNamespaceNodeCarriesGovernanceFields(node) {
+  assert.ok(node.authorityState);
+  assert.ok(node.sourceType);
+  assert.ok(node.freshness);
+  assert.ok(node.promotionStatus);
+  assert.ok(node.supersessionStatus);
+  assert.equal(typeof node.freshness.validFrom, "string");
+  assert.equal(typeof node.freshness.validUntil, "string");
+  assert.equal(typeof node.freshness.freshnessClass, "string");
+  assert.equal(typeof node.freshness.freshnessReason, "string");
+  assert.doesNotThrow(() => parseContextNodeDescriptor(node));
 }
 
 async function createSessionArchive(services) {

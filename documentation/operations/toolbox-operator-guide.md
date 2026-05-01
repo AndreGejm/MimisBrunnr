@@ -274,6 +274,8 @@ Current behavior:
 
 - `sync-toolbox-runtime --apply` writes client artifacts only
 - `sync-mcp-profiles --apply` is the Docker mutation path
+- current Docker MCP profile listing can be audited, but Docker apply still
+  stays blocked when descriptor-only peers are selected
 
 ## How agents interact with tools
 
@@ -357,6 +359,9 @@ When adding future MCPs:
 - use a workflow only for repeated real combinations
 - keep unsafe upstream servers as `descriptor-only` until they have a safe
   wrapper or catalog entry
+- treat `docker-read`, `dockerhub-read`, `grafana-observe`, and
+  `kubernetes-read` as wrapper-required, `github-read` as catalog-entry-required,
+  and `docker-admin`/`github-write` as vetting-required before Docker apply
 
 ## Recommended release-safe workflow
 

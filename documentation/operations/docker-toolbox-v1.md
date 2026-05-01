@@ -249,10 +249,12 @@ Current doctor-level blocker names:
 
 Current reasons:
 
-- the installed Docker MCP toolkit does not expose `docker mcp profile`
-- Docker gateway help does not expose `--profile`
+- Docker MCP CLI compatibility is now checked against both
+  `docker mcp profile server ls --format json` and the older
+  `docker mcp server ls --json`
 - several selected peers are still `descriptor-only`
 - live Docker-enabled servers can be broader than the repo-governed contract
+- apply safety is still separate from CLI compatibility and governance drift
 
 `sync-mcp-profiles` already reports these blockers. The docs now match that
 behavior.
@@ -264,6 +266,20 @@ Current rollout diagnostics also emit a structured remediation plan:
   toolbox surface
 - replace: policy server ids that still need safe catalog entries or wrappers
 
+Descriptor-only remediation is explicit:
+
+- `wrapper_required`: `docker-read`, `dockerhub-read`, `grafana-observe`,
+  `kubernetes-read`
+- `catalog_entry_required`: `github-read`
+- `vetting_required`: `docker-admin`, `github-write`
+
 The repo-level doctor surfaces these as `toolboxKeep`, `toolboxDisable`, and
 `toolboxReplace` so rollout work can be taken from one report instead of
 reconstructing it manually from drift details.
+
+The broad-readiness distinction is:
+
+- Docker CLI compatible: the local Docker MCP CLI can be inspected
+- Docker governance clean: live enabled servers match the governed repo policy
+- Docker apply safe: every selected Docker profile server has a safe materialized
+  target and no descriptor-only blocker remains

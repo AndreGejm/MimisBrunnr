@@ -168,24 +168,31 @@ test("sync-mcp-profiles dry-run output remains deterministic", async () => {
 });
 
 test("sync-mcp-profiles apply mode fails clearly when local Docker MCP profiles are unavailable", async () => {
-  const result = await runSyncCommand(
-    ["--apply", "--json", JSON.stringify({ generatedAt: "2026-01-01T00:00:00.000Z" }), "--no-pretty"],
-    {
-      MIMIR_DOCKER_RUNTIME_GENERATED_AT: "2026-01-01T00:00:00.000Z"
-    }
-  );
+  const stub = createDockerStub(false);
+  try {
+    const result = await runSyncCommand(
+      ["--apply", "--json", JSON.stringify({ generatedAt: "2026-01-01T00:00:00.000Z" }), "--no-pretty"],
+      {
+        MIMIR_DOCKER_EXECUTABLE: process.execPath,
+        MIMIR_DOCKER_EXECUTABLE_ARGS_JSON: JSON.stringify([stub.stubScript]),
+        MIMIR_DOCKER_RUNTIME_GENERATED_AT: "2026-01-01T00:00:00.000Z"
+      }
+    );
 
-  assert.notEqual(result.exitCode, 0);
-  const payload = JSON.parse(result.stdout);
-  assert.equal(payload.ok, false);
-  assert.equal(payload.dryRun, false);
-  assert.equal(payload.apply.status, "unsupported");
-  assert.equal(payload.apply.compatibility.supported, false);
-  assert.ok(
-    payload.apply.compatibility.nextSteps.some((step) =>
-      step.includes("docker mcp feature enable profiles")
-    )
-  );
+    assert.notEqual(result.exitCode, 0);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.dryRun, false);
+    assert.equal(payload.apply.status, "unsupported");
+    assert.equal(payload.apply.compatibility.supported, false);
+    assert.ok(
+      payload.apply.compatibility.nextSteps.some((step) =>
+        step.includes("docker mcp feature enable profiles")
+      )
+    );
+  } finally {
+    rmSync(stub.rootDir, { recursive: true, force: true });
+  }
 });
 
 test("sync-mcp-profiles apply mode is blocked when descriptor-only servers exist, plan commands use correct catalog IDs", async () => {

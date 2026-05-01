@@ -812,9 +812,10 @@ test("windows installer cli audit-docker-mcp-toolkit reports Docker MCP toolkit 
   assert.equal(envelope.mode, "audit_only");
   assert.equal(envelope.status, "success");
   assert.equal(envelope.reasonCode, "docker_mcp_toolkit_audited");
-  assert.equal(envelope.commandsRun.length, 6);
+  assert.equal(envelope.commandsRun.length, 7);
   assert.equal(envelope.details.dockerMcpToolkit.available, true);
   assert.equal(envelope.details.dockerMcpToolkit.version, "v0.40.3");
+  assert.equal(envelope.details.dockerMcpToolkit.liveServerListSource, "legacy-server-list");
   assert.equal(envelope.details.dockerMcpToolkit.enabledServerCount, 6);
   assert.equal(envelope.details.dockerMcpToolkit.configuredClientCount, 1);
   assert.equal(envelope.details.dockerMcpToolkit.connectedClientCount, 1);
@@ -861,6 +862,100 @@ test("windows installer cli audit-docker-mcp-toolkit reports Docker MCP toolkit 
     await readFile(path.join(stateRoot, "last-report.json"), "utf8")
   );
   assert.equal(persistedReport.operationId, "audit-docker-mcp-toolkit");
+});
+
+test("windows installer cli audit-docker-mcp-toolkit reads profile server list when legacy server list is obsolete", async (t) => {
+  if (process.platform !== "win32") {
+    t.skip("Windows-only installer contract");
+    return;
+  }
+
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-installer-new-docker-"));
+  const binDir = path.join(root, "bin");
+  const stateRoot = path.join(root, "state");
+  await mkdir(binDir, { recursive: true });
+  await writeFile(
+    path.join(binDir, "docker.cmd"),
+    [
+      "@echo off",
+      "if \"%~1 %~2\"==\"mcp version\" (",
+      "  echo v0.62.0",
+      "  exit /b 0",
+      ")",
+      "if \"%~1 %~2 %~3 %~4 %~5 %~6\"==\"mcp profile server ls --format json\" (",
+      "  echo [{\"name\":\"Default Profile\",\"servers\":[{\"name\":\"brave\",\"description\":\"Brave Search\",\"secrets\":\"done\",\"config\":\"done\",\"oauth\":\"none\"},{\"name\":\"github\",\"description\":\"GitHub\",\"secrets\":\"done\",\"config\":\"done\",\"oauth\":\"none\"}]}]",
+      "  exit /b 0",
+      ")",
+      "if \"%~1 %~2 %~3 %~4\"==\"mcp server ls --json\" (",
+      "  echo This command is obsolete. See `docker mcp profile server ls --help` instead. 1>&2",
+      "  exit /b 1",
+      ")",
+      "if \"%~1 %~2 %~3 %~4\"==\"mcp client ls --json\" (",
+      "  echo {\"codex\":{\"displayName\":\"Codex\",\"dockerMCPCatalogConnected\":true,\"profile\":\"default\",\"error\":null,\"Cfg\":null,\"isConfigured\":true}}",
+      "  exit /b 0",
+      ")",
+      "if \"%~1 %~2 %~3\"==\"mcp config read\" (",
+      "  echo profiles:",
+      "  echo   default:",
+      "  exit /b 0",
+      ")",
+      "if \"%~1 %~2 %~3\"==\"mcp feature ls\" (",
+      "  echo profiles enabled",
+      "  exit /b 0",
+      ")",
+      "echo unexpected docker args: %* 1>&2",
+      "exit /b 1"
+    ].join("\r\n"),
+    "utf8"
+  );
+
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const result = await runInstallerCommand(
+    [
+      "-Operation",
+      "audit-docker-mcp-toolkit",
+      "-RepoRoot",
+      process.cwd(),
+      "-StateRoot",
+      stateRoot,
+      "-Json"
+    ],
+    {
+      env: {
+        ...process.env,
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`
+      }
+    }
+  );
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const envelope = JSON.parse(result.stdout);
+  assert.equal(envelope.operationId, "audit-docker-mcp-toolkit");
+  assert.equal(envelope.details.dockerMcpToolkit.version, "v0.62.0");
+  assert.equal(envelope.details.dockerMcpToolkit.enabledServerCount, 2);
+  assert.equal(envelope.details.dockerMcpToolkit.governanceStatus, "drift_detected");
+  assert.equal(envelope.details.dockerMcpToolkit.governanceUnavailableReason, null);
+  assert.deepEqual(
+    envelope.details.dockerMcpToolkit.servers.map((entry) => ({
+      name: entry.name,
+      profileName: entry.profileName
+    })),
+    [
+      { name: "brave", profileName: "Default Profile" },
+      { name: "github", profileName: "Default Profile" }
+    ]
+  );
+  assert.deepEqual(
+    envelope.details.dockerMcpToolkit.governedEnabledServers.map((entry) => entry.name),
+    ["brave"]
+  );
+  assert.deepEqual(
+    envelope.details.dockerMcpToolkit.unsafeEnabledServers.map((entry) => entry.name),
+    ["github"]
+  );
 });
 
 test("windows installer cli plan-docker-mcp-toolkit-apply reports a blocked dry-run when Docker lacks profile support", async (t) => {
@@ -1473,7 +1568,7 @@ test("windows installer cli audit-toolbox-rollout-readiness combines handoff, se
   assert.equal(envelope.mode, "audit_only");
   assert.equal(envelope.status, "user_action_required");
   assert.equal(envelope.reasonCode, "toolbox_rollout_follow_up");
-  assert.equal(envelope.commandsRun.length, 14);
+  assert.equal(envelope.commandsRun.length, 15);
   assert.equal(envelope.details.toolboxRolloutReadiness.clientId, "codex");
   assert.equal(envelope.details.toolboxRolloutReadiness.summary.controlSurfaceReady, true);
   assert.equal(envelope.details.toolboxRolloutReadiness.summary.clientHandoffReady, true);
@@ -1538,13 +1633,13 @@ test("windows installer cli audit-toolbox-rollout-readiness combines handoff, se
     envelope.details.toolboxRolloutReadiness.remediationPlan.blockedPolicyServers.find(
       (entry) => entry.id === "grafana-observe"
     )?.remediationType,
-    "catalog_entry_required"
+    "wrapper_required"
   );
   assert.ok(
     envelope.nextActions.some((item) => /align enabled docker mcp servers/i.test(item))
   );
   assert.ok(
-    envelope.nextActions.some((item) => /upgrade or adapt the docker mcp toolkit contract/i.test(item))
+    envelope.nextActions.some((item) => /descriptor-only docker mcp peer remediation/i.test(item))
   );
 
   const persistedReport = JSON.parse(

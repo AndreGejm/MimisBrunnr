@@ -488,7 +488,71 @@ test("default access reports additive toolbox rollout readiness summary and doct
   assert.match(doctor.stdout, /toolboxNext: This client is still in bootstrap mode/);
 });
 
-function renderDockerMcpStub({ profileSupported, enabledServers = [] }) {
+test("default access governance uses Docker MCP profile server list when legacy server list is obsolete", async (t) => {
+  const actualRepoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+  const root = await mkdtemp(path.join(os.tmpdir(), "mimir-doctor-new-docker-mcp-"));
+  const binDir = path.join(root, "bin");
+  const codexConfigPath = path.join(root, "config.toml");
+  const manifestPath = path.join(root, "installation.json");
+  const supportedStub = path.join(root, "docker-new-cli.cjs");
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  await fsMkdir(binDir, { recursive: true });
+  await fsWriteFile(codexConfigPath, "[mcp_servers.mimir]\ncommand = 'node'\n", "utf8");
+  await fsWriteFile(manifestPath, "{}\n", "utf8");
+  for (const launcherName of COMPATIBILITY_LAUNCHER_NAMES) {
+    await fsWriteFile(path.join(binDir, `${launcherName}.cmd`), "", "utf8");
+  }
+  await fsWriteFile(
+    supportedStub,
+    renderDockerMcpStub({
+      profileSupported: true,
+      legacyServerListObsolete: true,
+      enabledServers: [
+        { name: "brave" },
+        { name: "github" }
+      ]
+    }),
+    "utf8"
+  );
+
+  const report = evaluateDefaultAccess({
+    repoRoot: actualRepoRoot,
+    codexConfigPath,
+    launcherBinDir: binDir,
+    manifestPath,
+    pathValue: binDir,
+    dockerExecutable: process.execPath,
+    dockerExecutableArgs: [supportedStub],
+    toolboxClientId: "codex"
+  });
+
+  assert.equal(report.toolboxRolloutReadiness.summary.dockerGovernanceStatus, "drift_detected");
+  assert.equal(report.toolboxRolloutReadiness.governanceUnavailableReason, null);
+  assert.deepEqual(
+    report.toolboxRolloutReadiness.summary.blockedAreas,
+    ["docker_mcp_governance_drift", "docker_mcp_apply_blocked"]
+  );
+  assert.deepEqual(
+    report.toolboxRolloutReadiness.remediationPlan.keepLiveServers.map((server) => server.name),
+    ["brave"]
+  );
+  assert.deepEqual(
+    report.toolboxRolloutReadiness.remediationPlan.disableLiveServers.map((server) => ({
+      name: server.name,
+      disposition: server.disposition
+    })),
+    [{ name: "github", disposition: "unsafe" }]
+  );
+});
+
+function renderDockerMcpStub({
+  profileSupported,
+  enabledServers = [],
+  legacyServerListObsolete = false
+}) {
   const commandLines = profileSupported
     ? [
         "  catalog     Manage MCP server catalogs",
@@ -524,6 +588,9 @@ function renderDockerMcpStub({ profileSupported, enabledServers = [] }) {
   return [
     `const helpText = ${JSON.stringify(helpText)};`,
     `const enabledServers = ${JSON.stringify(enabledServers)};`,
+    `const profileServerList = ${JSON.stringify([
+      { name: "Default Profile", servers: enabledServers }
+    ])};`,
     `const gatewayRunHelpText = ${JSON.stringify([
       "Docker MCP Toolkit's CLI - Manage your MCP servers and clients.",
       "",
@@ -544,7 +611,15 @@ function renderDockerMcpStub({ profileSupported, enabledServers = [] }) {
     "  process.stdout.write(gatewayRunHelpText);",
     "  process.exit(0);",
     "}",
+    "if (args[0] === 'mcp' && args[1] === 'profile' && args[2] === 'server' && args[3] === 'ls' && args[4] === '--format' && args[5] === 'json') {",
+    "  process.stdout.write(JSON.stringify(profileServerList));",
+    "  process.exit(0);",
+    "}",
     "if (args[0] === 'mcp' && args[1] === 'server' && args[2] === 'ls' && args[3] === '--json') {",
+    "  if (" + JSON.stringify(legacyServerListObsolete) + ") {",
+    "    process.stderr.write('This command is obsolete. See `docker mcp profile server ls --help` instead.\\n');",
+    "    process.exit(1);",
+    "  }",
     "  process.stdout.write(JSON.stringify(enabledServers));",
     "  process.exit(0);",
     "}",
@@ -1191,6 +1266,111 @@ test("temporal refresh service reuses an existing open refresh draft for the sam
   );
 
   assert.equal(refreshDrafts.length, 1);
+});
+
+test("temporal governance report classifies refresh-needed and refresh-draft-open candidates", async (t) => {
+  const { container } = await createHarness(t);
+  const today = currentDateIso();
+
+  const promoted = await createAndPromote(container, {
+    title: "Temporal Governance Candidate",
+    noteType: "reference",
+    bodyHints: [
+      "Temporal governance should classify stale current-state notes by refresh action."
+    ],
+    scope: "temporal-governance-report",
+    promoteAsCurrentState: true,
+    frontmatterOverrides: {
+      validFrom: addDaysIso(today, -30),
+      validUntil: addDaysIso(today, -1)
+    }
+  });
+
+  const before = await container.services.temporalRefreshService.getGovernanceReport({
+    asOf: today,
+    expiringWithinDays: 14,
+    corpusId: "mimisbrunnr"
+  });
+  assert.equal(before.governance.status, "action_required");
+  assert.equal(before.governance.summary.refreshNeededCount, 1);
+  assert.equal(before.governance.summary.refreshDraftOpenCount, 0);
+  assert.equal(before.governance.candidates[0].noteId, promoted.promotedNoteId);
+  assert.equal(before.governance.candidates[0].refreshStatus, "refresh_needed");
+
+  const refreshed = await container.orchestrator.createRefreshDraft({
+    actor: actor("operator"),
+    noteId: promoted.promotedNoteId
+  });
+  assert.equal(refreshed.ok, true);
+
+  const after = await container.services.temporalRefreshService.getGovernanceReport({
+    asOf: today,
+    expiringWithinDays: 14,
+    corpusId: "mimisbrunnr"
+  });
+  assert.equal(after.governance.status, "pending_refresh_review");
+  assert.equal(after.governance.summary.refreshNeededCount, 0);
+  assert.equal(after.governance.summary.refreshDraftOpenCount, 1);
+  assert.equal(after.governance.candidates[0].refreshStatus, "refresh_draft_open");
+  assert.equal(after.governance.candidates[0].refreshDraftNoteId, refreshed.data.draftNoteId);
+});
+
+test("temporal governance report expands capped samples before declaring refresh review pending", async (t) => {
+  const { container } = await createHarness(t);
+  const today = currentDateIso();
+
+  const expiredA = await createAndPromote(container, {
+    title: "Temporal Governance Capped Sample A",
+    noteType: "reference",
+    bodyHints: ["The first expired current-state note already has a refresh draft."],
+    scope: "temporal-governance-capped-a",
+    promoteAsCurrentState: true,
+    frontmatterOverrides: {
+      validFrom: addDaysIso(today, -30),
+      validUntil: addDaysIso(today, -3)
+    }
+  });
+  const expiredB = await createAndPromote(container, {
+    title: "Temporal Governance Capped Sample B",
+    noteType: "reference",
+    bodyHints: ["The second expired current-state note still needs a refresh draft."],
+    scope: "temporal-governance-capped-b",
+    promoteAsCurrentState: true,
+    frontmatterOverrides: {
+      validFrom: addDaysIso(today, -30),
+      validUntil: addDaysIso(today, -2)
+    }
+  });
+
+  const refreshed = await container.orchestrator.createRefreshDraft({
+    actor: actor("operator"),
+    noteId: expiredA.promotedNoteId
+  });
+  assert.equal(refreshed.ok, true);
+
+  const report = await container.services.temporalRefreshService.getGovernanceReport({
+    asOf: today,
+    expiringWithinDays: 14,
+    corpusId: "mimisbrunnr",
+    limitPerCategory: 1
+  });
+
+  assert.equal(report.freshness.expiredCurrentStateNotes, 2);
+  assert.equal(report.freshness.expiredCurrentState.length, 1);
+  assert.equal(report.governance.status, "action_required");
+  assert.equal(report.governance.summary.temporalCandidateCount, 2);
+  assert.equal(report.governance.summary.refreshDraftOpenCount, 1);
+  assert.equal(report.governance.summary.refreshNeededCount, 1);
+  assert.deepEqual(
+    new Map(report.governance.candidates.map((candidate) => [
+      candidate.noteId,
+      candidate.refreshStatus
+    ])),
+    new Map([
+      [expiredA.promotedNoteId, "refresh_draft_open"],
+      [expiredB.promotedNoteId, "refresh_needed"]
+    ])
+  );
 });
 
 test("temporal refresh service can create a bounded batch of refresh drafts from current candidates", async (t) => {

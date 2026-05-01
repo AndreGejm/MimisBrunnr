@@ -82,6 +82,7 @@ const expectedSystemCommands = [
   "sync-toolbox-runtime",
   "sync-toolbox-client"
 ];
+const expectedAdministrativeMcpTools = ["freshness_status"];
 const expectedAuthorizationRoles = new Map([
   ["execute_coding_task", ["operator", "system"]],
   ["list_agent_traces", ["operator", "orchestrator", "system"]],
@@ -199,10 +200,21 @@ test("HTTP and MCP adapter command surfaces stay aligned with the runtime catalo
     assert.equal(route.defaultActorRole, expectedDefaultRolesByCliName.get(route.commandName));
   }
 
-  assert.deepEqual(MCP_TOOL_DEFINITIONS.map((tool) => tool.name), expectedRuntimeCommands);
-  for (const tool of MCP_TOOL_DEFINITIONS) {
+  assert.deepEqual(MCP_TOOL_DEFINITIONS.map((tool) => tool.name), [
+    ...expectedRuntimeCommands,
+    ...expectedAdministrativeMcpTools
+  ]);
+  for (const tool of MCP_TOOL_DEFINITIONS.filter((tool) =>
+    expectedRuntimeCommands.includes(tool.name)
+  )) {
     assert.equal(tool.defaultActorRole, expectedDefaultRolesByRuntimeName.get(tool.name));
   }
+  assert.deepEqual(
+    MCP_TOOL_DEFINITIONS
+      .filter((tool) => expectedAdministrativeMcpTools.includes(tool.name))
+      .map((tool) => [tool.name, tool.defaultActorRole]),
+    expectedAdministrativeMcpTools.map((name) => [name, "operator"])
+  );
 });
 test("CLI adapter exposes a deterministic system/runtime command surface", () => {
   assert.deepEqual(SYSTEM_COMMAND_NAMES, expectedSystemCommands);
@@ -345,6 +357,7 @@ test("command surface inventory reports a fully aligned runtime surface", () => 
 
   assert.equal(report.ok, true);
   assert.deepEqual(report.systemCommands, expectedSystemCommands);
+  assert.deepEqual(report.administrativeMcpTools, expectedAdministrativeMcpTools);
   assert.deepEqual(
     report.runtimeCommands.map((command) => command.cliName),
     expectedCommands.map(([, cliName]) => cliName)

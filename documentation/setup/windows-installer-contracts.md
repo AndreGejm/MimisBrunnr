@@ -317,7 +317,8 @@ Current behavior:
 
 - runs:
   - `docker mcp version`
-  - `docker mcp server ls --json`
+  - `docker mcp profile server ls --format json`
+  - falls back to `docker mcp server ls --json` when needed
   - `docker mcp client ls --json`
   - `docker mcp config read`
   - `docker mcp feature ls`
@@ -349,10 +350,10 @@ Current reason codes:
 
 Important boundary:
 
-- the current repo plan can still be blocked when the local Toolkit lacks a real
-  `docker mcp profile` surface
-- the plan also remains blocked while selected profiles contain descriptor-only
-  peers with no safe raw catalog target
+- installer apply planning keeps Docker mutation disabled until the profile is
+  both governance-clean and apply-safe
+- the plan remains blocked while selected profiles contain descriptor-only peers
+  with no safe wrapper, catalog entry, or vetting decision
 
 ### `show-state`
 

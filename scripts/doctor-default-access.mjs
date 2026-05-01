@@ -93,8 +93,9 @@ function renderHumanReport(report) {
     `toolboxRolloutReadiness: ${report.toolboxRolloutReadiness.status} (${report.toolboxRolloutReadiness.reasonCode})`,
     `toolboxSessionMode: ${report.toolboxRolloutReadiness.summary.sessionMode ?? "unknown"}`,
     `toolboxClientHandoff: ${report.toolboxRolloutReadiness.summary.clientHandoffReady ? "ready" : "follow-up"}`,
+    `dockerCliCompatible: ${report.toolboxRolloutReadiness.summary.dockerCliCompatible ? "yes" : "no"}`,
     `dockerGovernance: ${report.toolboxRolloutReadiness.summary.dockerGovernanceStatus ?? "unavailable"}`,
-    `dockerApply: ${report.toolboxRolloutReadiness.summary.dockerApplyCompatible ? "compatible" : "blocked"}`,
+    `dockerApply: ${report.toolboxRolloutReadiness.summary.dockerApplySafe ? "safe" : "blocked"}`,
     report.toolboxRolloutReadiness.summary.blockedAreas.length > 0
       ? `toolboxBlockedAreas: ${report.toolboxRolloutReadiness.summary.blockedAreas.join(", ")}`
       : "toolboxBlockedAreas: none",

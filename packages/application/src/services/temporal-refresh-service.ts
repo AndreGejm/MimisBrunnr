@@ -3,6 +3,10 @@ import type { StagingDraftService } from "./staging-draft-service.js";
 import type { MetadataControlStore } from "../ports/metadata-control-store.js";
 import type { AuditHistoryService } from "./audit-history-service.js";
 import type {
+  TemporalValidityCandidate,
+  TemporalValidityReport
+} from "../ports/metadata-control-store.js";
+import type {
   CreateRefreshDraftBatchRequest,
   CreateRefreshDraftBatchResponse,
   CreateRefreshDraftRequest,
@@ -11,6 +15,7 @@ import type {
 } from "@mimir/contracts";
 import type {
   ControlledTag,
+  CorpusId,
   NoteFrontmatter
 } from "@mimir/domain";
 
@@ -28,6 +33,32 @@ const DEFAULT_BATCH_SOURCE_STATES: CreateRefreshDraftResponse["sourceState"][] =
   "future_dated",
   "expiring_soon"
 ];
+
+export type TemporalGovernanceRefreshStatus =
+  | "refresh_needed"
+  | "refresh_draft_open";
+
+export interface TemporalGovernanceCandidate
+  extends TemporalValidityCandidate {
+  refreshStatus: TemporalGovernanceRefreshStatus;
+  refreshDraftNoteId?: string;
+  refreshDraftPath?: string;
+}
+
+export interface TemporalGovernanceReport {
+  freshness: TemporalValidityReport;
+  governance: {
+    status: "healthy" | "action_required" | "pending_refresh_review";
+    asOf: string;
+    expiringWithinDays: number;
+    summary: {
+      temporalCandidateCount: number;
+      refreshNeededCount: number;
+      refreshDraftOpenCount: number;
+    };
+    candidates: TemporalGovernanceCandidate[];
+  };
+}
 
 export class TemporalRefreshService {
   constructor(
@@ -289,6 +320,71 @@ export class TemporalRefreshService {
     };
   }
 
+  async getGovernanceReport(input: {
+    asOf?: string;
+    expiringWithinDays?: number;
+    corpusId?: CorpusId;
+    limitPerCategory?: number;
+  } = {}): Promise<TemporalGovernanceReport> {
+    const freshness = await this.metadataControlStore.getTemporalValidityReport(input);
+    const governanceLimitPerCategory = getGovernanceLimitPerCategory(freshness);
+    const governanceFreshness =
+      governanceLimitPerCategory > freshness.limitPerCategory
+        ? await this.metadataControlStore.getTemporalValidityReport({
+            ...input,
+            limitPerCategory: governanceLimitPerCategory
+          })
+        : freshness;
+    const candidates = flattenTemporalCandidates(
+      governanceFreshness,
+      DEFAULT_BATCH_SOURCE_STATES
+    );
+    const governanceCandidates: TemporalGovernanceCandidate[] = [];
+
+    for (const candidate of candidates) {
+      const existingDraft = await this.findExistingRefreshDraft(
+        candidate.corpusId,
+        candidate.noteId
+      );
+      governanceCandidates.push({
+        ...candidate,
+        refreshStatus: existingDraft ? "refresh_draft_open" : "refresh_needed",
+        ...(existingDraft
+          ? {
+              refreshDraftNoteId: existingDraft.noteId,
+              refreshDraftPath: existingDraft.draftPath
+            }
+          : {})
+      });
+    }
+
+    const refreshDraftOpenCount = governanceCandidates.filter(
+      (candidate) => candidate.refreshStatus === "refresh_draft_open"
+    ).length;
+    const refreshNeededCount = governanceCandidates.length - refreshDraftOpenCount;
+    const status =
+      governanceCandidates.length === 0
+        ? "healthy"
+        : refreshNeededCount > 0
+          ? "action_required"
+          : "pending_refresh_review";
+
+    return {
+      freshness,
+      governance: {
+        status,
+        asOf: freshness.asOf,
+        expiringWithinDays: freshness.expiringWithinDays,
+        summary: {
+          temporalCandidateCount: governanceCandidates.length,
+          refreshNeededCount,
+          refreshDraftOpenCount
+        },
+        candidates: governanceCandidates
+      }
+    };
+  }
+
   private async findExistingRefreshDraft(
     corpusId: NoteFrontmatter["corpusId"],
     sourceNoteId: NoteFrontmatter["noteId"]
@@ -311,21 +407,20 @@ export class TemporalRefreshService {
   }
 }
 
+function getGovernanceLimitPerCategory(report: TemporalValidityReport) {
+  return Math.max(
+    report.limitPerCategory,
+    report.expiredCurrentStateNotes,
+    report.futureDatedCurrentStateNotes,
+    report.expiringSoonCurrentStateNotes
+  );
+}
+
 function flattenTemporalCandidates(
-  report: {
-    expiredCurrentState: Array<{
-      noteId: NoteFrontmatter["noteId"];
-      state: CreateRefreshDraftResponse["sourceState"];
-    }>;
-    futureDatedCurrentState: Array<{
-      noteId: NoteFrontmatter["noteId"];
-      state: CreateRefreshDraftResponse["sourceState"];
-    }>;
-    expiringSoonCurrentState: Array<{
-      noteId: NoteFrontmatter["noteId"];
-      state: CreateRefreshDraftResponse["sourceState"];
-    }>;
-  },
+  report: Pick<
+    TemporalValidityReport,
+    "expiredCurrentState" | "futureDatedCurrentState" | "expiringSoonCurrentState"
+  >,
   sourceStates: ReadonlyArray<CreateRefreshDraftResponse["sourceState"]>
 ) {
   const candidatesByState = {
@@ -334,10 +429,7 @@ function flattenTemporalCandidates(
     expiring_soon: report.expiringSoonCurrentState
   } satisfies Record<
     CreateRefreshDraftResponse["sourceState"],
-    Array<{
-      noteId: NoteFrontmatter["noteId"];
-      state: CreateRefreshDraftResponse["sourceState"];
-    }>
+    TemporalValidityCandidate[]
   >;
 
   return sourceStates.flatMap((state) => candidatesByState[state]);

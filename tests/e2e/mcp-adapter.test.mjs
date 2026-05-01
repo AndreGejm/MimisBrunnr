@@ -91,6 +91,7 @@ test("mimir-mcp serves initialize, tools/list, review tools, context tools, and 
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "validate_note"));
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "get_context_packet"));
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "create_refresh_draft"));
+  assert.ok(listResponse.result.tools.some((tool) => tool.name === "freshness_status"));
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "execute_coding_task"));
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "list_ai_tools"));
   assert.ok(listResponse.result.tools.some((tool) => tool.name === "check_ai_tools"));
@@ -243,6 +244,14 @@ test("mimir-mcp serves initialize, tools/list, review tools, context tools, and 
     `mimir://mimisbrunnr/note/${canonical.noteId}`
   );
   assert.equal(nodeResponse.result.structuredContent.data.node.authorityState, "canonical");
+  assert.equal(nodeResponse.result.structuredContent.data.node.sourceType, "canonical_note");
+  assert.equal(nodeResponse.result.structuredContent.data.node.promotionStatus, "promoted");
+  assert.equal(nodeResponse.result.structuredContent.data.node.supersessionStatus, "active");
+  assert.ok(
+    ["current", "expiring_soon"].includes(
+      nodeResponse.result.structuredContent.data.node.freshness.freshnessClass
+    )
+  );
 
   writeMcpMessage(child.stdin, {
     jsonrpc: "2.0",
@@ -456,6 +465,29 @@ test("mimir-mcp creates governed refresh drafts for expired current-state notes"
     }
   });
   await transport.next();
+
+  writeMcpMessage(child.stdin, {
+    jsonrpc: "2.0",
+    id: 101,
+    method: "tools/call",
+    params: {
+      name: "freshness_status",
+      arguments: {
+        corpusId: "mimir_brunnr",
+        limitPerCategory: 5
+      }
+    }
+  });
+
+  const freshnessResponse = await transport.next();
+  assert.equal(freshnessResponse.result.isError, false);
+  assert.equal(freshnessResponse.result.structuredContent.ok, true);
+  assert.equal(freshnessResponse.result.structuredContent.freshness.expiredCurrentStateNotes, 1);
+  assert.equal(freshnessResponse.result.structuredContent.governance.status, "action_required");
+  assert.equal(
+    freshnessResponse.result.structuredContent.governance.candidates[0].refreshStatus,
+    "refresh_needed"
+  );
 
   writeMcpMessage(child.stdin, {
     jsonrpc: "2.0",

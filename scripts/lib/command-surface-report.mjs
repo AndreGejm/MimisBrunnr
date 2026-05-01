@@ -11,6 +11,8 @@ import {
 } from "../../apps/mimir-cli/dist/command-surface.js";
 import { MCP_TOOL_DEFINITIONS } from "../../apps/mimir-mcp/dist/tool-definitions.js";
 
+const ADMINISTRATIVE_MCP_TOOL_NAMES = ["freshness_status"];
+
 function compareOrderedSurface(label, expected, actual) {
   return JSON.stringify(expected) === JSON.stringify(actual)
     ? []
@@ -31,6 +33,10 @@ export function buildCommandSurfaceReport() {
   }));
   const expectedRuntimeCliNames = runtimeCommands.map((command) => command.cliName);
   const expectedRuntimeNames = runtimeCommands.map((command) => command.runtimeName);
+  const expectedMcpToolNames = [
+    ...expectedRuntimeNames,
+    ...ADMINISTRATIVE_MCP_TOOL_NAMES
+  ];
   const cliSurface = getCliCommandSurfaceDefinitions();
   const cliRuntimeSurface = cliSurface.filter((command) => command.kind === "runtime");
   const cliSystemSurface = cliSurface.filter((command) => command.kind === "system");
@@ -71,7 +77,7 @@ export function buildCommandSurfaceReport() {
     ),
     ...compareOrderedSurface(
       "mcp.tools",
-      expectedRuntimeNames,
+      expectedMcpToolNames,
       MCP_TOOL_DEFINITIONS.map((tool) => tool.name)
     )
   ];
@@ -82,9 +88,11 @@ export function buildCommandSurfaceReport() {
       runtimeCommandCount: runtimeCommands.length,
       systemCommandCount: SYSTEM_COMMAND_NAMES.length,
       cliCommandCount: CLI_COMMAND_NAMES.length,
+      administrativeMcpToolCount: ADMINISTRATIVE_MCP_TOOL_NAMES.length,
       mismatchCount: mismatches.length
     },
     systemCommands: [...SYSTEM_COMMAND_NAMES],
+    administrativeMcpTools: [...ADMINISTRATIVE_MCP_TOOL_NAMES],
     runtimeCommands: runtimeCommands.map((command) => {
       const httpRoute = httpRoutesByCommand.get(command.cliName);
       const mcpTool = mcpToolsByCommand.get(command.runtimeName);

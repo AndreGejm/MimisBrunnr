@@ -470,16 +470,30 @@ async function createMixedPeerToolboxManifestRoot() {
     "  handoffStrategy: env-reconnect",
     "  handoffPresetRef: codex.toolbox"
   ]);
+  await writeYaml("clients/claude.yaml", [
+    "client:",
+    "  id: claude",
+    "  displayName: Claude",
+    "  handoffStrategy: env-reconnect",
+    "  handoffPresetRef: claude.toolbox"
+  ]);
+  await writeYaml("clients/antigravity.yaml", [
+    "client:",
+    "  id: antigravity",
+    "  displayName: Antigravity",
+    "  handoffStrategy: manual-env-reconnect",
+    "  handoffPresetRef: antigravity.toolbox"
+  ]);
 
   return root;
 }
 
-async function activateMixedPeerToolbox(client, stdin) {
+async function activateMixedPeerToolbox(client, stdin, clientId = "codex") {
   const activation = await client.request(stdin, 10, "tools/call", {
     name: "request_toolbox_activation",
     arguments: {
       requestedToolbox: "temp-mixed-peer-toolbox",
-      clientId: "codex",
+      clientId,
       taskSummary: "Need mixed peer diagnostics in the current broker session."
     }
   });
@@ -487,6 +501,52 @@ async function activateMixedPeerToolbox(client, stdin) {
   await client.nextNotification({ timeoutMs: 1500 });
   return activation;
 }
+
+test("mixed peer toolbox broker validates activation and omitted diagnostics across target clients", async (t) => {
+  await ensureWorkspacePackageLinks();
+  const manifestDirectory = await createMixedPeerToolboxManifestRoot();
+  t.after(async () => {
+    await rm(manifestDirectory, { recursive: true, force: true });
+  });
+
+  for (const clientId of ["codex", "claude", "antigravity"]) {
+    const child = spawnToolboxBroker({ manifestDirectory, clientId });
+    t.after(async () => {
+      await stopChild(child);
+    });
+
+    const client = createRpcHarness(child.stdout);
+    await initializeMcp(client, child.stdin);
+
+    const bootstrapTools = await client.request(child.stdin, `${clientId}-bootstrap`, "tools/list");
+    const bootstrapToolNames = bootstrapTools.result.tools.map((tool) => tool.name);
+    assert.ok(bootstrapToolNames.includes("request_toolbox_activation"));
+    assert.ok(!bootstrapToolNames.includes("temp_peer_echo"));
+
+    await activateMixedPeerToolbox(client, child.stdin, clientId);
+
+    const brokerTools = await client.request(child.stdin, `${clientId}-tools`, "tools/list");
+    const brokerToolNames = brokerTools.result.tools.map((tool) => tool.name);
+    assert.ok(brokerToolNames.includes("temp_peer_echo"));
+    assert.ok(!brokerToolNames.includes("temp_descriptor_read"));
+
+    const activeTools = await client.request(child.stdin, `${clientId}-active`, "tools/call", {
+      name: "list_active_tools",
+      arguments: {}
+    });
+    assert.equal(activeTools.result.structuredContent.sessionState.clientId, clientId);
+    assert.ok(
+      activeTools.result.structuredContent.brokerVisibleTools.includes("temp_peer_echo")
+    );
+    assert.ok(
+      activeTools.result.structuredContent.brokerOmittedTools.some(
+        (tool) =>
+          tool.toolId === "temp_descriptor_read" &&
+          /descriptor-only peer is intentionally blocked/i.test(tool.reason)
+      )
+    );
+  }
+});
 
 test("mixed peer toolbox keeps broker tools/list to routable peers and reports omitted reasons", async (t) => {
   await ensureWorkspacePackageLinks();
