@@ -223,6 +223,70 @@ test("ai-tools describe reports registry metadata for migrated text tools", asyn
   assert.equal(payload.data.tool.mutates_files, false);
 });
 
+test("ai-tools documents family routes extract-headings through the same CLI contract", async (t) => {
+  const root = await createFixtureRoot(t);
+  const docPath = path.join(root, "docs", "outline.md");
+  await writeFile(
+    docPath,
+    [
+      "# Title",
+      "",
+      "## Setup",
+      "",
+      "### Windows",
+      "",
+      "## Usage"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const result = await runAiTool(["documents", "extract-headings", docPath, "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "extract-headings");
+  assert.equal(payload.errors.length, 0);
+  assert.deepEqual(payload.data.headings.map((heading) => heading.text), ["Title", "Setup", "Windows", "Usage"]);
+  assert.deepEqual(payload.data.headings.map((heading) => heading.level), [1, 2, 3, 2]);
+});
+
+test("ai-tools run dispatches migrated document tools by namespaced id", async (t) => {
+  const root = await createFixtureRoot(t);
+  await writeFile(
+    path.join(root, "docs", "links.md"),
+    [
+      "# Links",
+      "",
+      "[Guide](guide.md)",
+      "[Missing](missing.md)",
+      "[External](https://example.com)"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const result = await runAiTool(["run", "documents.extract-links", "--root", path.join(root, "docs"), "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "extract-links");
+  assert.equal(payload.errors.length, 0);
+  assert.ok(payload.data.links.some((link) => link.target === "guide.md" && link.exists === true));
+  assert.ok(payload.data.links.some((link) => link.target === "missing.md" && link.exists === false));
+});
+
+test("ai-tools describe reports registry metadata for migrated document tools", async () => {
+  const result = await runAiTool(["describe", "documents", "doc-check", "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "describe");
+  assert.equal(payload.errors.length, 0);
+  assert.equal(payload.data.tool.name, "doc-check");
+  assert.equal(payload.data.tool.family, "documents");
+  assert.equal(payload.data.tool.safety_level, "read_only");
+  assert.equal(payload.data.tool.mutates_files, false);
+});
+
 test("ai-tools smart-search ranks bounded matches and ignores generated folders", async (t) => {
   const root = await createFixtureRoot(t);
   await writeFile(path.join(root, ".env"), "SECRET_TIMEOUT=timeout\n", "utf8");
