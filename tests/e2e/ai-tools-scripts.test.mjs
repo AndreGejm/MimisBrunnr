@@ -403,6 +403,77 @@ test("ai-tools describe reports registry metadata for migrated media tools", asy
   assert.equal(payload.data.tool.mutates_files, false);
 });
 
+test("ai-tools project family routes diff-summary through the same CLI contract", async (t) => {
+  const root = await createFixtureRoot(t);
+  const diffPath = path.join(root, "changes.diff");
+  await writeFile(
+    diffPath,
+    [
+      "diff --git a/src/app.js b/src/app.js",
+      "index 1111111..2222222 100644",
+      "--- a/src/app.js",
+      "+++ b/src/app.js",
+      "@@ -1 +1,2 @@",
+      "-old line",
+      "+new line",
+      "+extra line",
+      "diff --git a/package.json b/package.json",
+      "--- a/package.json",
+      "+++ b/package.json",
+      "@@ -1 +1 @@",
+      "-old config",
+      "+new config"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const result = await runAiTool(["project", "diff-summary", "--input", diffPath, "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "diff-summary");
+  assert.equal(payload.errors.length, 0);
+  assert.equal(payload.data.files_changed, 2);
+  assert.deepEqual(payload.data.categories.source, ["src/app.js"]);
+  assert.deepEqual(payload.data.categories.config, ["package.json"]);
+});
+
+test("ai-tools run dispatches migrated project tools by namespaced id", async (t) => {
+  const root = await createFixtureRoot(t);
+  await writeFile(
+    path.join(root, "package.json"),
+    JSON.stringify({
+      scripts: {
+        test: "node --test",
+        format: "prettier --write ."
+      }
+    }),
+    "utf8"
+  );
+
+  const result = await runAiTool(["run", "project.command-index", "--root", root, "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "command-index");
+  assert.equal(payload.errors.length, 0);
+  assert.ok(payload.data.commands.some((command) => command.name === "test" && command.mutates_files === false));
+  assert.ok(payload.data.commands.some((command) => command.name === "format" && command.mutates_files === true));
+});
+
+test("ai-tools describe reports registry metadata for migrated project tools", async () => {
+  const result = await runAiTool(["describe", "project", "command-index", "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "describe");
+  assert.equal(payload.errors.length, 0);
+  assert.equal(payload.data.tool.name, "command-index");
+  assert.equal(payload.data.tool.family, "project");
+  assert.equal(payload.data.tool.safety_level, "read_only");
+  assert.equal(payload.data.tool.mutates_files, false);
+});
+
 test("ai-tools smart-search ranks bounded matches and ignores generated folders", async (t) => {
   const root = await createFixtureRoot(t);
   await writeFile(path.join(root, ".env"), "SECRET_TIMEOUT=timeout\n", "utf8");

@@ -1,13 +1,31 @@
 {
+  "id": "project.diff-summary",
+  "family": "project",
   "name": "diff-summary",
+  "description": "Summarize a git diff or patch file by changed files, line counts, categories, and risky files.",
   "purpose": "Summarize a git diff or patch file by changed files, line counts, categories, and risky files.",
   "script": "scripts/ai-tools.mjs",
   "schema_version": "1.0",
   "status": "draft",
   "safe": true,
   "mutates_files": false,
+  "requires_git": true,
+  "requires_external_binaries": [
+    "git"
+  ],
   "requires_network": false,
   "reads_secrets": false,
+  "safety_level": "read_only",
+  "side_effects": "none",
+  "stable_for_agent_use": true,
+  "input_parameters": [
+    "root",
+    "input",
+    "staged",
+    "json",
+    "markdown"
+  ],
   "default_output": "json",
+  "output_format": "json",
   "example": "node \"AI tools/scripts/ai-tools.mjs\" diff-summary --staged --json"
 }

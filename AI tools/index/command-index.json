@@ -1,13 +1,27 @@
 {
+  "id": "project.command-index",
+  "family": "project",
   "name": "command-index",
+  "description": "List package scripts with simple mutation and network safety metadata.",
   "purpose": "List package scripts with simple mutation and network safety metadata.",
   "script": "scripts/ai-tools.mjs",
   "schema_version": "1.0",
   "status": "draft",
   "safe": true,
   "mutates_files": false,
+  "requires_git": false,
+  "requires_external_binaries": [],
   "requires_network": false,
   "reads_secrets": false,
+  "safety_level": "read_only",
+  "side_effects": "none",
+  "stable_for_agent_use": true,
+  "input_parameters": [
+    "root",
+    "json",
+    "markdown"
+  ],
   "default_output": "json",
+  "output_format": "json",
   "example": "node \"AI tools/scripts/ai-tools.mjs\" command-index --root . --json"
 }

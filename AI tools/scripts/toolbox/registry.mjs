@@ -7,7 +7,9 @@ const INDEX_ROOT = path.join(TOOL_ROOT, "index");
 
 const FAMILY_BY_TOOL = new Map([
   ["chunk-file", "text"],
+  ["command-index", "project"],
   ["csv-profile", "data"],
+  ["diff-summary", "project"],
   ["doc-check", "documents"],
   ["extract-headings", "documents"],
   ["extract-links", "documents"],
