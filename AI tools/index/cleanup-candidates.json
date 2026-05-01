@@ -1,13 +1,31 @@
 {
+  "id": "maintenance.cleanup-candidates",
+  "family": "maintenance",
   "name": "cleanup-candidates",
+  "description": "Dry-run temporary, cache, and log cleanup candidates with safe and review-required buckets.",
   "purpose": "Dry-run temporary, cache, and log cleanup candidates with safe and review-required buckets.",
   "script": "scripts/ai-tools.mjs",
   "schema_version": "1.0",
   "status": "draft",
   "safe": true,
   "mutates_files": false,
+  "requires_git": false,
+  "requires_external_binaries": [],
   "requires_network": false,
   "reads_secrets": false,
+  "safety_level": "read_only",
+  "side_effects": "none",
+  "stable_for_agent_use": true,
+  "input_parameters": [
+    "root",
+    "max-items",
+    "max-depth",
+    "ignore",
+    "dry-run",
+    "json",
+    "markdown"
+  ],
   "default_output": "json",
+  "output_format": "json",
   "example": "node \"AI tools/scripts/ai-tools.mjs\" cleanup-candidates --root . --json"
 }

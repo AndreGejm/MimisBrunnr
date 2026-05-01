@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-import { constants } from "node:fs";
-import { access, readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
+import { configMap as configConfigMap, configCommands } from "./toolbox/families/config.mjs";
 import {
   docCheck as documentDocCheck,
   documentCommands,
@@ -10,26 +9,14 @@ import {
   extractText as documentExtractText
 } from "./toolbox/families/documents.mjs";
 import { csvProfile as dataCsvProfile, dataCommands } from "./toolbox/families/data.mjs";
+import { cleanupCandidates as maintenanceCleanupCandidates, maintenanceCommands } from "./toolbox/families/maintenance.mjs";
 import { mediaInfo as mediaMediaInfo, mediaCommands } from "./toolbox/families/media.mjs";
 import { commandIndex as projectCommandIndex, diffSummary as projectDiffSummary, projectCommands } from "./toolbox/families/project.mjs";
 import { chunkFile as textChunkFile, logSummary as textLogSummary, smartSearch as textSmartSearch, textCommands } from "./toolbox/families/text.mjs";
 import { fileInventory as workspaceFileInventory, treeLite as workspaceTreeLite, workspaceCommands } from "./toolbox/families/workspace.mjs";
 import { findToolByFamilyAndName, findToolById, readToolMetadata } from "./toolbox/registry.mjs";
-import { isProbablyText, isSecretLikeFile, MAX_TEXT_FILE_BYTES, truncate } from "./toolbox/shared/text.mjs";
+import { truncate } from "./toolbox/shared/text.mjs";
 
-const DEFAULT_IGNORES = [
-  ".git",
-  ".pnpm-store",
-  ".venv",
-  "__pycache__",
-  "coverage",
-  "dist",
-  "node_modules",
-  "target"
-];
-const DEFAULT_MAX_ITEMS = 50;
-const DEFAULT_MAX_CHARS = 240;
-const DEFAULT_MAX_DEPTH = 4;
 const COMMANDS = [
   "list-tools",
   "describe",
@@ -47,6 +34,8 @@ const COMMANDS = [
   "media media-info",
   "project diff-summary",
   "project command-index",
+  "config config-map",
+  "maintenance cleanup-candidates",
   "file-inventory",
   "tree-lite",
   "smart-search",
@@ -107,18 +96,8 @@ function parseArgs(argv) {
   return { command, flags, positional };
 }
 
-function numberFlag(flags, name, fallback) {
-  const value = Number(flags[name]);
-  return Number.isFinite(value) && value >= 0 ? value : fallback;
-}
-
 function resolveRoot(flags) {
   return path.resolve(flags.root ? String(flags.root) : process.cwd());
-}
-
-function toRelative(root, fullPath) {
-  const relativePath = path.relative(root, fullPath);
-  return relativePath === "" ? "." : relativePath.split(path.sep).join("/");
 }
 
 function baseEnvelope(tool, root, data = {}, warnings = [], errors = []) {
@@ -131,61 +110,6 @@ function baseEnvelope(tool, root, data = {}, warnings = [], errors = []) {
     warnings,
     errors
   };
-}
-
-async function assertReadableDirectory(root) {
-  await access(root, constants.R_OK);
-  const rootStat = await stat(root);
-  if (!rootStat.isDirectory()) {
-    throw new Error(`Root is not a directory: ${root}`);
-  }
-}
-
-function buildIgnoreSet(flags) {
-  return new Set([...DEFAULT_IGNORES, ...flags.ignore].filter(Boolean));
-}
-
-async function walk(root, flags, visitor) {
-  const ignoreSet = buildIgnoreSet(flags);
-  const ignoredDirs = new Set();
-  const maxDepth = numberFlag(flags, "max-depth", DEFAULT_MAX_DEPTH);
-
-  async function visitDirectory(currentPath, depth) {
-    if (depth > maxDepth) {
-      return;
-    }
-
-    const entries = await readdir(currentPath, { withFileTypes: true });
-    entries.sort((left, right) => {
-      if (left.isDirectory() !== right.isDirectory()) {
-        return left.isDirectory() ? -1 : 1;
-      }
-      return left.name.localeCompare(right.name);
-    });
-
-    for (const entry of entries) {
-      const fullPath = path.join(currentPath, entry.name);
-      const relativePath = toRelative(root, fullPath);
-      if (entry.isDirectory() && ignoreSet.has(entry.name)) {
-        ignoredDirs.add(entry.name);
-        continue;
-      }
-
-      await visitor({
-        fullPath,
-        relativePath,
-        entry,
-        depth
-      });
-
-      if (entry.isDirectory()) {
-        await visitDirectory(fullPath, depth + 1);
-      }
-    }
-  }
-
-  await visitDirectory(root, 0);
-  return Array.from(ignoredDirs).sort();
 }
 
 async function readToolIndex() {
@@ -212,171 +136,6 @@ async function listTools(flags) {
   const root = resolveRoot(flags);
   return baseEnvelope("list-tools", root, {
     tools: await readToolIndex()
-  });
-}
-
-function isConfigLikeFile(relativePath) {
-  const fileName = path.basename(relativePath).toLowerCase();
-  return (
-    fileName.startsWith(".env") ||
-    [
-      "package.json",
-      "pnpm-workspace.yaml",
-      "tsconfig.json",
-      "docker-compose.yml",
-      "compose.yml",
-      ".npmrc"
-    ].includes(fileName) ||
-    /\.(json|ya?ml|toml|ini|conf|config)$/iu.test(fileName)
-  );
-}
-
-function extractEnvDefinitions(text) {
-  const definitions = [];
-  for (const line of text.split(/\r?\n/u)) {
-    const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=/u.exec(line);
-    if (match) {
-      definitions.push(match[1]);
-    }
-  }
-  return definitions;
-}
-
-function collectProcessEnvReferences(line) {
-  const references = [];
-  for (const match of line.matchAll(/process\.env\.([A-Za-z_][A-Za-z0-9_]*)/gu)) {
-    const tail = line.slice((match.index ?? 0) + match[0].length);
-    references.push({ name: match[1], hasDefault: /^\s*(\?\?|\|\|)/u.test(tail) });
-  }
-  for (const match of line.matchAll(/process\.env\[['"]([A-Za-z_][A-Za-z0-9_]*)['"]\]/gu)) {
-    const tail = line.slice((match.index ?? 0) + match[0].length);
-    references.push({ name: match[1], hasDefault: /^\s*(\?\?|\|\|)/u.test(tail) });
-  }
-  return references;
-}
-
-async function configMap(flags) {
-  const root = resolveRoot(flags);
-  await assertReadableDirectory(root);
-  const configFiles = new Set();
-  const definitions = new Map();
-  const references = new Map();
-
-  await walk(root, flags, async ({ fullPath, relativePath, entry }) => {
-    if (!entry.isFile()) {
-      return;
-    }
-
-    if (isConfigLikeFile(relativePath)) {
-      configFiles.add(relativePath);
-    }
-
-    const fileStat = await stat(fullPath);
-    if (fileStat.size > MAX_TEXT_FILE_BYTES) {
-      return;
-    }
-
-    if (isSecretLikeFile(relativePath)) {
-      const text = await readFile(fullPath, "utf8");
-      for (const name of extractEnvDefinitions(text)) {
-        const files = definitions.get(name) ?? new Set();
-        files.add(relativePath);
-        definitions.set(name, files);
-      }
-      return;
-    }
-
-    const buffer = await readFile(fullPath);
-    if (!isProbablyText(buffer)) {
-      return;
-    }
-
-    const text = buffer.toString("utf8");
-    for (const line of text.split(/\r?\n/u)) {
-      for (const reference of collectProcessEnvReferences(line)) {
-        const current = references.get(reference.name) ?? {
-          name: reference.name,
-          files: new Set(),
-          has_default: false
-        };
-        current.files.add(relativePath);
-        current.has_default = current.has_default || reference.hasDefault;
-        references.set(reference.name, current);
-      }
-    }
-  });
-
-  const envVars = Array.from(new Set([...references.keys(), ...definitions.keys()])).sort().map((name) => {
-    const reference = references.get(name);
-    const definedIn = definitions.get(name);
-    return {
-      name,
-      files: reference ? Array.from(reference.files).sort() : [],
-      defined_in_files: definedIn ? Array.from(definedIn).sort() : [],
-      has_default: reference?.has_default ?? false,
-      required: reference ? !reference.has_default : false
-    };
-  });
-
-  return baseEnvelope("config-map", root, {
-    config_files: Array.from(configFiles).sort(),
-    env_vars_referenced: envVars
-  });
-}
-
-function classifyCleanupCandidate(relativePath, fileSizeBytes) {
-  const normalized = relativePath.replace(/\\/gu, "/");
-  const fileName = path.basename(normalized).toLowerCase();
-  const extension = path.extname(fileName).toLowerCase();
-  if (/^(tmp|temp|cache)\//iu.test(normalized) || [".tmp", ".temp", ".bak"].includes(extension)) {
-    return {
-      group: "safe_candidates",
-      reason: "temporary_or_cache_file",
-      path: normalized,
-      size_bytes: fileSizeBytes
-    };
-  }
-  if ([".log", ".old", ".orig"].includes(extension)) {
-    return {
-      group: "review_required",
-      reason: "review_before_cleanup",
-      path: normalized,
-      size_bytes: fileSizeBytes
-    };
-  }
-  return null;
-}
-
-async function cleanupCandidates(flags) {
-  const root = resolveRoot(flags);
-  await assertReadableDirectory(root);
-  const maxItems = numberFlag(flags, "max-items", DEFAULT_MAX_ITEMS);
-  const safeCandidates = [];
-  const reviewRequired = [];
-
-  await walk(root, flags, async ({ fullPath, relativePath, entry }) => {
-    if (!entry.isFile()) {
-      return;
-    }
-    const fileStat = await stat(fullPath);
-    const candidate = classifyCleanupCandidate(relativePath, fileStat.size);
-    if (!candidate) {
-      return;
-    }
-    if (candidate.group === "safe_candidates") {
-      safeCandidates.push(candidate);
-    } else {
-      reviewRequired.push(candidate);
-    }
-  });
-
-  const byPath = (left, right) => left.path.localeCompare(right.path);
-  return baseEnvelope("cleanup-candidates", root, {
-    dry_run: true,
-    deleted_files: 0,
-    safe_candidates: safeCandidates.sort(byPath).slice(0, maxItems).map(({ group, ...candidate }) => candidate),
-    review_required: reviewRequired.sort(byPath).slice(0, maxItems).map(({ group, ...candidate }) => candidate),
-    never_delete: [".git", "node_modules", "state", "vault"]
   });
 }
 
@@ -436,7 +195,7 @@ async function dispatchToolCommand(command, flags, positional) {
     return projectCommandIndex(flags);
   }
   if (command === "config-map") {
-    return configMap(flags);
+    return configConfigMap(flags);
   }
   if (command === "csv-profile") {
     return dataCsvProfile(flags, positional);
@@ -448,7 +207,7 @@ async function dispatchToolCommand(command, flags, positional) {
     return documentDocCheck(flags);
   }
   if (command === "cleanup-candidates") {
-    return cleanupCandidates(flags);
+    return maintenanceCleanupCandidates(flags);
   }
   if (command === "extract-text") {
     return documentExtractText(flags, positional);
@@ -464,8 +223,10 @@ async function dispatchToolCommand(command, flags, positional) {
 
 async function dispatchFamilyCommand(command, flags, positional) {
   const familyCommands = {
+    config: configCommands,
     data: dataCommands,
     documents: documentCommands,
+    maintenance: maintenanceCommands,
     media: mediaCommands,
     project: projectCommands,
     text: textCommands,

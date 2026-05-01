@@ -474,6 +474,72 @@ test("ai-tools describe reports registry metadata for migrated project tools", a
   assert.equal(payload.data.tool.mutates_files, false);
 });
 
+test("ai-tools config family routes config-map through the same CLI contract", async (t) => {
+  const root = await createFixtureRoot(t);
+  await writeFile(path.join(root, ".env"), "SECRET_TOKEN=do-not-print\nVISIBLE_MODE=local\n", "utf8");
+  await writeFile(
+    path.join(root, "src", "config.js"),
+    [
+      "const token = process.env.SECRET_TOKEN;",
+      "const url = process.env.API_URL ?? 'http://localhost';"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const result = await runAiTool(["config", "config-map", "--root", root, "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "config-map");
+  assert.equal(payload.errors.length, 0);
+  assert.ok(payload.data.config_files.includes(".env"));
+  assert.ok(payload.data.env_vars_referenced.some((envVar) => envVar.name === "SECRET_TOKEN" && envVar.required === true));
+  assert.equal(JSON.stringify(payload).includes("do-not-print"), false);
+});
+
+test("ai-tools run dispatches migrated config tools by namespaced id", async (t) => {
+  const root = await createFixtureRoot(t);
+  await writeFile(path.join(root, "src", "settings.js"), "const mode = process.env.APP_MODE || 'local';\n", "utf8");
+
+  const result = await runAiTool(["run", "config.config-map", "--root", root, "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "config-map");
+  assert.equal(payload.errors.length, 0);
+  assert.ok(payload.data.env_vars_referenced.some((envVar) => envVar.name === "APP_MODE" && envVar.has_default === true));
+});
+
+test("ai-tools maintenance family routes cleanup-candidates through the same CLI contract", async (t) => {
+  const root = await createFixtureRoot(t);
+  await mkdir(path.join(root, "tmp"), { recursive: true });
+  await writeFile(path.join(root, "tmp", "scratch.tmp"), "temporary", "utf8");
+  await writeFile(path.join(root, "debug.log"), "log output", "utf8");
+
+  const result = await runAiTool(["maintenance", "cleanup-candidates", "--root", root, "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "cleanup-candidates");
+  assert.equal(payload.errors.length, 0);
+  assert.equal(payload.data.dry_run, true);
+  assert.ok(payload.data.safe_candidates.some((candidate) => candidate.path === "tmp/scratch.tmp"));
+  assert.ok(payload.data.review_required.some((candidate) => candidate.path === "debug.log"));
+});
+
+test("ai-tools describe reports registry metadata for migrated maintenance tools", async () => {
+  const result = await runAiTool(["describe", "maintenance", "cleanup-candidates", "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "describe");
+  assert.equal(payload.errors.length, 0);
+  assert.equal(payload.data.tool.name, "cleanup-candidates");
+  assert.equal(payload.data.tool.family, "maintenance");
+  assert.equal(payload.data.tool.safety_level, "read_only");
+  assert.equal(payload.data.tool.mutates_files, false);
+});
+
 test("ai-tools smart-search ranks bounded matches and ignores generated folders", async (t) => {
   const root = await createFixtureRoot(t);
   await writeFile(path.join(root, ".env"), "SECRET_TIMEOUT=timeout\n", "utf8");
