@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { pathToFileURL } from "node:url";
 
 const launcherPath = path.join(process.cwd(), "AI tools", "scripts", "ai-tools.mjs");
 const aliasPath = path.join(process.cwd(), "AI tools", "scripts", "ai.mjs");
@@ -39,6 +40,10 @@ function runAiAlias(args, options = {}) {
   return runNodeScript(aliasPath, args, options);
 }
 
+function moduleUrl(relativePath) {
+  return pathToFileURL(path.join(process.cwd(), ...relativePath)).href;
+}
+
 async function createFixtureRoot(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), "mimir-ai-tools-"));
   t.after(async () => {
@@ -54,6 +59,37 @@ async function createFixtureRoot(t) {
   await writeFile(path.join(root, "node_modules", "ignored", "skip.js"), "timeout should be ignored\n", "utf8");
   return root;
 }
+
+test("ai-tools CLI args helper parses flags without invoking the launcher", async () => {
+  const { parseArgs } = await import(moduleUrl(["AI tools", "scripts", "toolbox", "cli", "args.mjs"]));
+
+  const parsed = parseArgs(["config", "config-map", "--root", ".", "--ignore", "dist", "--ignore", "tmp", "--markdown"]);
+
+  assert.equal(parsed.command, "config");
+  assert.deepEqual(parsed.positional, ["config-map"]);
+  assert.equal(parsed.flags.root, ".");
+  assert.deepEqual(parsed.flags.ignore, ["dist", "tmp"]);
+  assert.equal(parsed.flags.markdown, true);
+  assert.equal(parsed.flags.json, false);
+});
+
+test("ai-tools CLI formatter renders Markdown without invoking the launcher", async () => {
+  const { toMarkdown } = await import(moduleUrl(["AI tools", "scripts", "toolbox", "cli", "format.mjs"]));
+
+  const markdown = toMarkdown({
+    tool: "command-index",
+    root: "C:/repo",
+    data: {
+      commands: [
+        { name: "test", command: "node --test" }
+      ]
+    }
+  });
+
+  assert.match(markdown, /^# command-index/u);
+  assert.match(markdown, /Root: C:\/repo/u);
+  assert.match(markdown, /- test: node --test/u);
+});
 
 test("ai-tools list-tools returns machine-readable tool metadata", async () => {
   const result = await runAiTool(["list-tools", "--json"]);

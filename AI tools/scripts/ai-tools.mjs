@@ -1,5 +1,8 @@
 #!/usr/bin/env node
-import path from "node:path";
+import { parseArgs } from "./toolbox/cli/args.mjs";
+import { COMMANDS } from "./toolbox/cli/catalog.mjs";
+import { describeToolCommand, listToolsCommand, runRegisteredToolCommand } from "./toolbox/cli/commands.mjs";
+import { formatPayload } from "./toolbox/cli/format.mjs";
 import { configMap as configConfigMap, configCommands } from "./toolbox/families/config.mjs";
 import {
   docCheck as documentDocCheck,
@@ -14,164 +17,12 @@ import { mediaInfo as mediaMediaInfo, mediaCommands } from "./toolbox/families/m
 import { commandIndex as projectCommandIndex, diffSummary as projectDiffSummary, projectCommands } from "./toolbox/families/project.mjs";
 import { chunkFile as textChunkFile, logSummary as textLogSummary, smartSearch as textSmartSearch, textCommands } from "./toolbox/families/text.mjs";
 import { fileInventory as workspaceFileInventory, treeLite as workspaceTreeLite, workspaceCommands } from "./toolbox/families/workspace.mjs";
-import { findToolByFamilyAndName, findToolById, readToolMetadata } from "./toolbox/registry.mjs";
-import { truncate } from "./toolbox/shared/text.mjs";
-
-const COMMANDS = [
-  "list-tools",
-  "describe",
-  "run",
-  "workspace tree-lite",
-  "workspace file-inventory",
-  "text smart-search",
-  "text chunk-file",
-  "text log-summary",
-  "documents extract-headings",
-  "documents extract-links",
-  "documents extract-text",
-  "documents doc-check",
-  "data csv-profile",
-  "media media-info",
-  "project diff-summary",
-  "project command-index",
-  "config config-map",
-  "maintenance cleanup-candidates",
-  "file-inventory",
-  "tree-lite",
-  "smart-search",
-  "chunk-file",
-  "log-summary",
-  "diff-summary",
-  "command-index",
-  "config-map",
-  "csv-profile",
-  "extract-headings",
-  "doc-check",
-  "cleanup-candidates",
-  "extract-text",
-  "extract-links",
-  "media-info"
-];
-
-function parseArgs(argv) {
-  const [command, ...rest] = argv;
-  const flags = {
-    json: true,
-    markdown: false,
-    ignore: [],
-    include: []
-  };
-  const positional = [];
-
-  for (let index = 0; index < rest.length; index += 1) {
-    const value = rest[index];
-    if (!value.startsWith("--")) {
-      positional.push(value);
-      continue;
-    }
-
-    const flag = value.slice(2);
-    if (["json", "markdown", "dry-run"].includes(flag)) {
-      flags[flag.replace("-", "")] = true;
-      if (flag === "markdown") {
-        flags.json = false;
-      }
-      continue;
-    }
-
-    const next = rest[index + 1];
-    if (next === undefined || next.startsWith("--")) {
-      flags[flag] = true;
-      continue;
-    }
-
-    index += 1;
-    if (flag === "ignore" || flag === "include") {
-      flags[flag].push(next);
-    } else {
-      flags[flag] = next;
-    }
-  }
-
-  return { command, flags, positional };
-}
-
-function resolveRoot(flags) {
-  return path.resolve(flags.root ? String(flags.root) : process.cwd());
-}
-
-function baseEnvelope(tool, root, data = {}, warnings = [], errors = []) {
-  return {
-    tool,
-    schema_version: "1.0",
-    root,
-    generated_at: new Date().toISOString(),
-    data,
-    warnings,
-    errors
-  };
-}
-
-async function readToolIndex() {
-  return (await readToolMetadata()).map((tool) => ({
-    id: tool.id,
-    family: tool.family,
-    name: tool.name,
-    purpose: tool.purpose,
-    description: tool.description,
-    safe: tool.safe,
-    mutates_files: tool.mutates_files,
-    requires_git: tool.requires_git,
-    requires_external_binaries: tool.requires_external_binaries,
-    requires_network: tool.requires_network,
-    reads_secrets: tool.reads_secrets,
-    safety_level: tool.safety_level,
-    stable_for_agent_use: tool.stable_for_agent_use,
-    example: tool.example,
-    status: tool.status
-  }));
-}
-
-async function listTools(flags) {
-  const root = resolveRoot(flags);
-  return baseEnvelope("list-tools", root, {
-    tools: await readToolIndex()
-  });
-}
-
-function toMarkdown(payload) {
-  const lines = [`# ${payload.tool}`, "", `Root: ${payload.root}`, ""];
-  if (Array.isArray(payload.data.tools)) {
-    for (const tool of payload.data.tools) {
-      lines.push(`- ${tool.name}: ${tool.purpose}`);
-    }
-  } else if (Array.isArray(payload.data.entries)) {
-    for (const entry of payload.data.entries) {
-      lines.push(`- ${entry.type}: ${entry.path}`);
-    }
-  } else if (Array.isArray(payload.data.matches)) {
-    for (const match of payload.data.matches) {
-      lines.push(`- ${match.path}:${match.line} (${match.score}) ${match.context}`);
-    }
-  } else if (Array.isArray(payload.data.chunks)) {
-    for (const chunk of payload.data.chunks) {
-      lines.push(`- ${chunk.id} ${chunk.lines} ${chunk.heading ?? "untitled"}: ${chunk.preview}`);
-    }
-  } else if (Array.isArray(payload.data.commands)) {
-    for (const command of payload.data.commands) {
-      lines.push(`- ${command.name}: ${command.command}`);
-    }
-  } else {
-    lines.push("```json");
-    lines.push(JSON.stringify(payload.data, null, 2));
-    lines.push("```");
-  }
-  return `${lines.join("\n")}\n`;
-}
+import { resolveRoot } from "./toolbox/shared/args.mjs";
+import { baseEnvelope } from "./toolbox/shared/output.mjs";
 
 async function dispatchToolCommand(command, flags, positional) {
   if (command === "list-tools") {
-    return listTools(flags);
+    return listToolsCommand(flags);
   }
   if (command === "file-inventory") {
     return workspaceFileInventory(flags);
@@ -251,42 +102,8 @@ async function dispatchFamilyCommand(command, flags, positional) {
   return handler(flags, toolPositional);
 }
 
-async function describeTool(flags, positional) {
-  const root = resolveRoot(flags);
-  const tool = positional.length >= 2
-    ? await findToolByFamilyAndName(positional[0], positional[1])
-    : await findToolById(positional[0]);
-
-  if (!tool) {
-    const lookup = positional.join(" ");
-    return baseEnvelope("describe", root, {}, [], [`Unknown tool: ${lookup}`]);
-  }
-
-  return baseEnvelope("describe", root, {
-    tool
-  });
-}
-
-async function runRegisteredTool(flags, positional) {
-  const [toolId, ...toolPositional] = positional;
-  if (!toolId) {
-    return baseEnvelope("run", resolveRoot(flags), {}, [], ["Missing tool id"]);
-  }
-
-  const tool = await findToolById(toolId);
-  if (!tool) {
-    return baseEnvelope("run", resolveRoot(flags), {}, [], [`Unknown tool: ${toolId}`]);
-  }
-
-  const result = await dispatchToolCommand(tool.name, flags, toolPositional);
-  if (!result) {
-    return baseEnvelope("run", resolveRoot(flags), {}, [], [`Registered tool has no launcher handler: ${toolId}`]);
-  }
-  return result;
-}
-
-async function run() {
-  const { command, flags, positional } = parseArgs(process.argv.slice(2));
+async function run(parsed) {
+  const { command, flags, positional } = parsed;
   if (!command || command === "help" || command === "--help") {
     return baseEnvelope("help", process.cwd(), {
       usage: "node \"AI tools/scripts/ai-tools.mjs\" <command> [args] [--json]",
@@ -295,10 +112,10 @@ async function run() {
   }
 
   if (command === "describe") {
-    return describeTool(flags, positional);
+    return describeToolCommand(flags, positional);
   }
   if (command === "run") {
-    return runRegisteredTool(flags, positional);
+    return runRegisteredToolCommand(flags, positional, dispatchToolCommand);
   }
 
   const familyResult = await dispatchFamilyCommand(command, flags, positional);
@@ -315,8 +132,9 @@ async function run() {
 }
 
 try {
-  const payload = await run();
-  process.stdout.write((payload.data && payload.data.markdown) || (parseArgs(process.argv.slice(2)).flags.markdown ? toMarkdown(payload) : `${JSON.stringify(payload, null, 2)}\n`));
+  const parsed = parseArgs(process.argv.slice(2));
+  const payload = await run(parsed);
+  process.stdout.write(formatPayload(payload, parsed.flags));
   process.exit(payload.errors.length > 0 ? 1 : 0);
 } catch (error) {
   const root = process.cwd();

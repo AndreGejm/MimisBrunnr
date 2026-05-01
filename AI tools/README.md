@@ -17,7 +17,12 @@ AI tools/
   index/
     tool-template.json   Copy this when describing a new tool
   scripts/
-    .gitkeep             Put executable helper scripts here
+    ai-tools.mjs         Thin CLI launcher
+    ai.mjs               Short launcher alias
+    toolbox/
+      cli/               Argument parsing, formatting, and registry commands
+      families/          Tool implementations grouped by responsibility
+      shared/            Shared filesystem, text, args, and output helpers
 ```
 
 Use `scripts/` for runnable helpers. Use `index/` for concise metadata that an
@@ -37,7 +42,25 @@ Short alias:
 node "AI tools/scripts/ai.mjs" <command> [options]
 ```
 
-Available read-only commands:
+Preferred family commands:
+
+- `workspace tree-lite`
+- `workspace file-inventory`
+- `text smart-search`
+- `text chunk-file`
+- `text log-summary`
+- `documents extract-headings`
+- `documents extract-links`
+- `documents extract-text`
+- `documents doc-check`
+- `data csv-profile`
+- `media media-info`
+- `project diff-summary`
+- `project command-index`
+- `config config-map`
+- `maintenance cleanup-candidates`
+
+The old flat commands still work as compatibility aliases:
 
 - `list-tools`: emit machine-readable metadata for the tools in `index/`.
 - `tree-lite`: emit a bounded tree with generated and dependency folders omitted.
@@ -74,21 +97,23 @@ Examples:
 
 ```bash
 node "AI tools/scripts/ai-tools.mjs" list-tools --json
-node "AI tools/scripts/ai-tools.mjs" file-inventory --root . --max-items 20 --json
-node "AI tools/scripts/ai-tools.mjs" tree-lite --root . --max-depth 3 --max-items 100 --json
-node "AI tools/scripts/ai-tools.mjs" smart-search "timeout" --root . --max-items 10 --max-chars 180 --json
-node "AI tools/scripts/ai-tools.mjs" chunk-file README.md --max-chars 800 --json
-node "AI tools/scripts/ai-tools.mjs" log-summary build.log --max-items 20 --json
-node "AI tools/scripts/ai-tools.mjs" diff-summary --staged --json
-node "AI tools/scripts/ai-tools.mjs" command-index --root . --json
-node "AI tools/scripts/ai-tools.mjs" config-map --root . --json
-node "AI tools/scripts/ai-tools.mjs" csv-profile data.csv --json
-node "AI tools/scripts/ai-tools.mjs" extract-headings README.md --json
-node "AI tools/scripts/ai-tools.mjs" doc-check --root docs --json
-node "AI tools/scripts/ai-tools.mjs" cleanup-candidates --root . --json
-node "AI tools/scripts/ai-tools.mjs" extract-text README.md --max-chars 12000 --json
-node "AI tools/scripts/ai-tools.mjs" extract-links --root docs --json
-node "AI tools/scripts/ai-tools.mjs" media-info --root assets --json
+node "AI tools/scripts/ai-tools.mjs" describe project command-index --json
+node "AI tools/scripts/ai-tools.mjs" run project.command-index --root . --json
+node "AI tools/scripts/ai-tools.mjs" workspace file-inventory --root . --max-items 20 --json
+node "AI tools/scripts/ai-tools.mjs" workspace tree-lite --root . --max-depth 3 --max-items 100 --json
+node "AI tools/scripts/ai-tools.mjs" text smart-search "timeout" --root . --max-items 10 --max-chars 180 --json
+node "AI tools/scripts/ai-tools.mjs" text chunk-file README.md --max-chars 800 --json
+node "AI tools/scripts/ai-tools.mjs" text log-summary build.log --max-items 20 --json
+node "AI tools/scripts/ai-tools.mjs" project diff-summary --staged --json
+node "AI tools/scripts/ai-tools.mjs" project command-index --root . --json
+node "AI tools/scripts/ai-tools.mjs" config config-map --root . --json
+node "AI tools/scripts/ai-tools.mjs" data csv-profile data.csv --json
+node "AI tools/scripts/ai-tools.mjs" documents extract-headings README.md --json
+node "AI tools/scripts/ai-tools.mjs" documents doc-check --root docs --json
+node "AI tools/scripts/ai-tools.mjs" maintenance cleanup-candidates --root . --json
+node "AI tools/scripts/ai-tools.mjs" documents extract-text README.md --max-chars 12000 --json
+node "AI tools/scripts/ai-tools.mjs" documents extract-links --root docs --json
+node "AI tools/scripts/ai-tools.mjs" media media-info --root assets --json
 ```
 
 ## Tool Categories
