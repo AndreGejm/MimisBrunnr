@@ -15,7 +15,7 @@
     "@mimir/domain": "workspace:*",
     "@mimir/orchestration": "workspace:*",
     "@voltagent/core": "^2.7.2",
-    "ai": "^6.0.0",
+    "ai": "^6.0.172",
     "yaml": "^2.8.1",
     "zod": "^4.3.6"
   }
