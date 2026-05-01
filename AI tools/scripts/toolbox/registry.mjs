@@ -6,7 +6,10 @@ const TOOL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 const INDEX_ROOT = path.join(TOOL_ROOT, "index");
 
 const FAMILY_BY_TOOL = new Map([
+  ["chunk-file", "text"],
   ["file-inventory", "workspace"],
+  ["log-summary", "text"],
+  ["smart-search", "text"],
   ["tree-lite", "workspace"]
 ]);
 

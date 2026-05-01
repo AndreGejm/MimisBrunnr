@@ -160,6 +160,69 @@ test("ai-tools describe reports registry metadata for migrated workspace tools",
   assert.equal(payload.data.tool.mutates_files, false);
 });
 
+test("ai-tools text family routes smart-search through the same CLI contract", async (t) => {
+  const root = await createFixtureRoot(t);
+  await writeFile(path.join(root, ".env"), "SECRET_TIMEOUT=timeout\n", "utf8");
+  const result = await runAiTool([
+    "text",
+    "smart-search",
+    "timeout",
+    "--root",
+    root,
+    "--max-items",
+    "5",
+    "--max-chars",
+    "80",
+    "--json"
+  ]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "smart-search");
+  assert.equal(payload.errors.length, 0);
+  assert.equal(payload.data.matches.length, 3);
+  assert.equal(
+    payload.data.matches.some((match) => match.path.includes("node_modules")),
+    false
+  );
+  assert.ok(payload.data.matches.every((match) => match.context.length <= 80));
+});
+
+test("ai-tools run dispatches migrated text tools by namespaced id", async (t) => {
+  const root = await createFixtureRoot(t);
+  const logPath = path.join(root, "build.log");
+  await writeFile(
+    logPath,
+    [
+      "src/app.js:10: warning: unused value",
+      "ERROR Failed to compile src/app.js: timeout"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const result = await runAiTool(["run", "text.log-summary", logPath, "--max-items", "5", "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "log-summary");
+  assert.equal(payload.errors.length, 0);
+  assert.equal(payload.data.error_count, 1);
+  assert.equal(payload.data.warning_count, 1);
+});
+
+test("ai-tools describe reports registry metadata for migrated text tools", async () => {
+  const result = await runAiTool(["describe", "text", "chunk-file", "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "describe");
+  assert.equal(payload.errors.length, 0);
+  assert.equal(payload.data.tool.name, "chunk-file");
+  assert.equal(payload.data.tool.family, "text");
+  assert.equal(payload.data.tool.safety_level, "read_only");
+  assert.equal(payload.data.tool.mutates_files, false);
+});
+
 test("ai-tools smart-search ranks bounded matches and ignores generated folders", async (t) => {
   const root = await createFixtureRoot(t);
   await writeFile(path.join(root, ".env"), "SECRET_TIMEOUT=timeout\n", "utf8");

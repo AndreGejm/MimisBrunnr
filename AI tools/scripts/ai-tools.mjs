@@ -4,8 +4,10 @@ import { constants } from "node:fs";
 import { access, readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { chunkFile as textChunkFile, logSummary as textLogSummary, smartSearch as textSmartSearch, textCommands } from "./toolbox/families/text.mjs";
 import { fileInventory as workspaceFileInventory, treeLite as workspaceTreeLite, workspaceCommands } from "./toolbox/families/workspace.mjs";
 import { findToolByFamilyAndName, findToolById, readToolMetadata } from "./toolbox/registry.mjs";
+import { isProbablyText, isSecretLikeFile, lineRange, MAX_TEXT_FILE_BYTES, readBoundedTextFile, truncate } from "./toolbox/shared/text.mjs";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_IGNORES = [
@@ -27,6 +29,9 @@ const COMMANDS = [
   "run",
   "workspace tree-lite",
   "workspace file-inventory",
+  "text smart-search",
+  "text chunk-file",
+  "text log-summary",
   "file-inventory",
   "tree-lite",
   "smart-search",
@@ -43,17 +48,6 @@ const COMMANDS = [
   "extract-links",
   "media-info"
 ];
-const MAX_TEXT_FILE_BYTES = 1024 * 1024;
-const SECRET_FILE_NAMES = new Set([
-  ".env",
-  ".env.local",
-  ".env.production",
-  ".npmrc",
-  ".pypirc",
-  "id_ed25519",
-  "id_rsa"
-]);
-const SECRET_FILE_EXTENSIONS = new Set([".key", ".pem", ".p12", ".pfx"]);
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
@@ -110,13 +104,6 @@ function resolveRoot(flags) {
 function toRelative(root, fullPath) {
   const relativePath = path.relative(root, fullPath);
   return relativePath === "" ? "." : relativePath.split(path.sep).join("/");
-}
-
-function truncate(value, maxChars) {
-  if (value.length <= maxChars) {
-    return value;
-  }
-  return `${value.slice(0, Math.max(0, maxChars - 3))}...`;
 }
 
 function baseEnvelope(tool, root, data = {}, warnings = [], errors = []) {
@@ -210,223 +197,6 @@ async function listTools(flags) {
   const root = resolveRoot(flags);
   return baseEnvelope("list-tools", root, {
     tools: await readToolIndex()
-  });
-}
-
-function isProbablyText(buffer) {
-  return !buffer.subarray(0, 2048).includes(0);
-}
-
-function isSecretLikeFile(relativePath) {
-  const fileName = path.basename(relativePath).toLowerCase();
-  if (SECRET_FILE_NAMES.has(fileName)) {
-    return true;
-  }
-  if (fileName.startsWith(".env.")) {
-    return true;
-  }
-  return SECRET_FILE_EXTENSIONS.has(path.extname(fileName));
-}
-
-async function readBoundedTextFile(filePath) {
-  const fileStat = await stat(filePath);
-  if (!fileStat.isFile()) {
-    throw new Error(`Path is not a file: ${filePath}`);
-  }
-  if (fileStat.size > MAX_TEXT_FILE_BYTES) {
-    throw new Error(`File is larger than the ${MAX_TEXT_FILE_BYTES} byte AI tools read limit: ${filePath}`);
-  }
-
-  const buffer = await readFile(filePath);
-  if (!isProbablyText(buffer)) {
-    throw new Error(`File does not look like text: ${filePath}`);
-  }
-  return buffer.toString("utf8");
-}
-
-function scoreMatch(query, relativePath, lineText) {
-  const lowerPath = relativePath.toLowerCase();
-  const lowerLine = lineText.toLowerCase();
-  let score = 0.5;
-  if (lowerPath.includes(query)) {
-    score += 0.3;
-  }
-  if (lowerLine.trim().startsWith(query)) {
-    score += 0.2;
-  }
-  score += Math.min(0.2, query.length / Math.max(20, lowerLine.length));
-  return Number(score.toFixed(4));
-}
-
-async function smartSearch(flags, positional) {
-  const query = positional.join(" ").trim();
-  const root = resolveRoot(flags);
-  await assertReadableDirectory(root);
-  if (query.length === 0) {
-    return baseEnvelope("smart-search", root, { matches: [] }, [], ["Missing search query."]);
-  }
-
-  const maxItems = numberFlag(flags, "max-items", DEFAULT_MAX_ITEMS);
-  const maxChars = numberFlag(flags, "max-chars", DEFAULT_MAX_CHARS);
-  const lowerQuery = query.toLowerCase();
-  const matches = [];
-  let skippedSecretLikeFiles = 0;
-
-  const ignoredDirs = await walk(root, flags, async ({ fullPath, relativePath, entry }) => {
-    if (!entry.isFile() || matches.length > maxItems * 5) {
-      return;
-    }
-    if (isSecretLikeFile(relativePath)) {
-      skippedSecretLikeFiles += 1;
-      return;
-    }
-
-    const fileStat = await stat(fullPath);
-    if (fileStat.size > MAX_TEXT_FILE_BYTES) {
-      return;
-    }
-
-    const buffer = await readFile(fullPath);
-    if (!isProbablyText(buffer)) {
-      return;
-    }
-
-    const lines = buffer.toString("utf8").split(/\r?\n/u);
-    for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-      const line = lines[lineIndex];
-      if (!line.toLowerCase().includes(lowerQuery)) {
-        continue;
-      }
-
-      matches.push({
-        path: relativePath,
-        line: lineIndex + 1,
-        score: scoreMatch(lowerQuery, relativePath, line),
-        context: truncate(line.trim(), maxChars),
-        modified_at: fileStat.mtime.toISOString()
-      });
-    }
-  });
-
-  matches.sort((left, right) => right.score - left.score || left.path.localeCompare(right.path) || left.line - right.line);
-
-  return baseEnvelope("smart-search", root, {
-    query,
-    matches: matches.slice(0, maxItems),
-    skipped_secret_like_files: skippedSecretLikeFiles,
-    ignored_dirs: ignoredDirs
-  });
-}
-
-function lineRange(startLine, endLine) {
-  return `${startLine}-${endLine}`;
-}
-
-async function chunkFile(flags, positional) {
-  const filePathArg = positional[0];
-  if (!filePathArg) {
-    return baseEnvelope("chunk-file", process.cwd(), { chunks: [] }, [], ["Missing file path."]);
-  }
-
-  const filePath = path.resolve(filePathArg);
-  const text = await readBoundedTextFile(filePath);
-  const maxChars = numberFlag(flags, "max-chars", DEFAULT_MAX_CHARS);
-  const lines = text.split(/\r?\n/u);
-  const headingIndexes = [];
-
-  for (let index = 0; index < lines.length; index += 1) {
-    if (/^#{1,6}\s+\S/u.test(lines[index])) {
-      headingIndexes.push(index);
-    }
-  }
-
-  const chunks = [];
-  const addChunk = (startIndex, endIndex, heading) => {
-    const chunkText = lines.slice(startIndex, endIndex + 1).join("\n").trim();
-    if (chunkText.length === 0) {
-      return;
-    }
-    chunks.push({
-      id: `chunk-${String(chunks.length + 1).padStart(3, "0")}`,
-      lines: lineRange(startIndex + 1, endIndex + 1),
-      heading,
-      char_count: chunkText.length,
-      tokens_estimate: Math.ceil(chunkText.length / 4),
-      preview: truncate(chunkText.replace(/\s+/gu, " "), maxChars)
-    });
-  };
-
-  if (headingIndexes.length === 0) {
-    const linesPerChunk = Math.max(1, Math.floor(maxChars / 80));
-    for (let index = 0; index < lines.length; index += linesPerChunk) {
-      addChunk(index, Math.min(lines.length - 1, index + linesPerChunk - 1), null);
-    }
-  } else {
-    for (let headingIndex = 0; headingIndex < headingIndexes.length; headingIndex += 1) {
-      const startIndex = headingIndexes[headingIndex];
-      const endIndex = (headingIndexes[headingIndex + 1] ?? lines.length) - 1;
-      const heading = lines[startIndex].replace(/^#{1,6}\s+/u, "").trim();
-      addChunk(startIndex, endIndex, heading);
-    }
-  }
-
-  return baseEnvelope("chunk-file", path.dirname(filePath), {
-    source_path: filePath,
-    chunking: headingIndexes.length > 0 ? "markdown-heading" : "line-window",
-    chunks
-  });
-}
-
-function collectReferencedFiles(line) {
-  const matches = line.match(/(?:[A-Za-z]:)?[A-Za-z0-9_.-]+(?:\/|\\)[A-Za-z0-9_.\/\\-]+\.[A-Za-z0-9]+/gu) ?? [];
-  return matches.map((match) => match.replace(/\\/gu, "/"));
-}
-
-async function logSummary(flags, positional) {
-  const filePathArg = positional[0];
-  if (!filePathArg) {
-    return baseEnvelope("log-summary", process.cwd(), {}, [], ["Missing log file path."]);
-  }
-
-  const filePath = path.resolve(filePathArg);
-  const maxItems = numberFlag(flags, "max-items", DEFAULT_MAX_ITEMS);
-  const maxChars = numberFlag(flags, "max-chars", DEFAULT_MAX_CHARS);
-  const text = await readBoundedTextFile(filePath);
-  const lines = text.split(/\r?\n/u).filter((line) => line.length > 0);
-  const errors = [];
-  const warnings = [];
-  const repeated = new Map();
-  const referencedFiles = new Set();
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    const lower = line.toLowerCase();
-    repeated.set(line, (repeated.get(line) ?? 0) + 1);
-    for (const referencedFile of collectReferencedFiles(line)) {
-      referencedFiles.add(referencedFile);
-    }
-    if (/\b(error|fatal|failed|failure)\b/u.test(lower)) {
-      errors.push({ line: index + 1, text: truncate(line, maxChars) });
-    }
-    if (/\b(warn|warning)\b/u.test(lower)) {
-      warnings.push({ line: index + 1, text: truncate(line, maxChars) });
-    }
-  }
-
-  return baseEnvelope("log-summary", path.dirname(filePath), {
-    source_path: filePath,
-    total_lines: lines.length,
-    error_count: errors.length,
-    warning_count: warnings.length,
-    first_error: errors[0] ?? null,
-    fatal_errors: errors.slice(0, maxItems),
-    warnings: warnings.slice(0, maxItems),
-    repeated_lines: Array.from(repeated.entries())
-      .filter(([, count]) => count > 1)
-      .map(([text, count]) => ({ text: truncate(text, maxChars), count }))
-      .sort((left, right) => right.count - left.count || left.text.localeCompare(right.text))
-      .slice(0, maxItems),
-    files_referenced: Array.from(referencedFiles).sort().slice(0, maxItems)
   });
 }
 
@@ -1135,13 +905,13 @@ async function dispatchToolCommand(command, flags, positional) {
     return workspaceTreeLite(flags);
   }
   if (command === "smart-search") {
-    return smartSearch(flags, positional);
+    return textSmartSearch(flags, positional);
   }
   if (command === "chunk-file") {
-    return chunkFile(flags, positional);
+    return textChunkFile(flags, positional);
   }
   if (command === "log-summary") {
-    return logSummary(flags, positional);
+    return textLogSummary(flags, positional);
   }
   if (command === "diff-summary") {
     return diffSummary(flags);
@@ -1177,20 +947,25 @@ async function dispatchToolCommand(command, flags, positional) {
 }
 
 async function dispatchFamilyCommand(command, flags, positional) {
-  if (command !== "workspace") {
+  const familyCommands = {
+    text: textCommands,
+    workspace: workspaceCommands
+  };
+  const commands = familyCommands[command];
+  if (!commands) {
     return null;
   }
 
   const [toolName, ...toolPositional] = positional;
   if (!toolName) {
-    return baseEnvelope("workspace", resolveRoot(flags), {
-      tools: Object.keys(workspaceCommands).sort()
-    }, [], ["Missing workspace tool name"]);
+    return baseEnvelope(command, resolveRoot(flags), {
+      tools: Object.keys(commands).sort()
+    }, [], [`Missing ${command} tool name`]);
   }
 
-  const handler = workspaceCommands[toolName];
+  const handler = commands[toolName];
   if (!handler) {
-    return baseEnvelope("workspace", resolveRoot(flags), {}, [], [`Unknown workspace tool: ${toolName}`]);
+    return baseEnvelope(command, resolveRoot(flags), {}, [], [`Unknown ${command} tool: ${toolName}`]);
   }
   return handler(flags, toolPositional);
 }
