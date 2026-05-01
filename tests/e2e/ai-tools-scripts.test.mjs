@@ -287,6 +287,68 @@ test("ai-tools describe reports registry metadata for migrated document tools", 
   assert.equal(payload.data.tool.mutates_files, false);
 });
 
+test("ai-tools data family routes csv-profile through the same CLI contract", async (t) => {
+  const root = await createFixtureRoot(t);
+  const csvPath = path.join(root, "measurements.csv");
+  await writeFile(
+    csvPath,
+    [
+      "id,amount,status",
+      "1,10,ok",
+      "2,,missing",
+      "2,,missing",
+      "3,12.5,ok"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const result = await runAiTool(["data", "csv-profile", csvPath, "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "csv-profile");
+  assert.equal(payload.errors.length, 0);
+  assert.equal(payload.data.rows, 4);
+  assert.deepEqual(payload.data.columns, ["id", "amount", "status"]);
+  assert.equal(payload.data.duplicates, 1);
+});
+
+test("ai-tools run dispatches migrated data tools by namespaced id", async (t) => {
+  const root = await createFixtureRoot(t);
+  const csvPath = path.join(root, "measurements.csv");
+  await writeFile(
+    csvPath,
+    [
+      "id,amount,status",
+      "1,10,ok",
+      "2,,missing"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const result = await runAiTool(["run", "data.csv-profile", csvPath, "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "csv-profile");
+  assert.equal(payload.errors.length, 0);
+  assert.equal(payload.data.rows, 2);
+  assert.equal(payload.data.missing_values.amount, 1);
+});
+
+test("ai-tools describe reports registry metadata for migrated data tools", async () => {
+  const result = await runAiTool(["describe", "data", "csv-profile", "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "describe");
+  assert.equal(payload.errors.length, 0);
+  assert.equal(payload.data.tool.name, "csv-profile");
+  assert.equal(payload.data.tool.family, "data");
+  assert.equal(payload.data.tool.safety_level, "read_only");
+  assert.equal(payload.data.tool.mutates_files, false);
+});
+
 test("ai-tools smart-search ranks bounded matches and ignores generated folders", async (t) => {
   const root = await createFixtureRoot(t);
   await writeFile(path.join(root, ".env"), "SECRET_TIMEOUT=timeout\n", "utf8");
