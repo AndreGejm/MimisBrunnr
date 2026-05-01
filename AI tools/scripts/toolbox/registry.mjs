@@ -14,6 +14,7 @@ const FAMILY_BY_TOOL = new Map([
   ["extract-text", "documents"],
   ["file-inventory", "workspace"],
   ["log-summary", "text"],
+  ["media-info", "media"],
   ["smart-search", "text"],
   ["tree-lite", "workspace"]
 ]);

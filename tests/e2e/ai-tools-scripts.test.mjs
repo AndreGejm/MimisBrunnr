@@ -349,6 +349,60 @@ test("ai-tools describe reports registry metadata for migrated data tools", asyn
   assert.equal(payload.data.tool.mutates_files, false);
 });
 
+test("ai-tools media family routes media-info through the same CLI contract", async (t) => {
+  const root = await createFixtureRoot(t);
+  const pngPath = path.join(root, "docs", "pixel.png");
+  const pngBytes = Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    0x00, 0x00, 0x00, 0x0d,
+    0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x02,
+    0x00, 0x00, 0x00, 0x03,
+    0x08, 0x02, 0x00, 0x00, 0x00
+  ]);
+  await writeFile(pngPath, pngBytes);
+
+  const result = await runAiTool(["media", "media-info", "--root", path.join(root, "docs"), "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "media-info");
+  assert.equal(payload.errors.length, 0);
+  const image = payload.data.files.find((file) => file.path === "pixel.png");
+  assert.equal(image.media_type, "image");
+  assert.equal(image.width, 2);
+  assert.equal(image.height, 3);
+});
+
+test("ai-tools run dispatches migrated media tools by namespaced id", async (t) => {
+  const root = await createFixtureRoot(t);
+  const mp4Path = path.join(root, "docs", "clip.mp4");
+  await writeFile(mp4Path, Buffer.from("not a real mp4 but enough for extension metadata"));
+
+  const result = await runAiTool(["run", "media.media-info", "--root", path.join(root, "docs"), "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "media-info");
+  assert.equal(payload.errors.length, 0);
+  const video = payload.data.files.find((file) => file.path === "clip.mp4");
+  assert.equal(video.media_type, "video");
+  assert.equal(video.mime_type, "video/mp4");
+});
+
+test("ai-tools describe reports registry metadata for migrated media tools", async () => {
+  const result = await runAiTool(["describe", "media", "media-info", "--json"]);
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.tool, "describe");
+  assert.equal(payload.errors.length, 0);
+  assert.equal(payload.data.tool.name, "media-info");
+  assert.equal(payload.data.tool.family, "media");
+  assert.equal(payload.data.tool.safety_level, "read_only");
+  assert.equal(payload.data.tool.mutates_files, false);
+});
+
 test("ai-tools smart-search ranks bounded matches and ignores generated folders", async (t) => {
   const root = await createFixtureRoot(t);
   await writeFile(path.join(root, ".env"), "SECRET_TIMEOUT=timeout\n", "utf8");
