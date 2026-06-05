@@ -57,6 +57,11 @@ import {
   SYSTEM_COMMAND_NAMES,
   type CliCommandName
 } from "./command-surface.js";
+import {
+  runRepoAnswer,
+  runRepoEval,
+  runRepoIndex
+} from "./repo-eval.js";
 type JsonRecord = Record<string, unknown>;
 
 interface ParsedCli {
@@ -119,6 +124,28 @@ async function main(): Promise<void> {
     );
     process.exitCode = 0;
     return;
+  }
+
+  if (
+    parsed.command === "index-repo" ||
+    parsed.command === "answer-repo" ||
+    parsed.command === "eval-repo"
+  ) {
+    try {
+      const payload = await loadCommandPayload(parsed.options);
+      const result = parsed.command === "index-repo"
+        ? await runRepoIndex(payload)
+        : parsed.command === "answer-repo"
+          ? await runRepoAnswer(payload)
+          : await runRepoEval(payload);
+      writeJson(result, parsed.options.pretty);
+      process.exitCode = 0;
+      return;
+    } catch (error) {
+      writeJson(mapCliError(error), parsed.options.pretty);
+      process.exitCode = 1;
+      return;
+    }
   }
 
   if (parsed.command === "check-mcp-profiles") {
@@ -1386,6 +1413,9 @@ Commands:
   auth-status          Print the effective actor-registry and issued-token summary
   auth-issued-tokens   List recorded issued actor tokens and their lifecycle state
   auth-introspect-token  Inspect a static or issued actor token against the current auth policy
+  index-repo           Build a file-level JSON repo index from strict include/exclude rules
+  answer-repo          Answer from a repo index with source-path citations and ranking controls
+  eval-repo            Run prompt/file expectation tests against a repo index
   check-mcp-profiles   Validate repo-managed Docker MCP toolbox manifests and emit the compiled contract summary
   list-toolbox-servers  List compiled MCP server choices and their categories/runtime bindings
   scaffold-toolbox     Create either a reusable toolbox band or a repeated workflow from JSON input or an interactive wizard
@@ -1437,6 +1467,9 @@ Notes:
   - auth-status has no required payload, but enforced auth mode requires operator or system actor context when you call the command.
   - auth-issued-tokens accepts optional JSON input with actor, actorId, asOf, includeRevoked, issuedByActorId, revokedByActorId, lifecycleStatus, and limit.
   - auth-introspect-token expects JSON input with token and optional asOf, expectedTransport, expectedCommand, or expectedAdministrativeAction.
+  - index-repo expects JSON input with root, include, optional exclude, outputPath, and denyPrivateIpPatterns. outputPath must be outside the indexed repo root.
+  - answer-repo expects JSON input with indexPath, query, optional maxSources, excludeFromAnswer, rankingProfile, intentHint, sourceWeights, and requireSourcePathCitations.
+  - eval-repo expects JSON input with indexPath and tests; each test has id, prompt, optional expectedFiles, expectedAnyFiles, forbiddenFiles, minExpectedFiles, maxExpectedRank, mustIncludeTerms, groundingTerms, requireGroundedTerms, forbiddenTerms, excludeFromAnswer, intentHint, and sourceWeights.
   - check-mcp-profiles accepts optional JSON input with manifestDirectory.
   - list-toolbox-servers accepts optional JSON input with manifestDirectory and returns compiled server summaries.
   - scaffold-toolbox expects JSON input with mode=toolbox or mode=workflow; toolbox mode accepts bandId, displayName, serverIds, and workflow mode accepts workflowId, displayName, includeBands.

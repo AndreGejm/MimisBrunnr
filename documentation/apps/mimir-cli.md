@@ -36,6 +36,9 @@ not required for contributor or CI-style repo-local usage.
 
 ### Retrieval and context
 
+- `index-repo`
+- `answer-repo`
+- `eval-repo`
 - `search-context`
 - `search-session-archives`
 - `assemble-agent-context`
@@ -138,6 +141,10 @@ change.
 ```bash
 corepack pnpm cli -- version
 
+corepack pnpm cli -- index-repo --json "{\"root\":\"C:\\\\Users\\\\alexa\\\\Workspaces\\\\panopticon-infra\",\"include\":[\"README.md\",\"AGENTS.md\",\"docs/\",\"ai/\"],\"exclude\":[\"docs/evaluations/\"],\"outputPath\":\"C:\\\\Users\\\\alexa\\\\AppData\\\\Local\\\\Temp\\\\panopticon-repo-index.json\"}"
+
+corepack pnpm cli -- answer-repo --json "{\"indexPath\":\"C:\\\\Users\\\\alexa\\\\AppData\\\\Local\\\\Temp\\\\panopticon-repo-index.json\",\"query\":\"Vilka dokument beskriver restore, backup och rollback i Panopticon?\",\"excludeFromAnswer\":[\"docs/evaluations/\"],\"rankingProfile\":\"panopticon\",\"intentHint\":\"repo_orientation\",\"maxSources\":8}"
+
 corepack pnpm cli -- search-context --json "{\"query\":\"toolbox rollout readiness\",\"corpusIds\":[\"general_notes\",\"mimisbrunnr\"]}"
 
 corepack pnpm cli -- list-toolboxes --json "{}"
@@ -145,8 +152,27 @@ corepack pnpm cli -- list-toolboxes --json "{}"
 corepack pnpm cli -- sync-toolbox-runtime --json "{}"
 ```
 
-`search-context`, `assemble-agent-context`, and `fetch-decision-summary` use
-the shared default context budget when `budget` is omitted.
+`index-repo`, `answer-repo`, and `eval-repo` are CLI-local helpers for
+file-level repository evaluation. They keep indexes outside the indexed repo,
+return source-path citations, and support answer-time source exclusions such as
+downranking or excluding test-suite documents. `answer-repo` and `eval-repo`
+accept `rankingProfile` (`generic` or `panopticon`), custom `sourceWeights`,
+optional `intentHint` (`repo_orientation`, `security_reasoning`,
+`prompt_generation`, `gap_analysis`, or `operator_usefulness`), and eval checks
+such as `expectedFiles`, `expectedAnyFiles`, `forbiddenFiles`,
+`minExpectedFiles`, `maxExpectedRank`, `mustIncludeTerms`, and
+`forbiddenTerms`. Tests can also set `requireGroundedTerms` with optional
+`groundingTerms` to require required terms to appear in cited source excerpts,
+not only in the prompt-derived summary. Citation output includes lexical score
+breakdowns, eval output includes expected/forbidden rank metrics, and
+`retrievalHealth.topCandidates` reports the highest scoring candidates for
+debugging missing or surprising citations. The eval summary includes
+`passRate`, `partialCreditRate`, suite-level `meanReciprocalRank`,
+`groundedTermRate`, `forbiddenViolationCount`, and `scoreOutOf10` for comparing
+quality across runs.
+`search-context`,
+`assemble-agent-context`, and `fetch-decision-summary` use the shared default
+context budget when `budget` is omitted.
 
 ## Canonical docs
 
