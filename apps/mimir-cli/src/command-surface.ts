@@ -11,11 +11,14 @@ export type SystemCommandName =
   | "auth-status"
   | "auth-issued-tokens"
   | "auth-introspect-token"
+  | "answer-repo"
   | "check-mcp-profiles"
   | "deactivate-toolbox"
   | "describe-toolbox"
+  | "eval-repo"
   | "freshness-status"
   | "issue-auth-token"
+  | "index-repo"
   | "scaffold-toolbox"
   | "scaffold-toolbox-band"
   | "preview-toolbox"
@@ -45,11 +48,14 @@ export const SYSTEM_COMMAND_NAMES = [
   "auth-status",
   "auth-issued-tokens",
   "auth-introspect-token",
+  "answer-repo",
   "check-mcp-profiles",
   "deactivate-toolbox",
   "describe-toolbox",
+  "eval-repo",
   "freshness-status",
   "issue-auth-token",
+  "index-repo",
   "scaffold-toolbox",
   "scaffold-toolbox-band",
   "preview-toolbox",
